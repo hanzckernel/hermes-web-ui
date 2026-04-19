@@ -1,0 +1,7 @@
+name: hermes-web-ui
+version: "1.0"
+description: Auto-push all tool calls, results, and messages to Hermes Web UI
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - post_llm_call

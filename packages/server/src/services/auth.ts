@@ -1,10 +1,29 @@
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
+import { homedir } from 'os'
 import { randomBytes } from 'crypto'
 import { config } from '../config'
 
-// Token stored in project data directory
-const TOKEN_FILE = join(config.dataDir, '.token')
+// Token stored in ~/.hermes-web-ui/.token (global), fallback to project data directory (dev)
+const HOME_TOKEN_DIR = join(homedir(), '.hermes-web-ui')
+const HOME_TOKEN_FILE = join(HOME_TOKEN_DIR, '.token')
+const LOCAL_TOKEN_FILE = join(config.dataDir, '.token')
+
+async function getTokenFile(): Promise<{ path: string; token: string }> {
+  // Prefer global token (~/.hermes-web-ui/.token)
+  try {
+    const token = await readFile(HOME_TOKEN_FILE, 'utf-8')
+    return { path: HOME_TOKEN_FILE, token: token.trim() }
+  } catch { /* not found, try local */ }
+
+  // Fallback to local dev token
+  try {
+    const token = await readFile(LOCAL_TOKEN_FILE, 'utf-8')
+    return { path: LOCAL_TOKEN_FILE, token: token.trim() }
+  } catch { /* not found */ }
+
+  return { path: HOME_TOKEN_FILE, token: '' }
+}
 
 function generateToken(): string {
   return randomBytes(32).toString('hex')
@@ -24,15 +43,14 @@ export async function getToken(): Promise<string | null> {
     return process.env.AUTH_TOKEN
   }
 
-  try {
-    const token = await readFile(TOKEN_FILE, 'utf-8')
-    return token.trim()
-  } catch {
-    // Generate a new token
-    const token = generateToken()
-    await writeFile(TOKEN_FILE, token + '\n', { mode: 0o600 })
-    return token
-  }
+  const { path, token } = await getTokenFile()
+  if (token) return token
+
+  // Generate a new token (save to ~/.hermes-web-ui/.token)
+  const newToken = generateToken()
+  await mkdir(HOME_TOKEN_DIR, { recursive: true })
+  await writeFile(path, newToken + '\n', { mode: 0o600 })
+  return newToken
 }
 
 /**

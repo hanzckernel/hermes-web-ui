@@ -11,6 +11,8 @@ import { hermesRoutes, setupTerminalWebSocket, proxyMiddleware } from './routes/
 import { uploadRoutes } from './routes/upload'
 import { webhookRoutes } from './routes/webhook'
 import * as hermesCli from './services/hermes/hermes-cli'
+import { CliResponse } from './services/cli-response'
+import { installSkills } from './services/skill-installer'
 import { getToken, authMiddleware } from './services/auth'
 
 function getLocalVersion(): string {
@@ -79,6 +81,9 @@ export async function bootstrap() {
   app.use(webhookRoutes.routes())
   app.use(uploadRoutes.routes())
 
+  // CliResponse instance (attach later after server is created)
+  const cliResponse = new CliResponse()
+
   // update (must be before hermesRoutes which includes proxy routes)
   app.use(async (ctx, next) => {
     if (ctx.path === '/api/hermes/update' && ctx.method === 'POST') {
@@ -103,6 +108,9 @@ export async function bootstrap() {
     }
     await next()
   })
+
+  // cli-response HTTP route (must be before hermesRoutes which includes proxy)
+  app.use(cliResponse.getRoutes().routes())
 
   app.use(hermesRoutes.routes())
   app.use(proxyMiddleware)
@@ -154,6 +162,9 @@ export async function bootstrap() {
   // Terminal WebSocket (must be after server is created)
   setupTerminalWebSocket(server)
 
+  // Socket.IO message service
+  cliResponse.attach(server)
+
   server.on('listening', () => {
     console.log(`➜ Server: http://localhost:${config.port}`)
     console.log(`➜ Upstream: ${config.upstream}`)
@@ -165,6 +176,9 @@ export async function bootstrap() {
 
   // 👇 绑定退出信号
   bindShutdown()
+
+  // Install cli-response skill to Hermes / Claude Code if not present
+  installSkills()
 
   // Check for updates every 4 hours
   checkLatestVersion()
