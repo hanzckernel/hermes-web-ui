@@ -3,154 +3,50 @@ import cors from '@koa/cors'
 import bodyParser from '@koa/bodyparser'
 import serve from 'koa-static'
 import send from 'koa-send'
+import os from 'os'
 import { resolve } from 'path'
 import { mkdir } from 'fs/promises'
-import { readFileSync } from 'fs'
 import { config } from './config'
 import { hermesRoutes, setupTerminalWebSocket, proxyMiddleware } from './routes/hermes'
 import { uploadRoutes } from './routes/upload'
 import { webhookRoutes } from './routes/webhook'
-import * as hermesCli from './services/hermes/hermes-cli'
+import { updateRoutes } from './routes/update'
+import { healthRoutes, startVersionCheck } from './routes/health'
 import { getToken, authMiddleware } from './services/auth'
-
-function getLocalVersion(): string {
-  // production: dist/server → ../../package.json
-  // dev: packages/server/src → ../../../package.json
-  const candidates = [
-    resolve(__dirname, '../../package.json'),
-    resolve(__dirname, '../../../package.json'),
-  ]
-  for (const p of candidates) {
-    try {
-      return JSON.parse(readFileSync(p, 'utf-8')).version
-    } catch { }
-  }
-  return '0.0.0'
-}
-
-const LOCAL_VERSION = getLocalVersion()
-
-let cachedLatestVersion = ''
-
-async function checkLatestVersion(): Promise<void> {
-  try {
-    const res = await fetch('https://registry.npmjs.org/hermes-web-ui/latest', {
-      signal: AbortSignal.timeout(5000),
-      headers: { 'Cache-Control': 'no-cache' },
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const latest = data.version || ''
-      if (latest && latest !== cachedLatestVersion) {
-        cachedLatestVersion = latest
-        if (latest !== LOCAL_VERSION) {
-          console.log(`⬆ New version available: v${LOCAL_VERSION} → v${latest}`)
-        }
-      }
-    }
-  } catch { }
-}
-
-const app = new Koa()
-const { restartGateway, startGateway, startGatewayBackground, getVersion } = hermesCli
+import { initGatewayManager } from './services/gateway-bootstrap'
+import { bindShutdown } from './services/shutdown'
 
 let server: any = null
-let isShuttingDown = false
-
-// 👉 如果你有子进程，一定要存
-let gatewayPid: number | null = null
-let gatewayManager: any = null
 
 export async function bootstrap() {
   await mkdir(config.uploadDir, { recursive: true })
   await mkdir(config.dataDir, { recursive: true })
 
-  // Auth (after mkdir so data dir exists)
   const authToken = await getToken()
+  const app = new Koa()
+
   if (authToken) {
     app.use(await authMiddleware(authToken))
     console.log(`🔐 Auth enabled — token: ${authToken}`)
   }
 
   await initGatewayManager()
-
   app.use(cors({ origin: config.corsOrigins }))
   app.use(bodyParser())
 
+  // Shared routes (no agent prefix)
   app.use(webhookRoutes.routes())
   app.use(uploadRoutes.routes())
+  app.use(updateRoutes.routes())
 
-  // update (must be before hermesRoutes which includes proxy routes)
-  app.use(async (ctx, next) => {
-    if (ctx.path === '/api/hermes/update' && ctx.method === 'POST') {
-      const isWin = process.platform === 'win32'
-      // Run npm install directly — calling `hermes-web-ui update` would kill this
-      // process (stopDaemon) before the response can be sent to the client.
-      const cmd = isWin
-        ? 'cmd /c npm install -g hermes-web-ui@latest'
-        : 'npm install -g hermes-web-ui@latest'
-
-      try {
-        const { execSync } = await import('child_process')
-        const output = execSync(cmd, {
-          encoding: 'utf-8',
-          timeout: 120000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        })
-        ctx.body = { success: true, message: output.trim() }
-        // Restart the server after response is sent
-        setTimeout(() => {
-          const { spawn } = require('child_process')
-          const isWin = process.platform === 'win32'
-          spawn(isWin ? 'cmd' : 'sh', isWin ? ['/c', 'hermes-web-ui restart'] : ['-c', 'hermes-web-ui restart'], {
-            detached: true,
-            stdio: 'ignore',
-            windowsHide: true,
-          }).unref()
-          process.exit(0)
-        }, 2000)
-      } catch (err: any) {
-        ctx.status = 500
-        ctx.body = { success: false, message: err.stderr || err.message }
-      }
-      return
-    }
-    await next()
-  })
-
+  // Hermes routes (must be after update — proxy catch-all matches everything)
   app.use(hermesRoutes.routes())
   app.use(proxyMiddleware)
 
-  // health
-  app.use(async (ctx, next) => {
-    if (ctx.path === '/health') {
-      const raw = await getVersion()
-      const hermesVersion = raw.split('\n')[0].replace('Hermes Agent ', '') || ''
+  // Health check
+  app.use(healthRoutes.routes())
 
-      let gatewayOk = false
-      try {
-        const upstream = gatewayManager?.getUpstream() || config.upstream
-        const res = await fetch(`${upstream.replace(/\/$/, '')}/health`, {
-          signal: AbortSignal.timeout(5000),
-        })
-        gatewayOk = res.ok
-      } catch { }
-
-      ctx.body = {
-        status: gatewayOk ? 'ok' : 'error',
-        platform: 'hermes-agent',
-        version: hermesVersion,
-        gateway: gatewayOk ? 'running' : 'stopped',
-        webui_version: LOCAL_VERSION,
-        webui_latest: cachedLatestVersion,
-        webui_update_available: cachedLatestVersion && cachedLatestVersion !== LOCAL_VERSION,
-      }
-      return
-    }
-    await next()
-  })
-
-  // SPA
+  // SPA fallback
   const distDir = resolve(__dirname, '..', 'client')
   app.use(serve(distDir))
   app.use(async (ctx) => {
@@ -162,14 +58,15 @@ export async function bootstrap() {
     }
   })
 
-  // 🚀 启动服务
+  // Start server
   server = app.listen(config.port, '0.0.0.0')
 
-  // Terminal WebSocket (must be after server is created)
   setupTerminalWebSocket(server)
 
   server.on('listening', () => {
-    console.log(`➜ Server: http://localhost:${config.port}`)
+    const interfaces = os.networkInterfaces()
+    const localIp = Object.values(interfaces).flat().find(i => i?.family === 'IPv4' && !i?.internal)?.address || 'localhost'
+    console.log(`➜ Server: http://localhost:${config.port} (LAN: http://${localIp}:${config.port})`)
     console.log(`➜ Upstream: ${config.upstream}`)
   })
 
@@ -177,81 +74,8 @@ export async function bootstrap() {
     console.error('Server error:', err.message)
   })
 
-  // 👇 绑定退出信号
-  bindShutdown()
-
-  // Check for updates every 4 hours
-  checkLatestVersion()
-  setInterval(checkLatestVersion, 60 * 60 * 1000)
-}
-
-// ============================
-// ✅ 统一关闭逻辑（核心）
-// ============================
-function bindShutdown() {
-  const shutdown = async (signal: string) => {
-    if (isShuttingDown) return
-    isShuttingDown = true
-
-    console.log(`\n[${signal}] shutting down...`)
-
-    try {
-      // ✅ 1. 关闭 HTTP server
-      if (server) {
-        await new Promise<void>((resolve) => {
-          server.close(() => {
-            console.log('✓ http server closed')
-            resolve()
-          })
-        })
-      }
-
-      // gateway 是系统服务，不随 dev server 退出而停止
-
-    } catch (err) {
-      console.error('shutdown error:', err)
-    }
-
-    process.exit(0)
-  }
-
-  // 👉 nodemon 专用（必须 once）
-  process.once('SIGUSR2', shutdown)
-
-  // 👉 正常退出
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
-
-  // 👉 防止异常退出没处理
-  process.on('uncaughtException', (err) => {
-    console.error('uncaughtException:', err)
-    shutdown('uncaughtException')
-  })
-
-  process.on('unhandledRejection', (err) => {
-    console.error('unhandledRejection:', err)
-    shutdown('unhandledRejection')
-  })
-}
-
-// ============================
-// Gateway Manager
-// ============================
-
-async function initGatewayManager() {
-  const { GatewayManager } = await import('./services/hermes/gateway-manager')
-  const { getActiveProfileName } = await import('./services/hermes/hermes-profile')
-  const { setGatewayManager } = await import('./routes/hermes/gateways')
-
-  const activeProfile = getActiveProfileName()
-  gatewayManager = new GatewayManager(activeProfile)
-  setGatewayManager(gatewayManager)
-
-  // Detect all running gateways
-  await gatewayManager.detectAllOnStartup()
-
-  // Start all gateways that aren't running
-  await gatewayManager.startAll()
+  bindShutdown(server)
+  startVersionCheck()
 }
 
 bootstrap()
