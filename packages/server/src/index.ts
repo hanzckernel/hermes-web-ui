@@ -7,7 +7,8 @@ import { resolve } from 'path'
 import { mkdir } from 'fs/promises'
 import { readFileSync } from 'fs'
 import { config } from './config'
-import { hermesRoutes, setupTerminalWebSocket, proxyMiddleware } from './routes/hermes'
+import { hermesRoutes, setupTerminalWebSocket, proxyMiddleware, setGroupChatServer } from './routes/hermes'
+import { GroupChatServer } from './services/hermes/group-chat'
 import { uploadRoutes } from './routes/upload'
 import { webhookRoutes } from './routes/webhook'
 import * as hermesCli from './services/hermes/hermes-cli'
@@ -153,6 +154,11 @@ export async function bootstrap() {
 
   // Terminal WebSocket (must be after server is created)
   setupTerminalWebSocket(server)
+
+  // Group chat Socket.IO (must be after server is created)
+  const groupChatServer = new GroupChatServer(server)
+  setGroupChatServer(groupChatServer)
+  groupChatServer.setGatewayManager(gatewayManager)
 
   server.on('listening', () => {
     console.log(`➜ Server: http://localhost:${config.port}`)

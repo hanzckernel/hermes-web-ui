@@ -7,6 +7,7 @@ import { logRoutes } from './logs'
 import { weixinRoutes } from './weixin'
 import { codexAuthRoutes } from './codex-auth'
 import { gatewayRoutes } from './gateways'
+import { groupChatRoutes, setGroupChatServer } from './group-chat'
 import { proxyRoutes, proxyMiddleware } from './proxy'
 import { setupTerminalWebSocket } from './terminal'
 
@@ -20,6 +21,7 @@ hermesRoutes.use(logRoutes.routes())
 hermesRoutes.use(weixinRoutes.routes())
 hermesRoutes.use(codexAuthRoutes.routes())
 hermesRoutes.use(gatewayRoutes.routes())
+hermesRoutes.use(groupChatRoutes.routes())
 hermesRoutes.use(proxyRoutes.routes())
 
-export { setupTerminalWebSocket, proxyMiddleware }
+export { setupTerminalWebSocket, proxyMiddleware, setGroupChatServer }
