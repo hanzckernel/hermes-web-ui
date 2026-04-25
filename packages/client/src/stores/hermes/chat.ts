@@ -32,6 +32,7 @@ export interface Message {
   //   2) 流式：由 reasoning.delta / thinking.delta / reasoning.available 事件累加
   // 不含 <think> 包裹标签；内容自身可以为多段纯文本。
   reasoning?: string
+  tokenCount?: number
 }
 
 export interface Session {
@@ -148,6 +149,7 @@ function mapHermesMessages(msgs: HermesMessage[]): Message[] {
       content: msg.content || '',
       timestamp: Math.round(msg.timestamp * 1000),
       reasoning: msg.reasoning ? msg.reasoning : undefined,
+      tokenCount: typeof msg.token_count === 'number' ? msg.token_count : undefined,
     })
   }
   return result

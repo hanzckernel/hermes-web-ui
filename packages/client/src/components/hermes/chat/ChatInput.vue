@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
 import { fetchContextLength } from '@/api/hermes/sessions'
 import { NButton, NTooltip } from 'naive-ui'
+import { selectContextMeterTokens } from '@/utils/context-meter'
 import { computed, ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -38,16 +39,12 @@ onMounted(loadContextLength)
 watch(() => useProfilesStore().activeProfileName, loadContextLength)
 watch(() => useAppStore().selectedModel, loadContextLength)
 
-const totalTokens = computed(() => {
-  const input = chatStore.activeSession?.inputTokens ?? 0
-  const output = chatStore.activeSession?.outputTokens ?? 0
-  return input + output
-})
+const contextTokens = computed(() => selectContextMeterTokens(chatStore.messages))
 
-const remainingTokens = computed(() => Math.max(0, contextLength.value - totalTokens.value))
+const remainingTokens = computed(() => Math.max(0, contextLength.value - contextTokens.value))
 
 const usagePercent = computed(() =>
-  Math.min((totalTokens.value / contextLength.value) * 100, 100),
+  Math.min((contextTokens.value / contextLength.value) * 100, 100),
 )
 
 function formatTokens(n: number): string {
@@ -207,10 +204,10 @@ function isImage(type: string): boolean {
         </template>
         {{ t('chat.attachFiles') }}
       </NTooltip>
-      <span v-if="totalTokens > 0" class="context-info" :class="{ 'context-warning': usagePercent > 80 }">
-        {{ formatTokens(totalTokens) }} / {{ formatTokens(contextLength) }} · {{ t('chat.contextRemaining') }} {{ formatTokens(remainingTokens) }}
+      <span v-if="contextTokens > 0" class="context-info" :class="{ 'context-warning': usagePercent > 80 }">
+        {{ formatTokens(contextTokens) }} / {{ formatTokens(contextLength) }} · {{ t('chat.contextRemaining') }} {{ formatTokens(remainingTokens) }}
       </span>
-      <div v-if="totalTokens > 0" class="context-bar">
+      <div v-if="contextTokens > 0" class="context-bar">
         <div
           class="context-bar-fill"
           :class="{
