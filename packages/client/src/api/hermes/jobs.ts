@@ -1,5 +1,24 @@
 import { request } from '../client'
 
+export type JobSchedule =
+  | string
+  | { kind: 'interval'; minutes: number; display: string }
+  | { kind: 'cron'; expr: string; display: string }
+  | { kind: 'once'; run_at: string; display: string }
+
+export function scheduleToEditableInput(schedule: JobSchedule, fallback = ''): string {
+  if (typeof schedule === 'string') return schedule
+  if (schedule.kind === 'cron') return schedule.expr
+  if (schedule.kind === 'once') return schedule.run_at
+  return schedule.display || fallback
+}
+
+export function scheduleToDisplayText(schedule: JobSchedule, fallback = '—'): string {
+  if (typeof schedule === 'string') return schedule
+  if (schedule.kind === 'cron') return schedule.expr || schedule.display || fallback
+  return schedule.display || fallback
+}
+
 export interface Job {
   job_id: string
   id: string
@@ -12,7 +31,7 @@ export interface Job {
   provider: string | null
   base_url: string | null
   script: string | null
-  schedule: string | { kind: string; expr: string; display: string }
+  schedule: JobSchedule
   schedule_display: string
   repeat: string | { times: number | null; completed: number }
   enabled: boolean
@@ -45,7 +64,7 @@ export interface CreateJobRequest {
 
 export interface UpdateJobRequest {
   name?: string
-  schedule?: string | { kind: string; expr: string; display: string }
+  schedule?: string
   prompt?: string
   deliver?: string
   skills?: string[]

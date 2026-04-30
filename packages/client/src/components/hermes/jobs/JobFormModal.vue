@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { NModal, NForm, NFormItem, NInput, NButton, NSelect, NInputNumber, useMessage } from 'naive-ui'
 import { useJobsStore } from '@/stores/hermes/jobs'
+import { scheduleToEditableInput } from '@/api/hermes/jobs'
 import type { CreateJobRequest, UpdateJobRequest } from '@/api/hermes/jobs'
 import { useI18n } from 'vue-i18n'
 
@@ -49,8 +50,6 @@ const targetOptions = computed(() => [
   { label: t('jobs.local'), value: 'local' },
 ])
 
-const originalSchedule = ref<{ kind: string; expr: string; display: string } | null>(null)
-
 onMounted(async () => {
   if (props.jobId) {
     try {
@@ -58,13 +57,10 @@ onMounted(async () => {
       const job = await getJob(props.jobId)
       formData.value = {
         name: job.name,
-        schedule: typeof job.schedule === 'string' ? job.schedule : (job.schedule?.expr || job.schedule_display || ''),
+        schedule: scheduleToEditableInput(job.schedule, job.schedule_display),
         prompt: job.prompt,
         deliver: job.deliver || 'origin',
         repeat_times: typeof job.repeat === 'number' ? job.repeat : (typeof job.repeat === 'object' ? job.repeat.times : null),
-      }
-      if (typeof job.schedule === 'object' && job.schedule) {
-        originalSchedule.value = job.schedule
       }
     } catch (e: any) {
       message.error(t('jobs.loadFailed') + ': ' + e.message)
@@ -90,15 +86,7 @@ async function handleSave() {
         prompt: formData.value.prompt,
         deliver: formData.value.deliver,
         repeat: formData.value.repeat_times ?? undefined,
-      }
-      if (originalSchedule.value) {
-        payload.schedule = {
-          kind: originalSchedule.value.kind,
-          expr: formData.value.schedule,
-          display: formData.value.schedule,
-        }
-      } else {
-        payload.schedule = formData.value.schedule
+        schedule: formData.value.schedule,
       }
       await jobsStore.updateJob(props.jobId!, payload)
       message.success(t('jobs.jobUpdated'))
