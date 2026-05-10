@@ -16,6 +16,9 @@ const mockAddComment = vi.hoisted(() => vi.fn())
 const mockLinkTasks = vi.hoisted(() => vi.fn())
 const mockUnlinkTasks = vi.hoisted(() => vi.fn())
 const mockBulkUpdateTasks = vi.hoisted(() => vi.fn())
+const mockGetHomeChannels = vi.hoisted(() => vi.fn())
+const mockSubscribeHome = vi.hoisted(() => vi.fn())
+const mockUnsubscribeHome = vi.hoisted(() => vi.fn())
 const mockGetTaskLog = vi.hoisted(() => vi.fn())
 const mockGetDiagnostics = vi.hoisted(() => vi.fn())
 const mockReclaimTask = vi.hoisted(() => vi.fn())
@@ -58,6 +61,9 @@ vi.mock('../../packages/server/src/services/hermes/hermes-kanban', () => ({
   linkTasks: mockLinkTasks,
   unlinkTasks: mockUnlinkTasks,
   bulkUpdateTasks: mockBulkUpdateTasks,
+  getHomeChannels: mockGetHomeChannels,
+  subscribeHome: mockSubscribeHome,
+  unsubscribeHome: mockUnsubscribeHome,
   getTaskLog: mockGetTaskLog,
   getDiagnostics: mockGetDiagnostics,
   reclaimTask: mockReclaimTask,
@@ -172,6 +178,27 @@ describe('kanban controller', () => {
     expect(bulkCtx.body).toEqual({ results: [{ id: 'task-1', ok: true }] })
   })
 
+  it('proxies home notification channels and subscriptions with explicit board context', async () => {
+    mockGetHomeChannels.mockResolvedValue({ home_channels: [{ platform: 'telegram', chat_id: 'chat-1', thread_id: '', name: 'Home', subscribed: true }] })
+    mockSubscribeHome.mockResolvedValue({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
+    mockUnsubscribeHome.mockResolvedValue({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
+
+    const homesCtx = ctx({ query: { board: 'project-a', task_id: 'task-1' } })
+    await ctrl.getHomeChannels(homesCtx)
+    expect(mockGetHomeChannels).toHaveBeenCalledWith({ board: 'project-a', taskId: 'task-1' })
+    expect(homesCtx.body).toEqual({ home_channels: [{ platform: 'telegram', chat_id: 'chat-1', thread_id: '', name: 'Home', subscribed: true }] })
+
+    const subscribeCtx = ctx({ query: { board: 'project-a' }, params: { id: 'task-1', platform: 'telegram' } })
+    await ctrl.subscribeHome(subscribeCtx)
+    expect(mockSubscribeHome).toHaveBeenCalledWith('task-1', 'telegram', { board: 'project-a' })
+    expect(subscribeCtx.body).toEqual({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
+
+    const unsubscribeCtx = ctx({ query: { board: 'project-a' }, params: { id: 'task-1', platform: 'telegram' } })
+    await ctrl.unsubscribeHome(unsubscribeCtx)
+    expect(mockUnsubscribeHome).toHaveBeenCalledWith('task-1', 'telegram', { board: 'project-a' })
+    expect(unsubscribeCtx.body).toEqual({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
+  })
+
   it('validates canonical parity endpoint inputs before shelling out', async () => {
     const invalidTailCtx = ctx({ query: { board: 'default', tail: '0' }, params: { id: 'task-1' } })
     await ctrl.taskLog(invalidTailCtx)
@@ -215,6 +242,9 @@ describe('kanban controller', () => {
       { name: 'bulk invalid status', invoke: ctrl.bulkUpdateTasks, context: ctx({ query: { board: 'default' }, request: { body: { ids: ['task-1'], status: 'invalid' } } }), mock: mockBulkUpdateTasks },
       { name: 'bulk archive with status', invoke: ctrl.bulkUpdateTasks, context: ctx({ query: { board: 'default' }, request: { body: { ids: ['task-1'], archive: true, status: 'done' } } }), mock: mockBulkUpdateTasks },
       { name: 'bulk no action', invoke: ctrl.bulkUpdateTasks, context: ctx({ query: { board: 'default' }, request: { body: { ids: ['task-1'] } } }), mock: mockBulkUpdateTasks },
+      { name: 'subscribe missing task', invoke: ctrl.subscribeHome, context: ctx({ query: { board: 'default' }, params: { platform: 'telegram' } }), mock: mockSubscribeHome },
+      { name: 'subscribe invalid platform', invoke: ctrl.subscribeHome, context: ctx({ query: { board: 'default' }, params: { id: 'task-1', platform: 'telegram/bad' } }), mock: mockSubscribeHome },
+      { name: 'home channels invalid task id type', invoke: ctrl.getHomeChannels, context: ctx({ query: { board: 'default', task_id: {} } }), mock: mockGetHomeChannels },
       { name: 'reclaim request body string', invoke: ctrl.reclaim, context: ctx({ query: { board: 'default' }, params: { id: 'task-1' }, request: { body: 'bad' } }), mock: mockReclaimTask },
       { name: 'reclaim reason array', invoke: ctrl.reclaim, context: ctx({ query: { board: 'default' }, params: { id: 'task-1' }, request: { body: { reason: [] } } }), mock: mockReclaimTask },
       { name: 'reassign reclaim string', invoke: ctrl.reassign, context: ctx({ query: { board: 'default' }, params: { id: 'task-1' }, request: { body: { profile: 'bob', reclaim: 'false' } } }), mock: mockReassignTask },

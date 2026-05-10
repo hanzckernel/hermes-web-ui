@@ -219,6 +219,14 @@ export interface KanbanBulkTaskResult {
   error?: string
 }
 
+export interface KanbanHomeChannel {
+  platform: string
+  chat_id: string
+  thread_id: string
+  name: string
+  subscribed: boolean
+}
+
 function normalizedBoard(board?: string): string {
   const trimmed = board?.trim()
   return trimmed || 'default'
@@ -370,6 +378,25 @@ export async function bulkUpdateTasks(data: KanbanBulkUpdateRequest, opts?: Kanb
   return request<{ results: KanbanBulkTaskResult[] }>(appendQuery('/api/hermes/kanban/tasks/bulk', boardParams(opts?.board)), {
     method: 'POST',
     body: JSON.stringify(data),
+  })
+}
+
+export async function getHomeChannels(opts?: KanbanBoardOptions & { taskId?: string }): Promise<KanbanHomeChannel[]> {
+  const params = boardParams(opts?.board)
+  if (opts?.taskId) params.set('task_id', opts.taskId)
+  const res = await request<{ home_channels: KanbanHomeChannel[] }>(appendQuery('/api/hermes/kanban/home-channels', params))
+  return res.home_channels
+}
+
+export async function subscribeHome(taskId: string, platform: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output?: string }> {
+  return request<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output?: string }>(appendQuery(`/api/hermes/kanban/${encodeURIComponent(taskId)}/home-subscribe/${encodeURIComponent(platform)}`, boardParams(opts?.board)), {
+    method: 'POST',
+  })
+}
+
+export async function unsubscribeHome(taskId: string, platform: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output?: string }> {
+  return request<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output?: string }>(appendQuery(`/api/hermes/kanban/${encodeURIComponent(taskId)}/home-subscribe/${encodeURIComponent(platform)}`, boardParams(opts?.board)), {
+    method: 'DELETE',
   })
 }
 

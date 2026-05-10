@@ -27,6 +27,9 @@ import {
   linkTasks,
   unlinkTasks,
   bulkUpdateTasks,
+  getHomeChannels,
+  subscribeHome,
+  unsubscribeHome,
   getTaskLog,
   getDiagnostics,
   reclaimTask,
@@ -138,6 +141,9 @@ describe('Kanban API', () => {
       .mockResolvedValueOnce({ ok: true, output: 'linked' })
       .mockResolvedValueOnce({ ok: true, output: 'unlinked' })
       .mockResolvedValueOnce({ results: [{ id: 'task-1', ok: true }] })
+      .mockResolvedValueOnce({ home_channels: [{ platform: 'telegram', subscribed: true }] })
+      .mockResolvedValueOnce({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
+      .mockResolvedValueOnce({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
       .mockResolvedValueOnce({ task_id: 'task-1', path: null, exists: true, size_bytes: 10, content: 'worker log', truncated: false })
       .mockResolvedValueOnce({ diagnostics: [{ task_id: 'task-1' }] })
       .mockResolvedValueOnce({ ok: true, output: 'reclaimed' })
@@ -149,6 +155,9 @@ describe('Kanban API', () => {
     await linkTasks({ parent_id: 'task-1', child_id: 'task-2' }, { board: 'project-a' })
     await unlinkTasks({ parent_id: 'task-1', child_id: 'task-2' }, { board: 'project-a' })
     await expect(bulkUpdateTasks({ ids: ['task-1'], status: 'done', assignee: null, summary: 'closed' }, { board: 'project-a' })).resolves.toEqual({ results: [{ id: 'task-1', ok: true }] })
+    await expect(getHomeChannels({ board: 'project-a', taskId: 'task-1' })).resolves.toEqual([{ platform: 'telegram', subscribed: true }])
+    await subscribeHome('task-1', 'telegram', { board: 'project-a' })
+    await unsubscribeHome('task-1', 'telegram', { board: 'project-a' })
     await expect(getTaskLog('task-1', { board: 'default', tail: 4000 })).resolves.toEqual({ task_id: 'task-1', path: null, exists: true, size_bytes: 10, content: 'worker log', truncated: false })
     await expect(getDiagnostics({ board: 'default', task: 'task-1', severity: 'warning' })).resolves.toEqual([{ task_id: 'task-1' }])
     await reclaimTask('task-1', { board: 'project-a', reason: 'stale' })
@@ -161,6 +170,9 @@ describe('Kanban API', () => {
       ['/api/hermes/kanban/links?board=project-a', { method: 'POST', body: JSON.stringify({ parent_id: 'task-1', child_id: 'task-2' }) }],
       ['/api/hermes/kanban/links?board=project-a&parent_id=task-1&child_id=task-2', { method: 'DELETE' }],
       ['/api/hermes/kanban/tasks/bulk?board=project-a', { method: 'POST', body: JSON.stringify({ ids: ['task-1'], status: 'done', assignee: null, summary: 'closed' }) }],
+      ['/api/hermes/kanban/home-channels?board=project-a&task_id=task-1'],
+      ['/api/hermes/kanban/task-1/home-subscribe/telegram?board=project-a', { method: 'POST' }],
+      ['/api/hermes/kanban/task-1/home-subscribe/telegram?board=project-a', { method: 'DELETE' }],
       ['/api/hermes/kanban/task-1/log?board=default&tail=4000'],
       ['/api/hermes/kanban/diagnostics?board=default&task=task-1&severity=warning'],
       ['/api/hermes/kanban/task-1/reclaim?board=project-a', { method: 'POST', body: JSON.stringify({ reason: 'stale' }) }],

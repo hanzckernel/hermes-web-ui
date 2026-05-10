@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import * as kanbanApi from '@/api/hermes/kanban'
-import type { KanbanTask, KanbanStats, KanbanAssignee, KanbanBoard, KanbanCapabilities, KanbanDiagnosticsOptions, KanbanDispatchOptions, KanbanBulkUpdateRequest } from '@/api/hermes/kanban'
+import type { KanbanTask, KanbanStats, KanbanAssignee, KanbanBoard, KanbanCapabilities, KanbanDiagnosticsOptions, KanbanDispatchOptions, KanbanBulkUpdateRequest, KanbanHomeChannel } from '@/api/hermes/kanban'
 
 export const KANBAN_SELECTED_BOARD_STORAGE_KEY = 'hermes.kanban.selectedBoard'
 export const DEFAULT_KANBAN_BOARD = 'default'
@@ -37,6 +37,7 @@ export const useKanbanStore = defineStore('kanban', () => {
   const stats = ref<KanbanStats | null>(null)
   const assignees = ref<KanbanAssignee[]>([])
   const boards = ref<KanbanBoard[]>([])
+  const homeChannels = ref<KanbanHomeChannel[]>([])
   const capabilities = ref<KanbanCapabilities | null>(null)
   const loading = ref(false)
   const boardsLoading = ref(false)
@@ -52,6 +53,7 @@ export const useKanbanStore = defineStore('kanban', () => {
   let tasksRequestSeq = 0
   let statsRequestSeq = 0
   let assigneesRequestSeq = 0
+  let homeChannelsRequestSeq = 0
   let loadingRequestSeq = 0
   let eventStreamSeq = 0
   let eventSocket: WebSocket | null = null
@@ -118,6 +120,7 @@ export const useKanbanStore = defineStore('kanban', () => {
     tasks.value = []
     stats.value = null
     assignees.value = []
+    homeChannels.value = []
   }
 
   function clearEventTimers() {
@@ -326,6 +329,19 @@ export const useKanbanStore = defineStore('kanban', () => {
     }
   }
 
+  async function fetchHomeChannels(taskId?: string) {
+    assertCapabilityStatus('homeSubscriptions', ['supported', 'partial'])
+    const { seq, generation, board } = nextRequestContext(() => ++homeChannelsRequestSeq)
+    try {
+      const nextHomeChannels = await kanbanApi.getHomeChannels({ board, taskId })
+      if (isCurrentRequest(seq, generation, board, homeChannelsRequestSeq)) homeChannels.value = nextHomeChannels
+      return nextHomeChannels
+    } catch (err) {
+      if (isCurrentRequest(seq, generation, board, homeChannelsRequestSeq)) console.error('Failed to fetch kanban home channels:', err)
+      throw err
+    }
+  }
+
   async function createTask(data: { title: string; body?: string; assignee?: string; priority?: number; tenant?: string }) {
     const board = selectedBoard.value
     const task = await kanbanApi.createTask(data, { board })
@@ -409,6 +425,22 @@ export const useKanbanStore = defineStore('kanban', () => {
     return result
   }
 
+  async function subscribeHome(taskId: string, platform: string) {
+    assertCapabilityStatus('homeSubscriptions', ['supported', 'partial'])
+    const board = selectedBoard.value
+    const result = await kanbanApi.subscribeHome(taskId, platform, { board })
+    if (board === selectedBoard.value) await fetchHomeChannels(taskId)
+    return result
+  }
+
+  async function unsubscribeHome(taskId: string, platform: string) {
+    assertCapabilityStatus('homeSubscriptions', ['supported', 'partial'])
+    const board = selectedBoard.value
+    const result = await kanbanApi.unsubscribeHome(taskId, platform, { board })
+    if (board === selectedBoard.value) await fetchHomeChannels(taskId)
+    return result
+  }
+
   async function getTaskLog(taskId: string, tail?: number) {
     assertCapability('taskLog')
     return kanbanApi.getTaskLog(taskId, { board: selectedBoard.value, tail })
@@ -469,6 +501,7 @@ export const useKanbanStore = defineStore('kanban', () => {
     stats,
     assignees,
     boards,
+    homeChannels,
     capabilities,
     activeBoards,
     isCapabilitySupported,
@@ -483,6 +516,7 @@ export const useKanbanStore = defineStore('kanban', () => {
     fetchTasks,
     fetchStats,
     fetchAssignees,
+    fetchHomeChannels,
     createTask,
     createBoard,
     archiveSelectedBoard,
@@ -494,6 +528,8 @@ export const useKanbanStore = defineStore('kanban', () => {
     linkTasks,
     unlinkTasks,
     bulkUpdateTasks,
+    subscribeHome,
+    unsubscribeHome,
     getTaskLog,
     getDiagnostics,
     reclaimTask,
