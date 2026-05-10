@@ -132,8 +132,16 @@ export interface KanbanCapabilityStatus {
   requiresBoard: boolean
 }
 
+export interface KanbanBackendAdapterMetadata {
+  kind: 'cli'
+  mode: 'bridge'
+  canonicalProxy: 'missing'
+  notes?: string[]
+}
+
 export interface KanbanCapabilities {
   source: 'hermes-cli'
+  adapter?: KanbanBackendAdapterMetadata
   supports: Record<string, boolean>
   missing: string[]
   capabilities?: KanbanCapabilityStatus[]
