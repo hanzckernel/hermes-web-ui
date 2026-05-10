@@ -250,6 +250,31 @@ describe('kanban controller', () => {
     expect(c.body.session).toMatchObject({ id: 'session-1', title: 'Session one' })
   })
 
+  it('enriches archived task details using the latest run profile', async () => {
+    mockGetTask.mockResolvedValue({
+      task: { id: 'task-archived', status: 'archived' },
+      runs: [{ profile: 'reviewer' }],
+      comments: [],
+      events: [],
+    })
+    mockFindLatestExactSessionId.mockResolvedValue('session-archived')
+    mockGetExactSessionDetail.mockResolvedValue({
+      title: 'Archived session',
+      source: 'codex',
+      model: 'gpt-5.5',
+      started_at: 1,
+      ended_at: 2,
+      messages: [],
+    })
+
+    const c = ctx({ params: { id: 'task-archived' }, query: { board: 'project-a' } })
+    await ctrl.get(c)
+
+    expect(mockFindLatestExactSessionId).toHaveBeenCalledWith('task-archived', 'reviewer')
+    expect(mockGetExactSessionDetail).toHaveBeenCalledWith('session-archived', 'reviewer')
+    expect(c.body.session).toMatchObject({ id: 'session-archived', title: 'Archived session' })
+  })
+
   it('prefers exact kanban-task session matches over later sessions that merely reference the task id', async () => {
     mockGetTask.mockResolvedValue({
       task: { id: 't_348bfaaf', status: 'done' },

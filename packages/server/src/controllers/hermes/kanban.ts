@@ -208,8 +208,9 @@ export async function get(ctx: Context) {
       return
     }
 
-    // For completed tasks, find related session from the worker's profile DB
-    if (detail.task.status === 'done' && detail.runs.length > 0) {
+    // For terminal tasks, find related session from the worker's profile DB.
+    // Archived tasks can still carry the worker result/session users need to inspect.
+    if ((detail.task.status === 'done' || detail.task.status === 'archived') && detail.runs.length > 0) {
       const profile = getLatestRunProfile(detail)
       if (profile) {
         try {
