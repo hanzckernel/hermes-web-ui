@@ -20,6 +20,76 @@ function resolveHermesBin(): string {
 }
 
 const HERMES_BIN = resolveHermesBin()
+const CLI_MAX_BUFFER_BYTES = 50 * 1024 * 1024
+const CLI_TIMEOUT_MS = 30000
+
+export interface KanbanBackendAdapterMetadata {
+  kind: 'cli'
+  mode: 'bridge'
+  canonicalProxy: 'missing'
+  notes: string[]
+}
+
+interface KanbanBackendAdapter {
+  metadata: KanbanBackendAdapterMetadata
+  execText(args: string[], logMessage: string, failureMessage: string): Promise<string>
+  execJson<T>(args: string[], logMessage: string, failureMessage: string): Promise<T>
+  execVoid(args: string[], logMessage: string, failureMessage: string): Promise<void>
+  spawn(args: string[]): ChildProcess
+}
+
+function createCliKanbanAdapter(): KanbanBackendAdapter {
+  async function execText(args: string[], logMessage: string, failureMessage: string): Promise<string> {
+    try {
+      const { stdout } = await execFileAsync(HERMES_BIN, args, {
+        maxBuffer: CLI_MAX_BUFFER_BYTES,
+        timeout: CLI_TIMEOUT_MS,
+        ...execOpts,
+      })
+      return stdout
+    } catch (err: any) {
+      logger.error(err, logMessage)
+      throw new Error(`${failureMessage}: ${err.message}`)
+    }
+  }
+
+  return {
+    metadata: {
+      kind: 'cli',
+      mode: 'bridge',
+      canonicalProxy: 'missing',
+      notes: [
+        'WUI currently bridges to Hermes kanban CLI commands with explicit board context.',
+        'A plugin-native canonical proxy is still deferred.',
+      ],
+    },
+    execText,
+    async execJson<T>(args: string[], logMessage: string, failureMessage: string) {
+      const stdout = await execText(args, logMessage, failureMessage)
+      try {
+        return JSON.parse(stdout) as T
+      } catch (err: any) {
+        logger.error(err, logMessage)
+        throw new Error(`${failureMessage}: ${err.message}`)
+      }
+    },
+    async execVoid(args: string[], logMessage: string, failureMessage: string) {
+      await execText(args, logMessage, failureMessage)
+    },
+    spawn(args: string[]) {
+      return spawn(HERMES_BIN, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        ...execOpts,
+      })
+    },
+  }
+}
+
+const kanbanAdapter = createCliKanbanAdapter()
+
+export function getKanbanAdapterMetadata(): KanbanBackendAdapterMetadata {
+  return kanbanAdapter.metadata
+}
 
 export function normalizeBoardSlug(board?: string | null): string {
   if (board === undefined || board === null) return 'default'
@@ -130,6 +200,7 @@ export interface KanbanBoardCreateOptions {
 
 export interface KanbanCapabilities {
   source: 'hermes-cli'
+  adapter: KanbanBackendAdapterMetadata
   supports: Record<string, boolean>
   missing: string[]
   capabilities: KanbanCapabilityStatus[]
@@ -203,17 +274,7 @@ export async function listBoards(opts?: { includeArchived?: boolean }): Promise<
   const args = ['kanban', 'boards', 'list', '--json']
   if (opts?.includeArchived) args.push('--all')
 
-  try {
-    const { stdout } = await execFileAsync(HERMES_BIN, args, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-    return JSON.parse(stdout)
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban boards list failed')
-    throw new Error(`Failed to list kanban boards: ${err.message}`)
-  }
+  return kanbanAdapter.execJson<KanbanBoard[]>(args, 'Hermes CLI: kanban boards list failed', 'Failed to list kanban boards')
 }
 
 async function findBoard(slug: string, includeArchived = true): Promise<KanbanBoard | null> {
@@ -231,15 +292,12 @@ export async function createBoard(opts: KanbanBoardCreateOptions): Promise<Kanba
   if (opts.switchCurrent) args.push('--switch')
 
   try {
-    await execFileAsync(HERMES_BIN, args, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
+    await kanbanAdapter.execVoid(args, 'Hermes CLI: kanban boards create failed', 'Failed to create kanban board')
     const board = await findBoard(slug)
     if (!board) throw new Error('created board was not returned by boards list')
     return board
   } catch (err: any) {
+    if (String(err?.message || '').startsWith('Failed to create kanban board:')) throw err
     logger.error(err, 'Hermes CLI: kanban boards create failed')
     throw new Error(`Failed to create kanban board: ${err.message}`)
   }
@@ -249,16 +307,7 @@ export async function archiveBoard(slugInput: string): Promise<void> {
   const slug = normalizeBoardSlug(slugInput)
   if (slug === 'default') throw new Error('Cannot archive the default kanban board')
 
-  try {
-    await execFileAsync(HERMES_BIN, ['kanban', 'boards', 'rm', slug], {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban boards archive failed')
-    throw new Error(`Failed to archive kanban board: ${err.message}`)
-  }
+  await kanbanAdapter.execVoid(['kanban', 'boards', 'rm', slug], 'Hermes CLI: kanban boards archive failed', 'Failed to archive kanban board')
 }
 
 export async function getCapabilities(): Promise<KanbanCapabilities> {
@@ -281,12 +330,13 @@ export async function getCapabilities(): Promise<KanbanCapabilities> {
     { key: 'bulk', status: 'partial', reason: 'WUI applies supported bulk-equivalent CLI transitions per id and returns per-task outcomes; direct priority/status patch parity remains deferred', canonicalRoute: '/tasks/bulk', canonicalCommand: 'bulk-equivalent via complete/block/unblock/archive/assign', requiresBoard: true },
     { key: 'events', status: 'partial', reason: 'WUI exposes a board-scoped WebSocket bridge backed by the canonical `kanban watch` stream; payload is currently a refresh invalidation signal, not a typed event model', canonicalRoute: '/events', canonicalCommand: 'watch', requiresBoard: true },
     { key: 'homeSubscriptions', status: 'partial', reason: 'WUI exposes configured config.yaml home-channel toggles backed by notify-* CLI commands; env-overlay homes and plugin-native proxy parity remain deferred', canonicalRoute: '/home-channels and subscription routes', canonicalCommand: 'notify-*', requiresBoard: true },
+    { key: 'canonicalProxy', status: 'missing', reason: 'WUI still owns per-route bridge semantics over the CLI adapter; plugin-native canonical proxy/adapter contract remains the next architecture slice', canonicalRoute: '/api/hermes/kanban/*', requiresBoard: false },
   ]
   const supports = Object.fromEntries(capabilities.map(capability => [capability.key, capability.status === 'supported'])) as Record<string, boolean>
   const missing = capabilities
     .filter(capability => capability.status !== 'supported')
     .map(capability => capability.key)
-  return { source: 'hermes-cli', supports, missing, capabilities }
+  return { source: 'hermes-cli', adapter: getKanbanAdapterMetadata(), supports, missing, capabilities }
 }
 
 function parseJsonPayload(stdout: string): unknown[] {
@@ -315,10 +365,7 @@ export function buildWatchArgs(opts?: KanbanWatchOptions): string[] {
 }
 
 export function watchEvents(opts?: KanbanWatchOptions): ChildProcess {
-  return spawn(HERMES_BIN, buildWatchArgs(opts), {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    ...execOpts,
-  })
+  return kanbanAdapter.spawn(buildWatchArgs(opts))
 }
 
 function homeChannelFromConfig(platform: string, node: any): KanbanHomeChannel | null {
@@ -363,12 +410,8 @@ export async function listNotifySubscriptions(taskId?: string, opts?: KanbanBoar
   const args = [...boardArgs(opts?.board), 'notify-list']
   if (taskId?.trim()) args.push(taskId.trim())
   args.push('--json')
+  const stdout = await kanbanAdapter.execText(args, 'Hermes CLI: kanban notify-list failed', 'Failed to list kanban notifications')
   try {
-    const { stdout } = await execFileAsync(HERMES_BIN, args, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
     return parseJsonPayload(stdout) as KanbanNotifySubscription[]
   } catch (err: any) {
     logger.error(err, 'Hermes CLI: kanban notify-list failed')
@@ -390,17 +433,8 @@ export async function subscribeHome(taskId: string, platform: string, opts?: Kan
   if (!home) throw new Error(`No home channel configured for platform ${platform}`)
   const args = [...boardArgs(opts?.board), 'notify-subscribe', taskId, '--platform', platform, '--chat-id', home.chat_id]
   pushOptional(args, '--thread-id', home.thread_id)
-  try {
-    const { stdout } = await execFileAsync(HERMES_BIN, args, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-    return { ok: true, task_id: taskId, home_channel: home, output: stdout }
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban notify-subscribe failed')
-    throw new Error(`Failed to subscribe kanban home notifications: ${err.message}`)
-  }
+  const stdout = await kanbanAdapter.execText(args, 'Hermes CLI: kanban notify-subscribe failed', 'Failed to subscribe kanban home notifications')
+  return { ok: true, task_id: taskId, home_channel: home, output: stdout }
 }
 
 export async function unsubscribeHome(taskId: string, platform: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output: string }> {
@@ -409,61 +443,25 @@ export async function unsubscribeHome(taskId: string, platform: string, opts?: K
   if (!home) throw new Error(`No home channel configured for platform ${platform}`)
   const args = [...boardArgs(opts?.board), 'notify-unsubscribe', taskId, '--platform', platform, '--chat-id', home.chat_id]
   pushOptional(args, '--thread-id', home.thread_id)
-  try {
-    const { stdout } = await execFileAsync(HERMES_BIN, args, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-    return { ok: true, task_id: taskId, home_channel: home, output: stdout }
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban notify-unsubscribe failed')
-    throw new Error(`Failed to unsubscribe kanban home notifications: ${err.message}`)
-  }
+  const stdout = await kanbanAdapter.execText(args, 'Hermes CLI: kanban notify-unsubscribe failed', 'Failed to unsubscribe kanban home notifications')
+  return { ok: true, task_id: taskId, home_channel: home, output: stdout }
 }
 
 export async function linkTasks(parentId: string, childId: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; output: string }> {
-  try {
-    const { stdout } = await execFileAsync(HERMES_BIN, [...boardArgs(opts?.board), 'link', parentId, childId], {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-    return { ok: true, output: stdout }
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban link failed')
-    throw new Error(`Failed to link kanban tasks: ${err.message}`)
-  }
+  const stdout = await kanbanAdapter.execText([...boardArgs(opts?.board), 'link', parentId, childId], 'Hermes CLI: kanban link failed', 'Failed to link kanban tasks')
+  return { ok: true, output: stdout }
 }
 
 export async function unlinkTasks(parentId: string, childId: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; output: string }> {
-  try {
-    const { stdout } = await execFileAsync(HERMES_BIN, [...boardArgs(opts?.board), 'unlink', parentId, childId], {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-    return { ok: true, output: stdout }
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban unlink failed')
-    throw new Error(`Failed to unlink kanban tasks: ${err.message}`)
-  }
+  const stdout = await kanbanAdapter.execText([...boardArgs(opts?.board), 'unlink', parentId, childId], 'Hermes CLI: kanban unlink failed', 'Failed to unlink kanban tasks')
+  return { ok: true, output: stdout }
 }
 
 export async function addComment(taskId: string, body: string, opts?: KanbanBoardOptions & { author?: string }): Promise<{ ok: boolean; output: string }> {
   const args = [...boardArgs(opts?.board), 'comment', taskId, body]
   pushOptional(args, '--author', opts?.author)
-  try {
-    const { stdout } = await execFileAsync(HERMES_BIN, args, {
-      maxBuffer: 50 * 1024 * 1024,
-      timeout: 30000,
-      ...execOpts,
-    })
-    return { ok: true, output: stdout }
-  } catch (err: any) {
-    logger.error(err, 'Hermes CLI: kanban comment failed')
-    throw new Error(`Failed to comment on kanban task: ${err.message}`)
-  }
+  const stdout = await kanbanAdapter.execText(args, 'Hermes CLI: kanban comment failed', 'Failed to comment on kanban task')
+  return { ok: true, output: stdout }
 }
 
 export async function getTaskLog(taskId: string, opts?: KanbanBoardOptions & { tail?: number }): Promise<KanbanTaskLog> {

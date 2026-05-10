@@ -48,17 +48,31 @@ describe('hermes kanban service', () => {
     expect(mockExecFileAsync.mock.calls[2][1]).toEqual(['kanban', 'boards', 'rm', 'project-a'])
   })
 
+  it('keeps service context for adapter parse and post-create verification failures', async () => {
+    mockExecFileAsync.mockResolvedValueOnce({ stdout: 'not-json' })
+    await expect(service.listBoards()).rejects.toThrow('Failed to list kanban boards:')
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.any(SyntaxError), 'Hermes CLI: kanban boards list failed')
+
+    mockExecFileAsync
+      .mockResolvedValueOnce({ stdout: '' })
+      .mockResolvedValueOnce({ stdout: JSON.stringify([]) })
+    await expect(service.createBoard({ slug: 'project-a' })).rejects.toThrow('Failed to create kanban board: created board was not returned by boards list')
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.any(Error), 'Hermes CLI: kanban boards create failed')
+  })
+
   it('exposes capability metadata for WUI/canonical parity gaps', async () => {
     await expect(service.getCapabilities()).resolves.toMatchObject({
       source: 'hermes-cli',
+      adapter: { kind: 'cli', mode: 'bridge', canonicalProxy: 'missing' },
       supports: { boardsList: true, boardCreate: true, commentsWrite: true, dispatch: true, links: true },
-      missing: expect.arrayContaining(['cliCurrentSwitch', 'bulk', 'homeSubscriptions']),
+      missing: expect.arrayContaining(['cliCurrentSwitch', 'bulk', 'homeSubscriptions', 'canonicalProxy']),
       capabilities: expect.arrayContaining([
         expect.objectContaining({ key: 'commentsWrite', status: 'supported', canonicalCommand: 'comment', requiresBoard: true }),
         expect.objectContaining({ key: 'links', status: 'supported', canonicalRoute: '/links', canonicalCommand: 'link/unlink', requiresBoard: true }),
         expect.objectContaining({ key: 'bulk', status: 'partial', canonicalRoute: '/tasks/bulk', requiresBoard: true }),
         expect.objectContaining({ key: 'events', status: 'partial', canonicalRoute: '/events', canonicalCommand: 'watch', requiresBoard: true }),
         expect.objectContaining({ key: 'homeSubscriptions', status: 'partial', canonicalCommand: 'notify-*', requiresBoard: true }),
+        expect.objectContaining({ key: 'canonicalProxy', status: 'missing', canonicalRoute: '/api/hermes/kanban/*', requiresBoard: false }),
       ]),
     })
   })
@@ -95,6 +109,16 @@ describe('hermes kanban service', () => {
     expect(mockExecFileAsync.mock.calls[0][1]).toEqual(['kanban', '--board', 'project-a', 'notify-list', 'task-1', '--json'])
     expect(mockExecFileAsync.mock.calls[1][1]).toEqual(['kanban', '--board', 'project-a', 'notify-subscribe', 'task-1', '--platform', 'telegram', '--chat-id', 'chat-1', '--thread-id', 'topic-1'])
     expect(mockExecFileAsync.mock.calls[2][1]).toEqual(['kanban', '--board', 'project-a', 'notify-unsubscribe', 'task-1', '--platform', 'telegram', '--chat-id', 'chat-1', '--thread-id', 'topic-1'])
+  })
+
+  it('keeps service context for notify-list parse failures', async () => {
+    mockReadConfigYaml.mockResolvedValue({
+      gateway: { platforms: { telegram: { home_channel: 'chat-1' } } },
+    })
+    mockExecFileAsync.mockResolvedValueOnce({ stdout: 'not-json' })
+
+    await expect(service.getHomeChannels({ board: 'project-a', taskId: 'task-1' })).rejects.toThrow('Failed to list kanban notifications:')
+    expect(mockLoggerError).toHaveBeenCalledWith(expect.any(SyntaxError), 'Hermes CLI: kanban notify-list failed')
   })
 
   it('builds link/unlink and bulk-equivalent task commands with explicit board', async () => {
