@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockExecFileAsync = vi.hoisted(() => vi.fn())
 const mockLoggerError = vi.hoisted(() => vi.fn())
+const mockReadConfigYaml = vi.hoisted(() => vi.fn())
 
 vi.mock('util', () => ({
   promisify: () => mockExecFileAsync,
@@ -13,11 +14,16 @@ vi.mock('../../packages/server/src/services/logger', () => ({
   },
 }))
 
+vi.mock('../../packages/server/src/services/config-helpers', () => ({
+  readConfigYaml: mockReadConfigYaml,
+}))
+
 import * as service from '../../packages/server/src/services/hermes/hermes-kanban'
 
 describe('hermes kanban service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockReadConfigYaml.mockResolvedValue({})
   })
 
   it('lists boards without mutating or depending on CLI current', async () => {
@@ -52,6 +58,7 @@ describe('hermes kanban service', () => {
         expect.objectContaining({ key: 'links', status: 'supported', canonicalRoute: '/links', canonicalCommand: 'link/unlink', requiresBoard: true }),
         expect.objectContaining({ key: 'bulk', status: 'partial', canonicalRoute: '/tasks/bulk', requiresBoard: true }),
         expect.objectContaining({ key: 'events', status: 'partial', canonicalRoute: '/events', canonicalCommand: 'watch', requiresBoard: true }),
+        expect.objectContaining({ key: 'homeSubscriptions', status: 'partial', canonicalCommand: 'notify-*', requiresBoard: true }),
       ]),
     })
   })
@@ -59,6 +66,35 @@ describe('hermes kanban service', () => {
   it('builds board-scoped watch args for the kanban event bridge', () => {
     expect(service.buildWatchArgs({ board: 'Project_A', interval: 0.25 })).toEqual(['kanban', '--board', 'project_a', 'watch', '--interval', '0.25'])
     expect(service.buildWatchArgs()).toEqual(['kanban', '--board', 'default', 'watch', '--interval', '0.5'])
+  })
+
+  it('maps configured home channels to notify subscriptions with explicit board', async () => {
+    mockReadConfigYaml.mockResolvedValue({
+      gateway: {
+        platforms: {
+          telegram: { home_channel: { chat_id: 'chat-1', thread_id: 'topic-1', name: 'Ops' } },
+          discord: { home_channel: 'channel-1' },
+          slack: {},
+        },
+      },
+    })
+    mockExecFileAsync
+      .mockResolvedValueOnce({ stdout: JSON.stringify([{ task_id: 'task-1', platform: 'telegram', chat_id: 'chat-1', thread_id: 'topic-1', last_event_id: 7 }]) })
+      .mockResolvedValueOnce({ stdout: 'Subscribed telegram:chat-1:topic-1 to task-1\n' })
+      .mockResolvedValueOnce({ stdout: 'Unsubscribed from task-1\n' })
+
+    await expect(service.getHomeChannels({ board: 'project-a', taskId: 'task-1' })).resolves.toEqual({
+      home_channels: [
+        { platform: 'discord', chat_id: 'channel-1', thread_id: '', name: 'Home', subscribed: false },
+        { platform: 'telegram', chat_id: 'chat-1', thread_id: 'topic-1', name: 'Ops', subscribed: true },
+      ],
+    })
+    await expect(service.subscribeHome('task-1', 'telegram', { board: 'project-a' })).resolves.toMatchObject({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram', chat_id: 'chat-1', thread_id: 'topic-1' } })
+    await expect(service.unsubscribeHome('task-1', 'telegram', { board: 'project-a' })).resolves.toMatchObject({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram', chat_id: 'chat-1', thread_id: 'topic-1' } })
+
+    expect(mockExecFileAsync.mock.calls[0][1]).toEqual(['kanban', '--board', 'project-a', 'notify-list', 'task-1', '--json'])
+    expect(mockExecFileAsync.mock.calls[1][1]).toEqual(['kanban', '--board', 'project-a', 'notify-subscribe', 'task-1', '--platform', 'telegram', '--chat-id', 'chat-1', '--thread-id', 'topic-1'])
+    expect(mockExecFileAsync.mock.calls[2][1]).toEqual(['kanban', '--board', 'project-a', 'notify-unsubscribe', 'task-1', '--platform', 'telegram', '--chat-id', 'chat-1', '--thread-id', 'topic-1'])
   })
 
   it('builds link/unlink and bulk-equivalent task commands with explicit board', async () => {

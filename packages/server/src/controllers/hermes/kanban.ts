@@ -42,6 +42,7 @@ const MAX_LOG_TAIL_BYTES = 1_000_000
 const MAX_DISPATCH_TASKS = 100
 const MAX_DISPATCH_FAILURE_LIMIT = 100
 const MAX_BULK_TASKS = 100
+const PLATFORM_RE = /^[a-z0-9_-]{1,64}$/
 
 type PositiveIntegerResult = { value?: number; error?: string }
 type StringResult = { value?: string; error?: string }
@@ -108,6 +109,14 @@ function optionalTaskStatus(value: unknown, name: string): { value?: kanbanCli.K
 function requiredNonEmptyString(value: unknown, name: string): StringResult {
   if (typeof value !== 'string' || !value.trim()) return { error: `${name} is required` }
   return { value }
+}
+
+function requiredPlatform(value: unknown): StringResult {
+  const result = requiredNonEmptyString(value, 'platform')
+  if (result.error) return result
+  const platform = result.value!.trim()
+  if (!PLATFORM_RE.test(platform)) return { error: 'platform must be a valid platform key' }
+  return { value: platform }
 }
 
 function requiredNonEmptyStringArray(value: unknown, name: string): { value?: string[]; error?: string } {
@@ -453,6 +462,48 @@ export async function bulkUpdateTasks(ctx: Context) {
     })
   } catch (err: any) {
     ctx.status = 500
+    ctx.body = { error: err.message }
+  }
+}
+
+export async function getHomeChannels(ctx: Context) {
+  const taskId = firstQueryValue(ctx.query.task_id as string | string[] | undefined)
+  const task = optionalString(taskId, 'task_id')
+  if (rejectBadRequest(ctx, task.error)) return
+  const board = requestBoard(ctx)
+  if (!board) return
+  try {
+    ctx.body = await kanbanCli.getHomeChannels({ board, taskId: task.value })
+  } catch (err: any) {
+    ctx.status = 500
+    ctx.body = { error: err.message }
+  }
+}
+
+export async function subscribeHome(ctx: Context) {
+  const taskId = requiredNonEmptyString(ctx.params.id, 'task_id')
+  const platform = requiredPlatform(ctx.params.platform)
+  if (rejectBadRequest(ctx, taskId.error || platform.error)) return
+  const board = requestBoard(ctx)
+  if (!board) return
+  try {
+    ctx.body = await kanbanCli.subscribeHome(taskId.value!.trim(), platform.value!, { board })
+  } catch (err: any) {
+    ctx.status = /No home channel configured/.test(err.message) ? 404 : 500
+    ctx.body = { error: err.message }
+  }
+}
+
+export async function unsubscribeHome(ctx: Context) {
+  const taskId = requiredNonEmptyString(ctx.params.id, 'task_id')
+  const platform = requiredPlatform(ctx.params.platform)
+  if (rejectBadRequest(ctx, taskId.error || platform.error)) return
+  const board = requestBoard(ctx)
+  if (!board) return
+  try {
+    ctx.body = await kanbanCli.unsubscribeHome(taskId.value!.trim(), platform.value!, { board })
+  } catch (err: any) {
+    ctx.status = /No home channel configured/.test(err.message) ? 404 : 500
     ctx.body = { error: err.message }
   }
 }

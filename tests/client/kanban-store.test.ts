@@ -19,6 +19,9 @@ const mockKanbanApi = vi.hoisted(() => ({
   linkTasks: vi.fn(),
   unlinkTasks: vi.fn(),
   bulkUpdateTasks: vi.fn(),
+  getHomeChannels: vi.fn(),
+  subscribeHome: vi.fn(),
+  unsubscribeHome: vi.fn(),
   getTaskLog: vi.fn(),
   getDiagnostics: vi.fn(),
   reclaimTask: vi.fn(),
@@ -145,16 +148,20 @@ describe('Kanban store', () => {
   it('passes selected board to link and partial bulk parity actions', async () => {
     mockKanbanApi.getCapabilities.mockResolvedValue({
       source: 'hermes-cli',
-      supports: { links: true, bulk: false },
-      missing: ['bulk'],
+      supports: { links: true, bulk: false, homeSubscriptions: false },
+      missing: ['bulk', 'homeSubscriptions'],
       capabilities: [
         { key: 'links', status: 'supported', requiresBoard: true },
         { key: 'bulk', status: 'partial', requiresBoard: true },
+        { key: 'homeSubscriptions', status: 'partial', requiresBoard: true },
       ],
     })
     mockKanbanApi.linkTasks.mockResolvedValue({ ok: true })
     mockKanbanApi.unlinkTasks.mockResolvedValue({ ok: true })
     mockKanbanApi.bulkUpdateTasks.mockResolvedValue({ results: [{ id: 'task-1', ok: true }] })
+    mockKanbanApi.getHomeChannels.mockResolvedValue([{ platform: 'telegram', chat_id: 'chat-1', thread_id: '', name: 'Home', subscribed: true }])
+    mockKanbanApi.subscribeHome.mockResolvedValue({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
+    mockKanbanApi.unsubscribeHome.mockResolvedValue({ ok: true, task_id: 'task-1', home_channel: { platform: 'telegram' } })
     mockKanbanApi.listTasks.mockResolvedValue([])
     mockKanbanApi.getStats.mockResolvedValue({ total: 0, by_status: {}, by_assignee: {} })
     mockKanbanApi.getAssignees.mockResolvedValue([])
@@ -166,10 +173,17 @@ describe('Kanban store', () => {
     await store.linkTasks('task-1', 'task-2')
     await store.unlinkTasks('task-1', 'task-2')
     await expect(store.bulkUpdateTasks({ ids: ['task-1'], status: 'done', assignee: null, summary: 'closed' })).resolves.toEqual({ results: [{ id: 'task-1', ok: true }] })
+    await expect(store.fetchHomeChannels('task-1')).resolves.toEqual([{ platform: 'telegram', chat_id: 'chat-1', thread_id: '', name: 'Home', subscribed: true }])
+    await store.subscribeHome('task-1', 'telegram')
+    await store.unsubscribeHome('task-1', 'telegram')
 
     expect(mockKanbanApi.linkTasks).toHaveBeenCalledWith({ parent_id: 'task-1', child_id: 'task-2' }, { board: 'project-a' })
     expect(mockKanbanApi.unlinkTasks).toHaveBeenCalledWith({ parent_id: 'task-1', child_id: 'task-2' }, { board: 'project-a' })
     expect(mockKanbanApi.bulkUpdateTasks).toHaveBeenCalledWith({ ids: ['task-1'], status: 'done', assignee: null, summary: 'closed' }, { board: 'project-a' })
+    expect(mockKanbanApi.getHomeChannels).toHaveBeenCalledWith({ board: 'project-a', taskId: 'task-1' })
+    expect(mockKanbanApi.subscribeHome).toHaveBeenCalledWith('task-1', 'telegram', { board: 'project-a' })
+    expect(mockKanbanApi.unsubscribeHome).toHaveBeenCalledWith('task-1', 'telegram', { board: 'project-a' })
+    expect(store.homeChannels).toEqual([{ platform: 'telegram', chat_id: 'chat-1', thread_id: '', name: 'Home', subscribed: true }])
     expect(mockKanbanApi.listTasks).toHaveBeenCalledWith({ board: 'project-a', status: undefined, assignee: undefined })
   })
 

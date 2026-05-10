@@ -2,6 +2,7 @@ import { execFile, spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { promisify } from 'util'
 import { logger } from '../logger'
+import { readConfigYaml } from '../config-helpers'
 
 const execFileAsync = promisify(execFile)
 
@@ -179,6 +180,23 @@ export interface KanbanBulkTaskUpdateResult {
   results: KanbanBulkTaskResult[]
 }
 
+export interface KanbanHomeChannel {
+  platform: string
+  chat_id: string
+  thread_id: string
+  name: string
+  subscribed?: boolean
+}
+
+export interface KanbanNotifySubscription {
+  task_id: string
+  platform: string
+  chat_id: string
+  thread_id?: string | null
+  user_id?: string | null
+  last_event_id?: number
+}
+
 // ─── CLI wrappers ───────────────────────────────────────────────
 
 export async function listBoards(opts?: { includeArchived?: boolean }): Promise<KanbanBoard[]> {
@@ -262,7 +280,7 @@ export async function getCapabilities(): Promise<KanbanCapabilities> {
     { key: 'links', status: 'supported', canonicalRoute: '/links', canonicalCommand: 'link/unlink', requiresBoard: true },
     { key: 'bulk', status: 'partial', reason: 'WUI applies supported bulk-equivalent CLI transitions per id and returns per-task outcomes; direct priority/status patch parity remains deferred', canonicalRoute: '/tasks/bulk', canonicalCommand: 'bulk-equivalent via complete/block/unblock/archive/assign', requiresBoard: true },
     { key: 'events', status: 'partial', reason: 'WUI exposes a board-scoped WebSocket bridge backed by the canonical `kanban watch` stream; payload is currently a refresh invalidation signal, not a typed event model', canonicalRoute: '/events', canonicalCommand: 'watch', requiresBoard: true },
-    { key: 'homeSubscriptions', status: 'missing', reason: 'Deferred from current WUI parity batch', canonicalRoute: '/home-channels and subscription routes', canonicalCommand: 'notify-*', requiresBoard: true },
+    { key: 'homeSubscriptions', status: 'partial', reason: 'WUI exposes configured config.yaml home-channel toggles backed by notify-* CLI commands; env-overlay homes and plugin-native proxy parity remain deferred', canonicalRoute: '/home-channels and subscription routes', canonicalCommand: 'notify-*', requiresBoard: true },
   ]
   const supports = Object.fromEntries(capabilities.map(capability => [capability.key, capability.status === 'supported'])) as Record<string, boolean>
   const missing = capabilities
@@ -301,6 +319,107 @@ export function watchEvents(opts?: KanbanWatchOptions): ChildProcess {
     stdio: ['ignore', 'pipe', 'pipe'],
     ...execOpts,
   })
+}
+
+function homeChannelFromConfig(platform: string, node: any): KanbanHomeChannel | null {
+  const raw = node?.home_channel ?? node?.homeChannel
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    const chatId = raw.trim()
+    if (!chatId) return null
+    return { platform, chat_id: chatId, thread_id: '', name: 'Home' }
+  }
+  if (typeof raw !== 'object') return null
+  const chatId = raw.chat_id ?? raw.chatId ?? raw.channel_id ?? raw.channelId
+  if (chatId === undefined || chatId === null || String(chatId).trim() === '') return null
+  const threadId = raw.thread_id ?? raw.threadId ?? ''
+  const name = raw.name ?? 'Home'
+  return { platform, chat_id: String(chatId), thread_id: threadId === undefined || threadId === null ? '' : String(threadId), name: String(name || 'Home') }
+}
+
+export async function listConfiguredHomeChannels(): Promise<KanbanHomeChannel[]> {
+  const config = await readConfigYaml()
+  const platforms = (config.gateway?.platforms ?? config.platforms) as Record<string, any> | undefined
+  if (!platforms || typeof platforms !== 'object') return []
+  return Object.entries(platforms)
+    .map(([platform, node]) => homeChannelFromConfig(platform, node))
+    .filter((home): home is KanbanHomeChannel => Boolean(home))
+    .sort((a, b) => a.platform.localeCompare(b.platform))
+}
+
+function notifySubKey(sub: KanbanNotifySubscription): string {
+  return `${sub.platform}\u0000${String(sub.chat_id)}\u0000${String(sub.thread_id || '')}`
+}
+
+function homeKey(home: KanbanHomeChannel): string {
+  return `${home.platform}\u0000${String(home.chat_id)}\u0000${String(home.thread_id || '')}`
+}
+
+function findHomeChannel(homes: KanbanHomeChannel[], platform: string): KanbanHomeChannel | null {
+  return homes.find(home => home.platform === platform) || null
+}
+
+export async function listNotifySubscriptions(taskId?: string, opts?: KanbanBoardOptions): Promise<KanbanNotifySubscription[]> {
+  const args = [...boardArgs(opts?.board), 'notify-list']
+  if (taskId?.trim()) args.push(taskId.trim())
+  args.push('--json')
+  try {
+    const { stdout } = await execFileAsync(HERMES_BIN, args, {
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 30000,
+      ...execOpts,
+    })
+    return parseJsonPayload(stdout) as KanbanNotifySubscription[]
+  } catch (err: any) {
+    logger.error(err, 'Hermes CLI: kanban notify-list failed')
+    throw new Error(`Failed to list kanban notifications: ${err.message}`)
+  }
+}
+
+export async function getHomeChannels(opts?: KanbanBoardOptions & { taskId?: string }): Promise<{ home_channels: KanbanHomeChannel[] }> {
+  const homes = await listConfiguredHomeChannels()
+  if (!opts?.taskId?.trim()) return { home_channels: homes.map(home => ({ ...home, subscribed: false })) }
+  const subscriptions = await listNotifySubscriptions(opts.taskId, opts)
+  const subscribed = new Set(subscriptions.map(notifySubKey))
+  return { home_channels: homes.map(home => ({ ...home, subscribed: subscribed.has(homeKey(home)) })) }
+}
+
+export async function subscribeHome(taskId: string, platform: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output: string }> {
+  const homes = await listConfiguredHomeChannels()
+  const home = findHomeChannel(homes, platform)
+  if (!home) throw new Error(`No home channel configured for platform ${platform}`)
+  const args = [...boardArgs(opts?.board), 'notify-subscribe', taskId, '--platform', platform, '--chat-id', home.chat_id]
+  pushOptional(args, '--thread-id', home.thread_id)
+  try {
+    const { stdout } = await execFileAsync(HERMES_BIN, args, {
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 30000,
+      ...execOpts,
+    })
+    return { ok: true, task_id: taskId, home_channel: home, output: stdout }
+  } catch (err: any) {
+    logger.error(err, 'Hermes CLI: kanban notify-subscribe failed')
+    throw new Error(`Failed to subscribe kanban home notifications: ${err.message}`)
+  }
+}
+
+export async function unsubscribeHome(taskId: string, platform: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; task_id: string; home_channel: KanbanHomeChannel; output: string }> {
+  const homes = await listConfiguredHomeChannels()
+  const home = findHomeChannel(homes, platform)
+  if (!home) throw new Error(`No home channel configured for platform ${platform}`)
+  const args = [...boardArgs(opts?.board), 'notify-unsubscribe', taskId, '--platform', platform, '--chat-id', home.chat_id]
+  pushOptional(args, '--thread-id', home.thread_id)
+  try {
+    const { stdout } = await execFileAsync(HERMES_BIN, args, {
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 30000,
+      ...execOpts,
+    })
+    return { ok: true, task_id: taskId, home_channel: home, output: stdout }
+  } catch (err: any) {
+    logger.error(err, 'Hermes CLI: kanban notify-unsubscribe failed')
+    throw new Error(`Failed to unsubscribe kanban home notifications: ${err.message}`)
+  }
 }
 
 export async function linkTasks(parentId: string, childId: string, opts?: KanbanBoardOptions): Promise<{ ok: boolean; output: string }> {
