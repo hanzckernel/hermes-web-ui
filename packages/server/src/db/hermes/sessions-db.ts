@@ -849,7 +849,10 @@ interface RawSkillUsageEvent {
 
 function extractSkillNameFromViewContent(content: string): string {
   const match = content.match(/^\[skill_view\]\s+name=(.+?)(?:\s+\(|\s*$)/)
-  return match?.[1]?.trim() || ''
+  if (match?.[1]) return match[1].trim()
+
+  const parsed = parseJsonObject(content)
+  return typeof parsed?.name === 'string' ? parsed.name.trim() : ''
 }
 
 function extractSkillNameFromManageContent(content: string): string {
@@ -865,20 +868,64 @@ function extractSkillNameFromManageContent(content: string): string {
   return namedMatch?.[1]?.trim() || ''
 }
 
+function extractSkillToolCall(row: Record<string, unknown>): { action: SkillUsageAction; skill: string } | null {
+  const toolCallId = typeof row.tool_call_id === 'string' ? row.tool_call_id : ''
+  const rawToolCalls = typeof row.assistant_tool_calls === 'string' ? row.assistant_tool_calls : ''
+  if (!toolCallId || !rawToolCalls) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawToolCalls)
+  } catch {
+    return null
+  }
+
+  const calls = Array.isArray(parsed) ? parsed : [parsed]
+  for (const call of calls) {
+    if (!call || typeof call !== 'object') continue
+    const record = call as Record<string, unknown>
+    const functionRecord = record.function && typeof record.function === 'object'
+      ? record.function as Record<string, unknown>
+      : {}
+    const ids = [record.id, record.call_id, record.tool_call_id, functionRecord.call_id]
+      .filter((value): value is string => typeof value === 'string')
+    if (!ids.includes(toolCallId)) continue
+
+    const name = typeof functionRecord.name === 'string'
+      ? functionRecord.name
+      : typeof record.name === 'string'
+        ? record.name
+        : ''
+    const action: SkillUsageAction | null = name === 'skill_view'
+      ? 'view'
+      : name === 'skill_manage'
+        ? 'manage'
+        : null
+    if (!action) return null
+
+    const args = parseJsonObject(functionRecord.arguments ?? record.arguments)
+    const skill = typeof args?.name === 'string' ? args.name.trim() : ''
+    return { action, skill }
+  }
+
+  return null
+}
+
 function mapSkillUsageEvent(row: Record<string, unknown>): RawSkillUsageEvent | null {
   const content = typeof row.content === 'string' ? row.content : ''
   const toolName = typeof row.tool_name === 'string' ? row.tool_name : ''
+  const toolCall = extractSkillToolCall(row)
   const action: SkillUsageAction | null = toolName === 'skill_view' || content.startsWith('[skill_view]')
     ? 'view'
     : toolName === 'skill_manage' || content.startsWith('[skill_manage]')
       ? 'manage'
-      : null
+      : toolCall?.action ?? null
 
   if (!action) return null
 
-  const skill = action === 'view'
+  const skill = toolCall?.skill || (action === 'view'
     ? extractSkillNameFromViewContent(content)
-    : extractSkillNameFromManageContent(content)
+    : extractSkillNameFromManageContent(content))
 
   if (!skill) return null
 
@@ -904,9 +951,6 @@ export async function getSkillUsageStatsFromDb(
   const db = await openSessionDb()
 
   try {
-    const sourceFilter = tableHasColumn(db, 'sessions', 'source')
-      ? " AND COALESCE(s.source, '') != 'api_server'"
-      : ''
     const hasStartedIndex = db.prepare("PRAGMA index_list(sessions)").all()
       .some(index => String(index.name || '') === 'idx_sessions_started')
     const hasMessagesIndex = db.prepare("PRAGMA index_list(messages)").all()
@@ -919,21 +963,50 @@ export async function getSkillUsageStatsFromDb(
         m.tool_name IN ('skill_view', 'skill_manage')
         OR m.content LIKE '[skill_view]%'
         OR m.content LIKE '[skill_manage]%'
+        OR m.tool_call_id IS NOT NULL
       )
     `
     const recentRows = db.prepare(`
-      SELECT m.tool_name, SUBSTR(m.content, 1, 300) AS content, COALESCE(m.timestamp, s.started_at) AS timestamp
+      SELECT
+        m.tool_name,
+        m.tool_call_id,
+        SUBSTR(m.content, 1, 300) AS content,
+        COALESCE(m.timestamp, s.started_at) AS timestamp,
+        (
+          SELECT a.tool_calls
+          FROM messages a
+          WHERE a.session_id = m.session_id
+            AND a.role = 'assistant'
+            AND m.tool_call_id IS NOT NULL
+            AND a.tool_calls LIKE '%' || m.tool_call_id || '%'
+          ORDER BY a.timestamp DESC
+          LIMIT 1
+        ) AS assistant_tool_calls
       FROM ${sessionsTable}
       JOIN ${messagesTable} ON m.session_id = s.id
-      WHERE s.started_at > ?${sourceFilter}
+      WHERE s.started_at > ?
         AND ${toolPredicate}
     `).all(since) as Record<string, unknown>[]
     const lateRows = db.prepare(`
-      SELECT m.tool_name, SUBSTR(m.content, 1, 300) AS content, COALESCE(m.timestamp, s.started_at) AS timestamp
+      SELECT
+        m.tool_name,
+        m.tool_call_id,
+        SUBSTR(m.content, 1, 300) AS content,
+        COALESCE(m.timestamp, s.started_at) AS timestamp,
+        (
+          SELECT a.tool_calls
+          FROM messages a
+          WHERE a.session_id = m.session_id
+            AND a.role = 'assistant'
+            AND m.tool_call_id IS NOT NULL
+            AND a.tool_calls LIKE '%' || m.tool_call_id || '%'
+          ORDER BY a.timestamp DESC
+          LIMIT 1
+        ) AS assistant_tool_calls
       FROM ${sessionsTable}
       JOIN ${messagesTable} ON m.session_id = s.id
       WHERE s.started_at <= ?
-        AND COALESCE(m.timestamp, s.started_at) > ?${sourceFilter}
+        AND COALESCE(m.timestamp, s.started_at) > ?
         AND ${toolPredicate}
     `).all(since, since) as Record<string, unknown>[]
 

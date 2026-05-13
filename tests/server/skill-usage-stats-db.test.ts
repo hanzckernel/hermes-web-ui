@@ -50,11 +50,12 @@ function insertToolResult(dir: string, row: {
   sessionId: string
   timestamp: number
   toolName?: string | null
+  toolCallId?: string | null
   content: string
 }) {
   const db = new DatabaseSync(join(dir, 'state.db'))
-  db.prepare('INSERT INTO messages (session_id, role, content, tool_name, timestamp) VALUES (?, ?, ?, ?, ?)')
-    .run(row.sessionId, 'tool', row.content, row.toolName ?? null, row.timestamp)
+  db.prepare('INSERT INTO messages (session_id, role, content, tool_call_id, tool_name, timestamp) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(row.sessionId, 'tool', row.content, row.toolCallId ?? null, row.toolName ?? null, row.timestamp)
   db.close()
 }
 
@@ -78,7 +79,7 @@ describe('Hermes skill usage analytics DB aggregation', () => {
     profileDir = null
   })
 
-  it('counts completed skill loads and edits from compact tool result rows inside the requested period', async () => {
+  it('counts completed skill loads and edits from compact tool result rows across CLI and API-server sessions inside the requested period', async () => {
     const now = 1_700_000_000
     profileDir = createStateDb()
     profileMock.getActiveProfileDir.mockReturnValue(profileDir)
@@ -116,11 +117,20 @@ describe('Hermes skill usage analytics DB aggregation', () => {
       content: 'noop',
     })
 
-    insertSession(profileDir, { id: 'web-local-copy', source: 'api_server', started_at: now - 30 })
+    insertSession(profileDir, { id: 'web-api-session', source: 'api_server', started_at: now - 30 })
+    insertAssistantToolCalls(profileDir, 'web-api-session', now - 22, [
+      {
+        id: 'call_api_skill_view',
+        call_id: 'call_api_skill_view',
+        type: 'function',
+        function: { name: 'skill_view', arguments: JSON.stringify({ name: 'api-server-skill' }) },
+      },
+    ])
     insertToolResult(profileDir, {
-      sessionId: 'web-local-copy',
+      sessionId: 'web-api-session',
       timestamp: now - 20,
-      content: '[skill_view] name=ignored-local-copy (1 chars)',
+      toolCallId: 'call_api_skill_view',
+      content: JSON.stringify({ success: true, name: 'api-server-skill', description: 'API-server JSON tool result' }),
     })
 
     insertSession(profileDir, { id: 'old-cli', source: 'cli', started_at: now - 10 * 86400 })
@@ -143,19 +153,20 @@ describe('Hermes skill usage analytics DB aggregation', () => {
     expect(result).toEqual({
       period_days: 7,
       summary: {
-        total_skill_loads: 4,
+        total_skill_loads: 5,
         total_skill_edits: 1,
-        total_skill_actions: 5,
-        distinct_skills_used: 3,
+        total_skill_actions: 6,
+        distinct_skills_used: 4,
       },
       by_day: [
         {
           date: '2023-11-14',
-          view_count: 4,
+          view_count: 5,
           manage_count: 1,
-          total_count: 5,
+          total_count: 6,
           skills: [
             { skill: 'hermes-agent', view_count: 2, manage_count: 1, total_count: 3 },
+            { skill: 'api-server-skill', view_count: 1, manage_count: 0, total_count: 1 },
             { skill: 'github-pr-workflow', view_count: 1, manage_count: 0, total_count: 1 },
             { skill: 'late-session-skill', view_count: 1, manage_count: 0, total_count: 1 },
           ],
@@ -167,15 +178,23 @@ describe('Hermes skill usage analytics DB aggregation', () => {
           view_count: 2,
           manage_count: 1,
           total_count: 3,
-          percentage: 60,
+          percentage: 50,
           last_used_at: now - 40,
+        },
+        {
+          skill: 'api-server-skill',
+          view_count: 1,
+          manage_count: 0,
+          total_count: 1,
+          percentage: 1 / 6 * 100,
+          last_used_at: now - 20,
         },
         {
           skill: 'github-pr-workflow',
           view_count: 1,
           manage_count: 0,
           total_count: 1,
-          percentage: 20,
+          percentage: 1 / 6 * 100,
           last_used_at: now - 35,
         },
         {
@@ -183,7 +202,7 @@ describe('Hermes skill usage analytics DB aggregation', () => {
           view_count: 1,
           manage_count: 0,
           total_count: 1,
-          percentage: 20,
+          percentage: 1 / 6 * 100,
           last_used_at: now - 40,
         },
       ],
