@@ -39,13 +39,57 @@ function collectLiteralTranslationKeys(): string[] {
   return [...keys].sort()
 }
 
-function hasPath(messages: Record<string, unknown>, key: string): boolean {
+function getPath(messages: Record<string, unknown>, key: string): unknown {
   let current: unknown = messages
   for (const part of key.split('.')) {
-    if (!current || typeof current !== 'object' || !(part in current)) return false
+    if (!current || typeof current !== 'object' || !(part in current)) return undefined
     current = (current as Record<string, unknown>)[part]
   }
-  return typeof current !== 'undefined'
+  return current
+}
+
+function hasPath(messages: Record<string, unknown>, key: string): boolean {
+  return typeof getPath(messages, key) !== 'undefined'
+}
+
+const SKILLS_USAGE_LOCALIZED_KEYS = [
+  'sidebar.skillsUsage',
+  'skillsUsage.title',
+  'skillsUsage.subtitle',
+  'skillsUsage.refresh',
+  'skillsUsage.periodSelector',
+  'skillsUsage.periodLabel',
+  'skillsUsage.summary',
+  'skillsUsage.totalActions',
+  'skillsUsage.loads',
+  'skillsUsage.edits',
+  'skillsUsage.distinctSkills',
+  'skillsUsage.topSkills',
+  'skillsUsage.dailyTrend',
+  'skillsUsage.periodSummary',
+  'skillsUsage.skill',
+  'skillsUsage.share',
+  'skillsUsage.lastUsed',
+  'skillsUsage.noData',
+  'skillsUsage.loadFailed',
+  'skillsUsage.otherSkills',
+]
+
+const SKILLS_USAGE_COMPACT_LABEL_LIMITS: Record<string, number> = {
+  'skillsUsage.totalActions': 12,
+  'skillsUsage.loads': 10,
+  'skillsUsage.edits': 10,
+  'skillsUsage.distinctSkills': 12,
+  'skillsUsage.topSkills': 16,
+  'skillsUsage.dailyTrend': 16,
+  'skillsUsage.skill': 10,
+  'skillsUsage.share': 10,
+  'skillsUsage.lastUsed': 12,
+  'skillsUsage.otherSkills': 16,
+}
+
+function labelLength(value: unknown): number {
+  return typeof value === 'string' ? Array.from(value.replace(/\{[^}]+\}/g, '')).length : Infinity
 }
 
 describe('i18n locale coverage', () => {
@@ -73,6 +117,35 @@ describe('i18n locale coverage', () => {
     )
 
     expect(missing).toEqual([])
+  })
+
+  it('localizes Skills Usage page copy in every non-English locale instead of falling back to English', () => {
+    const englishMessages = rawMessages.en
+    const untranslated = Object.entries(rawMessages).flatMap(([locale, localeMessages]) => {
+      if (locale === 'en') return []
+
+      return SKILLS_USAGE_LOCALIZED_KEYS.flatMap((key) => {
+        const localeValue = getPath(localeMessages, key)
+        if (typeof localeValue === 'undefined') return [`${locale}: ${key} missing`]
+        return localeValue === getPath(englishMessages, key) ? [`${locale}: ${key}`] : []
+      })
+    })
+
+    expect(untranslated).toEqual([])
+  })
+
+
+  it('keeps Skills Usage summary and table labels compact across locales', () => {
+    const oversized = Object.entries(rawMessages).flatMap(([locale, localeMessages]) =>
+      Object.entries(SKILLS_USAGE_COMPACT_LABEL_LIMITS).flatMap(([key, maxLength]) => {
+        const localeValue = getPath(localeMessages, key)
+        return labelLength(localeValue) > maxLength
+          ? [`${locale}: ${key} (${labelLength(localeValue)} > ${maxLength})`]
+          : []
+      }),
+    )
+
+    expect(oversized).toEqual([])
   })
 
   it('keeps the coverage scanner rooted in client source files', () => {
