@@ -39,8 +39,13 @@ function getNpmCliPath() {
   return npmCli || null
 }
 
-function getNpmBin() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+function getNpmBinCandidate() {
+  return join(getNodeBinDir(), process.platform === 'win32' ? 'npm.cmd' : 'npm')
+}
+
+function getNpmBinPath() {
+  const npmBin = getNpmBinCandidate()
+  return existsSync(npmBin) ? npmBin : null
 }
 
 function getGlobalPackageBin(root: string) {
@@ -55,12 +60,33 @@ function getCurrentNodeEnv() {
   }
 }
 
-function runNpm(args: string[], options: { timeout?: number } = {}) {
-  const npmCli = getNpmCliPath()
-  const command = npmCli ? process.execPath : getNpmBin()
-  const commandArgs = npmCli ? [npmCli, ...args] : args
+function quoteCmdArg(value: string) {
+  return /[\s&()^|<>"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+}
 
-  return execFileSync(command, commandArgs, {
+function getNpmInvocation(args: string[]) {
+  const npmCli = getNpmCliPath()
+  if (npmCli) {
+    return { command: process.execPath, args: [npmCli, ...args] }
+  }
+
+  const npmBin = getNpmBinPath()
+  if (!npmBin) {
+    throw new Error(`Unable to locate npm for ${process.execPath}`)
+  }
+
+  if (process.platform === 'win32') {
+    const comspec = process.env.ComSpec || process.env.COMSPEC || 'cmd.exe'
+    return { command: comspec, args: ['/d', '/s', '/c', [npmBin, ...args].map(quoteCmdArg).join(' ')] }
+  }
+
+  return { command: npmBin, args }
+}
+
+function runNpm(args: string[], options: { timeout?: number } = {}) {
+  const npm = getNpmInvocation(args)
+
+  return execFileSync(npm.command, npm.args, {
     encoding: 'utf-8',
     timeout: options.timeout,
     stdio: ['pipe', 'pipe', 'pipe'],
