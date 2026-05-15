@@ -12,6 +12,7 @@ export interface MockedRequest {
 
 interface MockHermesApiOptions {
   tokenValidationStatus?: number
+  initialProfileName?: 'default' | 'research'
 }
 
 const sampleModelGroup = {
@@ -76,6 +77,7 @@ export async function mockHermesApi(page: Page, options: MockHermesApiOptions = 
   const requests: MockedRequest[] = []
   const unexpectedRequests: MockedRequest[] = []
   const tokenValidationStatus = options.tokenValidationStatus ?? 200
+  let activeProfileName = options.initialProfileName ?? 'research'
 
   await page.route('**/*', async (route: Route) => {
     const request = route.request()
@@ -144,10 +146,34 @@ export async function mockHermesApi(page: Page, options: MockHermesApiOptions = 
     if (pathname === '/api/hermes/profiles') {
       await route.fulfill(jsonResponse({
         profiles: [
-          { name: 'default', active: false, model: 'test-model', gateway: 'test', alias: 'Default' },
-          { name: 'research', active: true, model: 'test-model', gateway: 'test', alias: 'Research' },
+          { name: 'default', active: activeProfileName === 'default', model: 'test-model', gateway: 'test', alias: 'Default' },
+          { name: 'research', active: activeProfileName === 'research', model: 'test-model', gateway: 'test', alias: 'Research' },
         ],
       }))
+      return
+    }
+
+    if (pathname === '/api/hermes/profiles/active') {
+      if (request.method() !== 'PUT') {
+        await route.fulfill(jsonResponse({ error: 'Method not allowed' }, 405))
+        return
+      }
+
+      let body: { name?: unknown }
+      try {
+        body = JSON.parse(request.postData() || '{}')
+      } catch {
+        await route.fulfill(jsonResponse({ error: 'Invalid JSON body' }, 400))
+        return
+      }
+
+      if (body.name !== 'default' && body.name !== 'research') {
+        await route.fulfill(jsonResponse({ error: 'Unknown profile' }, 400))
+        return
+      }
+
+      activeProfileName = body.name
+      await route.fulfill(jsonResponse({ success: true, active: activeProfileName }))
       return
     }
 
