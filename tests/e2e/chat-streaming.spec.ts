@@ -199,3 +199,124 @@ test('surfaces an empty completed run as an error instead of leaving chat stalle
   await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0)
   expect(api.unexpectedRequests).toEqual([])
 })
+
+test('renders tool trace and sends explicit approval decisions over the chat-run socket', async ({ page }) => {
+  await authenticate(page, TEST_ACCESS_KEY, 'research')
+  const api = await mockHermesApi(page)
+  await mockChatSocket(page)
+
+  await page.goto('/#/hermes/chat')
+
+  await sendChatMessage(page, 'Use write_file with approval')
+  const { run } = await waitForRun(page)
+
+  await page.evaluate((sid) => {
+    const socket = (window as any).__PW_CHAT_SOCKET__.latest
+    socket.__trigger('run.started', { event: 'run.started', session_id: sid, run_id: 'run-approval' })
+    socket.__trigger('tool.started', {
+      event: 'tool.started',
+      session_id: sid,
+      run_id: 'run-approval',
+      tool_call_id: 'tool-call-1',
+      tool: 'write_file',
+      preview: 'Writing approved file',
+      arguments: JSON.stringify({ path: '/tmp/approved.txt', content: 'hello' }),
+    })
+    socket.__trigger('approval.requested', {
+      event: 'approval.requested',
+      session_id: sid,
+      run_id: 'run-approval',
+      approval_id: 'approval-1',
+      command: 'write_file /tmp/approved.txt',
+      description: 'Allow write_file to create /tmp/approved.txt',
+      choices: ['once', 'deny'],
+      allow_permanent: false,
+    })
+  }, run.session_id)
+
+  await expect(page.getByText('write_file', { exact: true })).toBeVisible()
+  await expect(page.getByText('Writing approved file')).toBeVisible()
+  await expect(page.locator('.message.tool .tool-line')).toHaveCount(0)
+  await expect(page.locator('.tool-calls-panel .tool-call-name').filter({ hasText: 'write_file' })).toBeVisible()
+  await expect(page.getByText('Tool approval required')).toBeVisible()
+  await expect(page.getByText('Allow write_file to create /tmp/approved.txt')).toBeVisible()
+  await expect(page.getByText('write_file /tmp/approved.txt')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Allow once' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Allow session' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Deny' })).toBeVisible()
+
+  await page.evaluate((sid) => {
+    const socket = (window as any).__PW_CHAT_SOCKET__.latest
+    socket.__trigger('approval.resolved', {
+      event: 'approval.resolved',
+      session_id: sid,
+      run_id: 'run-approval',
+      approval_id: 'approval-other',
+      choice: 'deny',
+      resolved: true,
+    })
+  }, run.session_id)
+  await expect(page.getByText('Tool approval required')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Allow once' }).click()
+
+  await expect(page.getByText('Tool approval required')).toHaveCount(0)
+  await expect.poll(async () => page.evaluate(() => {
+    const emitted = (window as any).__PW_CHAT_SOCKET__.emitted
+    return emitted.filter((item: any) => item.event === 'approval.respond')
+  })).toEqual([
+    {
+      event: 'approval.respond',
+      payload: {
+        session_id: run.session_id,
+        approval_id: 'approval-1',
+        choice: 'once',
+      },
+    },
+  ])
+
+  await page.evaluate((sid) => {
+    const socket = (window as any).__PW_CHAT_SOCKET__.latest
+    socket.__trigger('approval.resolved', {
+      event: 'approval.resolved',
+      session_id: sid,
+      run_id: 'run-approval',
+      approval_id: 'approval-1',
+      choice: 'once',
+      resolved: true,
+    })
+    socket.__trigger('tool.completed', {
+      event: 'tool.completed',
+      session_id: sid,
+      run_id: 'run-approval',
+      tool_call_id: 'tool-call-1',
+      tool: 'write_file',
+      output: JSON.stringify({ ok: true, path: '/tmp/approved.txt' }),
+      duration: 42,
+    })
+    socket.__trigger('message.delta', {
+      event: 'message.delta',
+      session_id: sid,
+      run_id: 'run-approval',
+      delta: 'Delta-only approved tool result.',
+    })
+    socket.__trigger('run.completed', {
+      event: 'run.completed',
+      session_id: sid,
+      run_id: 'run-approval',
+      output: 'Completion fallback should stay hidden.',
+    })
+  }, run.session_id)
+
+  const persistedToolTrace = page.locator('.message.tool .tool-line').filter({ hasText: 'write_file' })
+  await expect(persistedToolTrace).toHaveCount(1)
+  await persistedToolTrace.click()
+  const toolDetails = page.locator('.message.tool .tool-details')
+  await expect(toolDetails).toContainText('/tmp/approved.txt')
+  await expect(toolDetails).toContainText('ok')
+  await expect(page.getByText('Delta-only approved tool result.')).toBeVisible()
+  await expect(page.getByText('Completion fallback should stay hidden.')).toHaveCount(0)
+  await expect(page.locator('.tool-calls-panel .tool-call-name').filter({ hasText: 'write_file' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0)
+  expect(api.unexpectedRequests).toEqual([])
+})
