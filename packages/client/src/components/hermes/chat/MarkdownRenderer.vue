@@ -4,8 +4,15 @@ import { useI18n } from 'vue-i18n'
 import { useMessage } from 'naive-ui'
 import type MarkdownIt from 'markdown-it'
 import MarkdownItConstructor from 'markdown-it'
+import 'katex/dist/katex.min.css'
 import { handleCodeBlockCopyClick, renderHighlightedCodeBlock } from './highlight'
 import { repairNestedMarkdownFences } from './markdownFenceRepair'
+import {
+  createMathRenderEnv,
+  installMathRenderer,
+  prepareMathMarkdown,
+  restoreMathPlaceholders,
+} from './mathRenderer'
 import {
   MERMAID_MAX_DIAGRAMS_PER_MESSAGE,
   MERMAID_MAX_SOURCE_LENGTH,
@@ -38,6 +45,8 @@ const md: MarkdownIt = new MarkdownItConstructor({
 
 const defaultFenceRenderer = md.renderer.rules.fence?.bind(md.renderer.rules)
 
+installMathRenderer(md)
+
 md.renderer.rules.fence = (tokens, idx, options, env, self) => {
   const token = tokens[idx]
   if (isMermaidFence(token.info)) {
@@ -66,7 +75,9 @@ function normalizeLocalFilePath(path: string): string {
 }
 
 const renderedHtml = computed(() => {
-  let html = md.render(repairNestedMarkdownFences(props.content))
+  const mathEnv = createMathRenderEnv()
+  const repairedContent = repairNestedMarkdownFences(props.content)
+  let html = md.render(prepareMathMarkdown(repairedContent), mathEnv)
 
   // Replace image src paths with download URLs
   html = html.replace(/\bsrc=(["'])([^"']+)\1/g, (match, quote, path) => {
@@ -118,7 +129,7 @@ const renderedHtml = computed(() => {
     const re = new RegExp(`(?<=[\\s>]|^)@(${escaped.join('|')})(?=\\s|$)`, 'gi')
     html = html.replace(re, '<span class="mention-highlight">@$1</span>')
   }
-  return html
+  return restoreMathPlaceholders(html, mathEnv)
 })
 
 function renderMermaidFallback(element: HTMLElement, source: string): void {
@@ -487,6 +498,38 @@ async function handleMarkdownClick(event: MouseEvent): Promise<void> {
     font-family: $font-code;
     font-size: 13px;
     color: $accent-primary;
+  }
+
+  .katex-display {
+    margin: 10px 0;
+    padding: 2px 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .katex {
+    max-width: 100%;
+  }
+
+  .math-fallback {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    vertical-align: middle;
+    background: $code-bg;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: $font-code;
+    font-size: 13px;
+    color: $accent-primary;
+    white-space: pre-wrap;
+  }
+
+  .math-fallback-display {
+    display: block;
+    margin: 10px 0;
+    padding: 8px 10px;
   }
 
   table {

@@ -42,6 +42,7 @@ vi.mock('@/api/hermes/download', () => ({
 }))
 
 import MarkdownRenderer from '@/components/hermes/chat/MarkdownRenderer.vue'
+import { MATH_RENDER_LIMITS } from '@/components/hermes/chat/mathRenderer'
 
 describe('MarkdownRenderer', () => {
   afterEach(() => {
@@ -286,6 +287,305 @@ describe('MarkdownRenderer', () => {
     expect(wrapper.findAll('.hljs-code-block')).toHaveLength(1)
     expect(wrapper.find('code.hljs').text()).toContain('```ts\nconst answer = 42\n```')
     expect(wrapper.find('.markdown-body').text()).toContain('Done outside.')
+  })
+
+  it('renders inline and display math formulas with KaTeX', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: [
+          'Euler identity: $e^{i\\pi}+1=0$.',
+          '',
+          '$$',
+          'E = mc^2',
+          '$$',
+        ].join('\n'),
+      },
+    })
+
+    expect(wrapper.findAll('.katex').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.find('.katex-display').exists()).toBe(true)
+    expect(wrapper.find('.markdown-body').text()).toContain('Euler identity')
+  })
+
+  it('does not treat paragraph-level double dollars as inline math', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: 'Keep paragraph $$x+1$$ literal.',
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').text()).toContain('$$x+1$$')
+  })
+
+  it('renders bracket-delimited math formulas', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: 'Inline \\(a+b\\) and block:\n\\[c+d\\]',
+      },
+    })
+
+    expect(wrapper.findAll('.katex').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.find('.katex-display').exists()).toBe(true)
+  })
+
+  it('falls back to readable text for malformed math while preserving surrounding markdown', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: 'Before $\\notacommand{}$ after **bold**',
+      },
+    })
+
+    expect(wrapper.find('.math-fallback').exists()).toBe(true)
+    expect(wrapper.find('.math-fallback').text()).toContain('\\notacommand')
+    expect(wrapper.find('strong').text()).toBe('bold')
+  })
+
+  it('does not render math inside inline code or fenced code blocks', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: [
+          'Inline code `$x+1$` remains literal.',
+          '',
+          '```math',
+          'E = mc^2',
+          '```',
+        ].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('code:not(.hljs)').text()).toBe('$x+1$')
+    expect(wrapper.find('.hljs-code-block').exists()).toBe(true)
+    expect(wrapper.find('.code-lang').text()).toBe('math')
+  })
+
+  it('renders math inside repaired outer markdown draft fences without parsing nested code examples', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: [
+          '```md',
+          '## Formula draft',
+          '',
+          'Inline $x^2$ renders.',
+          '',
+          '```md',
+          'Literal math example: $y^2$',
+          '```',
+          '```',
+        ].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Formula draft')
+    expect(wrapper.findAll('.katex')).toHaveLength(1)
+    expect(wrapper.find('code.hljs').text()).toContain('Literal math example: $y^2$')
+  })
+
+  it('keeps incomplete streaming display math readable instead of swallowing following markdown', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['Start', '$$', 'E = mc^2', '## Still heading'].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Still heading')
+    expect(wrapper.find('.markdown-body').text()).toContain('E = mc^2')
+  })
+
+  it('keeps same-line incomplete display math readable', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['Start', '$$ E = mc^2', '## Still heading'].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Still heading')
+    expect(wrapper.find('.markdown-body').text()).toContain('E = mc^2')
+  })
+
+  it('keeps incomplete bracket display math readable while streaming', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['Start', '\\[', 'E = mc^2', '## Still heading'].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Still heading')
+    expect(wrapper.find('.markdown-body').text()).toContain('E = mc^2')
+  })
+
+  it('renders completed bracket display math after a streaming prop update', async () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['Start', '\\[', 'E = mc^2', '## Still heading'].join('\n'),
+      },
+    })
+
+    await wrapper.setProps({
+      content: ['Start', '\\[', 'E = mc^2', '\\]', '## Still heading'].join('\n'),
+    })
+
+    expect(wrapper.find('.katex-display').exists()).toBe(true)
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Still heading')
+  })
+
+  it('keeps invalid streaming display close lines readable', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['Start', '$$', 'E = mc^2', '$$ not a valid close yet', '## Still heading'].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Still heading')
+    expect(wrapper.find('.markdown-body').text()).toContain('not a valid close yet')
+  })
+
+  it('does not let invalid backtick fence openers hide unclosed display math', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['``` bad ` info', '$$', 'E = mc^2', '## Still heading'].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.markdown-body').find('h2').text()).toBe('Still heading')
+    expect(wrapper.find('.markdown-body').text()).toContain('E = mc^2')
+  })
+
+  it('does not escape display math markers inside longer fenced code blocks', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: ['`````md', '````js', '$$', 'not math', '````', '`````'].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('code.hljs').text()).toContain('$$')
+    expect(wrapper.find('code.hljs').text()).toContain('not math')
+  })
+
+  it('falls back after the per-render math count limit', () => {
+    const content = Array.from({ length: MATH_RENDER_LIMITS.maxMathPerRender + 2 }, (_, index) => `$x_{${index}}$`).join(' ')
+    const wrapper = mount(MarkdownRenderer, {
+      props: { content },
+    })
+
+    expect(wrapper.findAll('.katex')).toHaveLength(MATH_RENDER_LIMITS.maxMathPerRender)
+    expect(wrapper.findAll('.math-fallback')).toHaveLength(2)
+  })
+
+  it('resets math count state between prop updates', async () => {
+    const limitedContent = Array.from({ length: MATH_RENDER_LIMITS.maxMathPerRender + 1 }, (_, index) => `$x_{${index}}$`).join(' ')
+    const wrapper = mount(MarkdownRenderer, {
+      props: { content: limitedContent },
+    })
+
+    expect(wrapper.findAll('.math-fallback')).toHaveLength(1)
+
+    await wrapper.setProps({ content: '$y+1$' })
+
+    expect(wrapper.findAll('.katex')).toHaveLength(1)
+    expect(wrapper.find('.math-fallback').exists()).toBe(false)
+  })
+
+  it('falls back for oversized inline and display math without breaking surrounding markdown', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: [
+          `Before $${'x'.repeat(MATH_RENDER_LIMITS.maxInlineMathLength + 1)}$ after`,
+          '',
+          '$$',
+          'y'.repeat(MATH_RENDER_LIMITS.maxDisplayMathLength + 1),
+          '$$',
+          '',
+          '**bold** still works.',
+        ].join('\n'),
+      },
+    })
+
+    expect(wrapper.findAll('.math-fallback')).toHaveLength(2)
+    expect(wrapper.findAll('.katex')).toHaveLength(0)
+    expect(wrapper.find('strong').text()).toBe('bold')
+  })
+
+  it('does not let KaTeX macro definitions leak between formulas', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: '$\\gdef\\foo{x}$ then $\\foo$',
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(true)
+    expect(wrapper.find('.math-fallback').exists()).toBe(true)
+    expect(wrapper.find('.math-fallback').text()).toContain('\\foo')
+  })
+
+  it('does not treat common currency or shell dollar text as math', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: [
+          'Prices are USD $20 and $30 today.',
+          'Do not create HTML from $20 <img src=x onerror=alert(1)> and $30.',
+          'Run `export FOO=$BAR` or echo $PATH/$HOME.',
+          'Use npm config set prefix $HOME/.npm-global.',
+          'Make expands target $@ and first prerequisite $<.',
+        ].join('\n'),
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(false)
+    expect(wrapper.find('.math-fallback').exists()).toBe(false)
+    const text = wrapper.find('.markdown-body').text()
+    expect(text).toContain('USD $20 and $30')
+    expect(text).toContain('$20 <img src=x onerror=alert(1)> and $30')
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('<img')
+    expect(text).toContain('$PATH/$HOME')
+    expect(text).toContain('$HOME/.npm-global')
+    expect(text).toContain('$@')
+    expect(text).toContain('$<')
+  })
+
+  it('still renders numeric-leading inline formulas when they are not currency-like text', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: 'Math $2+2=4$ and $1/n$ should render.',
+      },
+    })
+
+    expect(wrapper.findAll('.katex')).toHaveLength(2)
+    expect(wrapper.find('.math-fallback').exists()).toBe(false)
+  })
+
+  it('protects rendered math from mention and local-link postprocessing', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        mentionNames: ['alice'],
+        content: 'Formula $\\text{@alice /tmp/file.pdf}$ outside @alice now.',
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(true)
+    expect(wrapper.findAll('.mention-highlight')).toHaveLength(1)
+    expect(wrapper.find('.katex .mention-highlight').exists()).toBe(false)
+    expect(wrapper.find('.markdown-file-card').exists()).toBe(false)
+  })
+
+  it('does not render trusted KaTeX links or HTML extensions as clickable HTML', () => {
+    const wrapper = mount(MarkdownRenderer, {
+      props: {
+        content: 'Safe $x+1$ and unsafe $\\href{javascript:alert(1)}{x}$ plus $\\htmlClass{danger}{x}$',
+      },
+    })
+
+    expect(wrapper.find('.katex').exists()).toBe(true)
+    expect(wrapper.find('a[href^="javascript:"]').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('class="danger"')
   })
 
   it('renders mermaid fences as diagrams instead of raw highlighted code', async () => {
