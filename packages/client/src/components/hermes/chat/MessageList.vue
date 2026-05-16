@@ -41,9 +41,12 @@ const currentToolCalls = computed(() => {
   return [...tools].reverse();
 });
 
-const displayMessages = computed(() =>
-  chatStore.messages.filter((m) => {
-    if (m.role === "tool") return false;
+const displayMessages = computed(() => {
+  const currentToolIds = new Set(currentToolCalls.value.map((tool) => tool.id));
+  return chatStore.messages.filter((m) => {
+    if (m.role === "tool") {
+      return !!m.toolName && !(chatStore.isRunActive && currentToolIds.has(m.id));
+    }
     if (
       m.role === "assistant" &&
       m.isStreaming &&
@@ -54,8 +57,8 @@ const displayMessages = computed(() =>
       return false;
     }
     return true;
-  }),
-);
+  });
+});
 
 const queuedMessages = computed(() => {
   const sid = chatStore.activeSessionId;
