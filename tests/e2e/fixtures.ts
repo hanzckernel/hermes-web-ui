@@ -13,6 +13,7 @@ export interface MockedRequest {
 interface MockHermesApiOptions {
   tokenValidationStatus?: number
   initialProfileName?: 'default' | 'research'
+  sessions?: unknown[]
 }
 
 const sampleModelGroup = {
@@ -102,7 +103,7 @@ export async function mockHermesApi(page: Page, options: MockHermesApiOptions = 
     }
 
     if (pathname === '/api/hermes/sessions') {
-      await route.fulfill(jsonResponse({ sessions: [] }, tokenValidationStatus))
+      await route.fulfill(jsonResponse({ sessions: options.sessions ?? [] }, tokenValidationStatus))
       return
     }
 
@@ -249,6 +250,14 @@ function makeSocket(url, options) {
     },
     emit(event, payload) {
       state.emitted.push({ event, payload })
+      if (event === 'resume') {
+        const sessionId = payload && payload.session_id
+        const resumes = window.__PW_CHAT_SOCKET_RESUMES__ || {}
+        const response = sessionId ? resumes[sessionId] : null
+        if (response) {
+          setTimeout(() => this.__trigger('resumed', response), 0)
+        }
+      }
       return this
     },
     removeAllListeners() {

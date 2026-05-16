@@ -613,3 +613,208 @@ test('keeps unnamed tool trace messages out of the transcript after completion',
   await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0)
   expect(api.unexpectedRequests).toEqual([])
 })
+
+test('keeps unnamed resumed tool traces hidden after session reload', async ({ page }) => {
+  const sessionId = 'session-history-unnamed-tool'
+  const sessionSummary = {
+    id: sessionId,
+    source: 'api_server',
+    model: 'test-model',
+    title: 'Unnamed tool history',
+    preview: 'History answer visible.',
+    started_at: 1,
+    ended_at: 4,
+    last_active: 4,
+    message_count: 4,
+    tool_call_count: 1,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    billing_provider: 'test-provider',
+    estimated_cost_usd: 0,
+    actual_cost_usd: null,
+    cost_status: 'none',
+    workspace: null,
+  }
+  await authenticate(page, TEST_ACCESS_KEY, 'research')
+  await page.addInitScript((sid) => {
+    ;(window as any).__PW_CHAT_SOCKET_RESUMES__ = {
+      [sid]: {
+        session_id: sid,
+        isWorking: false,
+        events: [],
+        messages: [
+          {
+            id: 1,
+            session_id: sid,
+            role: 'user',
+            content: 'Resume unnamed internal tool',
+            tool_call_id: null,
+            tool_calls: null,
+            tool_name: null,
+            timestamp: 1,
+            token_count: null,
+            finish_reason: null,
+            reasoning: null,
+          },
+          {
+            id: 2,
+            session_id: sid,
+            role: 'assistant',
+            content: '',
+            tool_call_id: null,
+            tool_calls: [{ id: 'tool-resume-unnamed-1', type: 'function', function: { arguments: JSON.stringify({ internal: true }) } }],
+            tool_name: null,
+            timestamp: 2,
+            token_count: null,
+            finish_reason: 'tool_calls',
+            reasoning: null,
+          },
+          {
+            id: 3,
+            session_id: sid,
+            role: 'tool',
+            content: JSON.stringify({ internal: true, ok: true }),
+            tool_call_id: 'tool-resume-unnamed-1',
+            tool_calls: null,
+            tool_name: null,
+            timestamp: 3,
+            token_count: null,
+            finish_reason: null,
+            reasoning: null,
+          },
+          {
+            id: 4,
+            session_id: sid,
+            role: 'assistant',
+            content: 'History answer visible.',
+            tool_call_id: null,
+            tool_calls: null,
+            tool_name: null,
+            timestamp: 4,
+            token_count: null,
+            finish_reason: 'stop',
+            reasoning: null,
+          },
+        ],
+      },
+    }
+  }, sessionId)
+  const api = await mockHermesApi(page, { sessions: [sessionSummary] })
+  await mockChatSocket(page)
+
+  await page.goto('/#/hermes/chat')
+
+  await expect(page.getByText('History answer visible.')).toBeVisible()
+  await expect(page.locator('.message.tool .tool-line')).toHaveCount(0)
+  await expect(page.locator('.message.tool')).toHaveCount(0)
+  const resumeRequest = await page.waitForFunction((sid) => {
+    const state = (window as any).__PW_CHAT_SOCKET__
+    return state?.emitted?.some((item: any) => item.event === 'resume' && item.payload?.session_id === sid)
+  }, sessionId)
+  expect(await resumeRequest.jsonValue()).toBe(true)
+  expect(api.unexpectedRequests).toEqual([])
+})
+
+test('restores named resumed tool traces from assistant tool calls after session reload', async ({ page }) => {
+  const sessionId = 'session-history-named-tool'
+  const sessionSummary = {
+    id: sessionId,
+    source: 'api_server',
+    model: 'test-model',
+    title: 'Named tool history',
+    preview: 'Named history answer visible.',
+    started_at: 1,
+    ended_at: 4,
+    last_active: 4,
+    message_count: 4,
+    tool_call_count: 1,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    reasoning_tokens: 0,
+    billing_provider: 'test-provider',
+    estimated_cost_usd: 0,
+    actual_cost_usd: null,
+    cost_status: 'none',
+    workspace: null,
+  }
+  await authenticate(page, TEST_ACCESS_KEY, 'research')
+  await page.addInitScript((sid) => {
+    ;(window as any).__PW_CHAT_SOCKET_RESUMES__ = {
+      [sid]: {
+        session_id: sid,
+        isWorking: false,
+        events: [],
+        messages: [
+          {
+            id: 1,
+            session_id: sid,
+            role: 'user',
+            content: 'Resume named tool',
+            tool_call_id: null,
+            tool_calls: null,
+            tool_name: null,
+            timestamp: 1,
+            token_count: null,
+            finish_reason: null,
+            reasoning: null,
+          },
+          {
+            id: 2,
+            session_id: sid,
+            role: 'assistant',
+            content: '',
+            tool_call_id: null,
+            tool_calls: [{ id: 'tool-resume-named-1', type: 'function', function: { name: 'read_file', arguments: JSON.stringify({ path: '/tmp/history.txt' }) } }],
+            tool_name: null,
+            timestamp: 2,
+            token_count: null,
+            finish_reason: 'tool_calls',
+            reasoning: null,
+          },
+          {
+            id: 3,
+            session_id: sid,
+            role: 'tool',
+            content: JSON.stringify({ ok: true, path: '/tmp/history.txt' }),
+            tool_call_id: 'tool-resume-named-1',
+            tool_calls: null,
+            tool_name: null,
+            timestamp: 3,
+            token_count: null,
+            finish_reason: null,
+            reasoning: null,
+          },
+          {
+            id: 4,
+            session_id: sid,
+            role: 'assistant',
+            content: 'Named history answer visible.',
+            tool_call_id: null,
+            tool_calls: null,
+            tool_name: null,
+            timestamp: 4,
+            token_count: null,
+            finish_reason: 'stop',
+            reasoning: null,
+          },
+        ],
+      },
+    }
+  }, sessionId)
+  const api = await mockHermesApi(page, { sessions: [sessionSummary] })
+  await mockChatSocket(page)
+
+  await page.goto('/#/hermes/chat')
+
+  await expect(page.getByText('Named history answer visible.')).toBeVisible()
+  const restoredTrace = page.locator('.message.tool .tool-line').filter({ hasText: 'read_file' })
+  await expect(restoredTrace).toHaveCount(1)
+  await restoredTrace.click()
+  await expect(page.locator('.message.tool .tool-details')).toContainText('/tmp/history.txt')
+  expect(api.unexpectedRequests).toEqual([])
+})
