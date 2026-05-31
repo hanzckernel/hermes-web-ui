@@ -9,11 +9,22 @@ import { app } from 'electron'
 import { webuiServerEntry, webuiDir, hermesBin, webUiHome, hermesHome, tokenFile, pythonDir } from './paths'
 
 const DEFAULT_PORT = 8748
-const READY_TIMEOUT_MS = 30_000
+const DEFAULT_READY_TIMEOUT_MS = 30_000
 const execFileAsync = promisify(execFile)
 
 let serverProc: ChildProcess | null = null
 let cachedToken: string | null = null
+
+function envPositiveInt(name: string): number | undefined {
+  const raw = process.env[name]
+  if (!raw) return undefined
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function readyTimeoutMs(): number {
+  return envPositiveInt('HERMES_DESKTOP_READY_TIMEOUT_MS') || DEFAULT_READY_TIMEOUT_MS
+}
 
 function ensureToken(): string {
   if (cachedToken) return cachedToken
@@ -199,6 +210,9 @@ export async function startWebUiServer(port = DEFAULT_PORT): Promise<string> {
   const bundledPython = isWin
     ? join(pythonDir(), 'python.exe')
     : join(pythonDir(), 'bin', 'python3')
+  const bundledPythonNoWindow = isWin
+    ? join(pythonDir(), 'pythonw.exe')
+    : bundledPython
   const bridgePort = await getFreeTcpPort()
   const workerPortBase = await getFreeTcpPortInRange(20000, 59000)
   const loginShellPath = await getLoginShellPath()
@@ -219,6 +233,7 @@ export async function startWebUiServer(port = DEFAULT_PORT): Promise<string> {
     HERMES_DESKTOP: 'true',
     HERMES_BIN: hermesBin(),
     HERMES_AGENT_BRIDGE_PYTHON: bundledPython,
+    HERMES_AGENT_CLI_PYTHON: existsSync(bundledPythonNoWindow) ? bundledPythonNoWindow : bundledPython,
     HERMES_AGENT_ROOT: pythonDir(),
     // Force TCP loopback for the agent bridge. The default `ipc:///tmp/...`
     // unix socket is rejected on macOS in some EDR/sandbox setups (silent
@@ -256,6 +271,7 @@ export async function startWebUiServer(port = DEFAULT_PORT): Promise<string> {
   serverProc = spawn(process.execPath, [entry], {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   })
 
   serverProc.stdout?.on('data', (chunk: Buffer) => {
@@ -272,7 +288,7 @@ export async function startWebUiServer(port = DEFAULT_PORT): Promise<string> {
     }
   })
 
-  await waitForReady(port, READY_TIMEOUT_MS)
+  await waitForReady(port, readyTimeoutMs())
   return getServerUrl(port)
 }
 
