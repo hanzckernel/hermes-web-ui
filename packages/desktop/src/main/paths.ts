@@ -23,12 +23,69 @@ export function webuiServerEntry(): string {
   return join(webuiDir(), 'dist', 'server', 'index.js')
 }
 
-// Bundled Python directory.
+export function runtimePlatformKey(): string {
+  return `${osLabel}-${archLabel}`
+}
+
+export function desktopRuntimeDir(): string {
+  const override = process.env.HERMES_DESKTOP_RUNTIME_DIR?.trim()
+  if (override) return resolve(override)
+  return join(webUiHome(), 'desktop-runtime', runtimePlatformKey())
+}
+
+function packagedResourceDir(name: string): string {
+  return resolve(process.resourcesPath, name)
+}
+
 // dev:  packages/desktop/resources/python/<os>-<arch>
-// prod: <resources>/python
+// prod: <resources>/python when present, otherwise downloaded runtime cache.
 export function pythonDir(): string {
-  if (app.isPackaged) return resolve(process.resourcesPath, 'python')
-  return resolve(app.getAppPath(), 'resources', 'python', `${osLabel}-${archLabel}`)
+  if (app.isPackaged) {
+    const packaged = packagedResourceDir('python')
+    return existsSync(packaged) ? packaged : join(desktopRuntimeDir(), 'python')
+  }
+  return resolve(app.getAppPath(), 'resources', 'python', runtimePlatformKey())
+}
+
+export function nodeDir(): string {
+  if (app.isPackaged) {
+    const packaged = packagedResourceDir('node')
+    return existsSync(packaged) ? packaged : join(desktopRuntimeDir(), 'node')
+  }
+  return resolve(app.getAppPath(), 'resources', 'node', runtimePlatformKey())
+}
+
+export function nodeBinDir(): string {
+  const dir = nodeDir()
+  return isWin ? dir : join(dir, 'bin')
+}
+
+export function bundledNode(): string {
+  return isWin ? join(nodeDir(), 'node.exe') : join(nodeBinDir(), 'node')
+}
+
+export function gitDir(): string {
+  if (app.isPackaged) {
+    const packaged = packagedResourceDir('git')
+    return existsSync(packaged) ? packaged : join(desktopRuntimeDir(), 'git')
+  }
+  return resolve(app.getAppPath(), 'resources', 'git', runtimePlatformKey())
+}
+
+export function gitPathDirs(): string[] {
+  if (!isWin) return []
+  const dir = gitDir()
+  return [
+    join(dir, 'cmd'),
+    join(dir, 'mingw64', 'bin'),
+    join(dir, 'usr', 'bin'),
+  ].filter(existsSync)
+}
+
+export function bundledGit(): string | undefined {
+  if (!isWin) return undefined
+  const git = join(gitDir(), 'cmd', 'git.exe')
+  return existsSync(git) ? git : undefined
 }
 
 export function bundledAgentBrowserHome(): string {

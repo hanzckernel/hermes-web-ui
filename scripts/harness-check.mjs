@@ -117,9 +117,14 @@ if (!buildWorkflow.includes('npm run harness:check')) {
 }
 
 const desktopReleaseWorkflow = await readText('.github/workflows/desktop-release.yml')
+const desktopRuntimeWorkflow = await readText('.github/workflows/desktop-runtime.yml')
 const electronBuilderConfig = await readText('packages/desktop/electron-builder.yml')
+const desktopPackageJson = await readText('packages/desktop/package.json')
 const desktopInstallHermes = await readText('packages/desktop/scripts/install-hermes.mjs')
 const desktopWebuiServer = await readText('packages/desktop/src/main/webui-server.ts')
+const desktopRuntimeManager = await readText('packages/desktop/src/main/runtime-manager.ts')
+const desktopPaths = await readText('packages/desktop/src/main/paths.ts')
+const desktopRuntimeAssetName = await readText('packages/desktop/scripts/runtime-asset-name.mjs')
 if (!desktopReleaseWorkflow.includes('files: ${{ matrix.artifact_files }}')) {
   fail('desktop-release.yml must upload matrix-specific artifact_files')
 }
@@ -145,6 +150,42 @@ if (!desktopReleaseWorkflow.includes('fail_on_unmatched_files: true')) {
 }
 
 for (const phrase of [
+  'resources/python/${os}-${arch}',
+  'resources/node/${os}-${arch}',
+  'resources/git/${os}-${arch}',
+]) {
+  if (electronBuilderConfig.includes(phrase)) {
+    fail(`electron-builder.yml must not bundle desktop runtime resource: ${phrase}`)
+  }
+}
+
+for (const phrase of [
+  '"fetch:node"',
+  '"fetch:git"',
+  '"prepare:runtime"',
+  '"package:runtime"',
+  '"runtime:asset-name"',
+]) {
+  if (!desktopPackageJson.includes(phrase)) {
+    fail(`packages/desktop/package.json must support runtime package publishing: ${phrase}`)
+  }
+}
+
+for (const phrase of [
+  'steps.check.outputs.missing',
+  'npm --prefix packages/desktop run prepare:runtime',
+  'npm --prefix packages/desktop run package:runtime',
+]) {
+  if (!desktopRuntimeWorkflow.includes(phrase)) {
+    fail(`desktop-runtime.yml must build and publish missing runtime package assets: ${phrase}`)
+  }
+}
+
+if (!desktopRuntimeAssetName.includes('hermes-runtime-hermes-agent-')) {
+  fail('runtime asset naming must include hermes-agent version')
+}
+
+for (const phrase of [
   'websockets',
   'agent-browser@^0.26.0',
   'AGENT_BROWSER_HOME',
@@ -160,12 +201,28 @@ for (const phrase of [
 
 for (const phrase of [
   'bundledNodeBin',
+  'HERMES_AGENT_NODE',
+  'HERMES_AGENT_GIT',
   'PLAYWRIGHT_BROWSERS_PATH',
   'ms-playwright',
 ]) {
   if (!desktopWebuiServer.includes(phrase)) {
     fail(`desktop webui server must expose bundled browser runtime: ${phrase}`)
   }
+}
+
+for (const phrase of [
+  'HERMES_DESKTOP_RUNTIME_URL',
+  'HERMES_DESKTOP_RUNTIME_BASE_URL',
+  'runtime-manifest.json',
+]) {
+  if (!desktopRuntimeManager.includes(phrase)) {
+    fail(`desktop runtime manager must support downloadable runtime packages: ${phrase}`)
+  }
+}
+
+if (!desktopPaths.includes('HERMES_DESKTOP_RUNTIME_DIR')) {
+  fail('desktop paths must allow HERMES_DESKTOP_RUNTIME_DIR override')
 }
 
 if (failures.length > 0) {

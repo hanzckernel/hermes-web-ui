@@ -24,6 +24,10 @@ on:
         description: "Optional release tag to attach artifacts to"
         required: false
         type: string
+      runtime_release_tag:
+        description: "Optional runtime release tag embedded into the desktop app"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -121,9 +125,6 @@ jobs:
             package-lock.json
             packages/desktop/package-lock.json
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
       - name: Install web UI dependencies
         run: |
           npm ci --ignore-scripts
@@ -138,11 +139,11 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci --prefix packages/desktop --no-audit --no-fund
 
-      - name: Prepare bundled Python
+      - name: Write runtime release metadata
+        shell: bash
         env:
-          TARGET_OS: ${{ needs.validate.outputs.target_os }}
-          TARGET_ARCH: ${{ needs.validate.outputs.target_arch }}
-        run: npm --prefix packages/desktop run prepare:python
+          RUNTIME_RELEASE_TAG: ${{ github.event.inputs.runtime_release_tag }}
+        run: npm --prefix packages/desktop run write:runtime-release
 
       - name: Configure macOS signing
         if: needs.validate.outputs.target_os == 'darwin'

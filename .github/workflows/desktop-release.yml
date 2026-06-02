@@ -86,9 +86,6 @@ jobs:
             package-lock.json
             packages/desktop/package-lock.json
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-
       - name: Install web UI dependencies
         run: |
           npm ci --ignore-scripts
@@ -103,11 +100,11 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci --prefix packages/desktop --no-audit --no-fund
 
-      - name: Prepare bundled Python
+      - name: Write runtime release metadata
+        shell: bash
         env:
-          TARGET_OS: ${{ matrix.target_os }}
-          TARGET_ARCH: ${{ matrix.target_arch }}
-        run: npm --prefix packages/desktop run prepare:python
+          HERMES_DESKTOP_RUNTIME_RELEASE_TAG: ${{ vars.HERMES_DESKTOP_RUNTIME_RELEASE_TAG }}
+        run: npm --prefix packages/desktop run write:runtime-release
 
       - name: Configure macOS signing
         if: matrix.target_os == 'darwin'

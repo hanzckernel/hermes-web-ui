@@ -18,13 +18,14 @@ import { basename, resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { platform as osPlatform, arch as osArch, homedir as osHomedir } from 'node:os'
+import { hermesVersion } from './runtime-config.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
 
 const TARGET_OS = process.env.TARGET_OS || osPlatform()
 const TARGET_ARCH = process.env.TARGET_ARCH || osArch()
-const HERMES_VERSION = process.env.HERMES_VERSION || '0.15.2'
+const HERMES_VERSION = hermesVersion()
 // Match the packaged runtime to the channel list exposed at /hermes/channels.
 // Telegram, Discord, and Slack are covered by "messaging". We intentionally
 // install Matrix's plaintext deps below instead of using the "matrix" extra:
@@ -59,6 +60,7 @@ const SKIP_BROWSER_RUNTIME = process.env.HERMES_SKIP_BROWSER_RUNTIME === '1'
 
 const OS_LABEL = TARGET_OS === 'win32' ? 'win' : TARGET_OS === 'darwin' ? 'mac' : TARGET_OS
 const PY_DIR = resolve(ROOT, 'resources', 'python', `${OS_LABEL}-${TARGET_ARCH}`)
+const NODE_DIR = resolve(ROOT, 'resources', 'node', `${OS_LABEL}-${TARGET_ARCH}`)
 const NODE_PREFIX = resolve(PY_DIR, 'node')
 const AGENT_BROWSER_HOME = resolve(PY_DIR, 'agent-browser')
 const PLAYWRIGHT_BROWSERS_PATH = resolve(PY_DIR, 'ms-playwright')
@@ -96,7 +98,8 @@ function optionalRun(command, args, options = {}) {
 
 function commandInvocation(command) {
   if (TARGET_OS === 'win32' && command.toLowerCase().endsWith('.cmd')) {
-    return { command: 'cmd.exe', argsPrefix: ['/d', '/s', '/c', command] }
+    const cmdCommand = /[\s&()[\]{}^=;!'+,`~]/.test(command) ? `"${command}"` : command
+    return { command: 'cmd.exe', argsPrefix: ['/d', '/s', '/c', cmdCommand] }
   }
   return { command, argsPrefix: [] }
 }
@@ -109,15 +112,25 @@ function optionalRunInvocation(invocation, args, options = {}) {
   return optionalRun(invocation.command, [...invocation.argsPrefix, ...args], options)
 }
 
+function pythonBuildEnv() {
+  if (TARGET_OS !== 'darwin') return process.env
+
+  const env = { ...process.env }
+  if (!env.AR && existsSync('/usr/bin/ar')) env.AR = '/usr/bin/ar'
+  if (!env.RANLIB && existsSync('/usr/bin/ranlib')) env.RANLIB = '/usr/bin/ranlib'
+  return env
+}
+
 function installPythonPackages(packages, label) {
   if (packages.length === 0) return
+  const env = pythonBuildEnv()
   if (hasUv()) {
     console.log(`→ Installing ${label} via uv: ${packages.join(' ')}`)
     run('uv', [
-    'pip', 'install',
-    '--python', pyBin,
+      'pip', 'install',
+      '--python', pyBin,
       ...packages,
-    ])
+    ], { env })
   } else {
     console.log(`→ Installing ${label} via pip: ${packages.join(' ')}`)
     run(pyBin, [
@@ -125,17 +138,21 @@ function installPythonPackages(packages, label) {
       ...packages,
       '--no-warn-script-location',
       '--disable-pip-version-check',
-    ])
+    ], { env })
   }
 }
 
 function npmCommand() {
+  const bundled = TARGET_OS === 'win32'
+    ? resolve(NODE_DIR, 'npm.cmd')
+    : resolve(NODE_DIR, 'bin', 'npm')
   const candidates = TARGET_OS === 'win32'
-    ? ['npm.cmd', 'npm.exe', 'npm']
-    : ['npm']
+    ? [bundled, 'npm.cmd', 'npm.exe', 'npm']
+    : [bundled, 'npm']
   for (const candidate of candidates) {
+    if (candidate === bundled && !existsSync(candidate)) continue
     const invocation = commandInvocation(candidate)
-    const result = optionalRunInvocation(invocation, ['--version'], { stdio: 'ignore' })
+    const result = optionalRunInvocation(invocation, ['--version'], { stdio: 'ignore', env: browserRuntimeEnv(false) })
     if (result.status === 0) return invocation
   }
   return null
@@ -148,16 +165,24 @@ function agentBrowserCommand() {
   return resolve(NODE_PREFIX, 'bin', 'agent-browser')
 }
 
-function browserRuntimeEnv() {
+function browserRuntimeEnv(includeAgentBrowser = true) {
+  const bundledNodeBin = TARGET_OS === 'win32'
+    ? NODE_DIR
+    : resolve(NODE_DIR, 'bin')
   const nodePath = TARGET_OS === 'win32'
     ? NODE_PREFIX
     : resolve(NODE_PREFIX, 'bin')
   const inheritedPath = process.env.PATH || process.env.Path || ''
   const pathKey = TARGET_OS === 'win32' ? 'Path' : 'PATH'
-  const browserExecutable = ensureBundledBrowserExecutable()
+  const browserExecutable = includeAgentBrowser ? ensureBundledBrowserExecutable() : null
+  const pathEntries = includeAgentBrowser
+    ? [nodePath, bundledNodeBin, inheritedPath]
+    : [bundledNodeBin, inheritedPath]
   const env = {
     ...process.env,
-    [pathKey]: [nodePath, inheritedPath].filter(Boolean).join(TARGET_OS === 'win32' ? ';' : ':'),
+    [pathKey]: pathEntries.filter(Boolean).join(TARGET_OS === 'win32' ? ';' : ':'),
+    HERMES_AGENT_NODE: TARGET_OS === 'win32' ? resolve(NODE_DIR, 'node.exe') : resolve(NODE_DIR, 'bin', 'node'),
+    HERMES_AGENT_NODE_ROOT: NODE_DIR,
     AGENT_BROWSER_HOME,
     PLAYWRIGHT_BROWSERS_PATH,
   }
@@ -447,4 +472,8 @@ if (!SKIP_BROWSER_RUNTIME) {
   ], { env: browserRuntimeEnv() })
 }
 
-console.log('✓ hermes Python, MCP, websockets, agent-browser, and Chromium checks passed')
+if (SKIP_BROWSER_RUNTIME) {
+  console.log('✓ hermes Python, MCP, and websockets checks passed; browser runtime skipped')
+} else {
+  console.log('✓ hermes Python, MCP, websockets, agent-browser, and Chromium checks passed')
+}
