@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const updateConfigYamlForProfileMock = vi.fn()
@@ -39,7 +40,7 @@ describe('studio MCP autoinject', () => {
     })
   })
 
-  it('injects bundled MCP server into every profile without bridge calls', async () => {
+  it('injects bundled MCP server into every profile without relying on a global PATH shim', async () => {
     const { injectBundledMcpServer } = await import('../../packages/server/src/services/hermes/studio-mcp-autoinject')
 
     const result = await injectBundledMcpServer()
@@ -48,7 +49,8 @@ describe('studio MCP autoinject', () => {
     expect(updateConfigYamlForProfileMock).toHaveBeenCalledTimes(2)
     const injectedDefault = await updateConfigYamlForProfileMock.mock.calls[0][1]({})
     expect(injectedDefault.data.mcp_servers['hermes-studio']).toEqual({
-      command: 'hermes-web-ui-mcp',
+      command: process.execPath,
+      args: [join(process.cwd(), 'bin/hermes-web-ui-mcp.mjs')],
       env: {
         HERMES_WEB_UI_URL: 'http://127.0.0.1:8648',
         HERMES_WEB_UI_HOME: '/tmp/hermes-web-ui-home',
@@ -57,6 +59,31 @@ describe('studio MCP autoinject', () => {
       },
       enabled: true,
     })
+    expect(result.command).toBe(process.execPath)
+  })
+
+  it('updates old managed PATH-only MCP entries to the bundled node script', async () => {
+    const { injectBundledMcpServer } = await import('../../packages/server/src/services/hermes/studio-mcp-autoinject')
+
+    await injectBundledMcpServer()
+
+    const updated = await updateConfigYamlForProfileMock.mock.calls[0][1]({
+      mcp_servers: {
+        'hermes-studio': {
+          command: 'hermes-web-ui-mcp',
+          env: {
+            HERMES_WEB_UI_URL: 'http://127.0.0.1:8648',
+            HERMES_WEB_UI_HOME: '/tmp/hermes-web-ui-home',
+            HERMES_WEBUI_STATE_DIR: '/tmp/hermes-web-ui-home',
+            HERMES_WEB_UI_MANAGED_MCP: '1',
+          },
+          enabled: true,
+        },
+      },
+    })
+    expect(updated.result.status).toBe('updated')
+    expect(updated.data.mcp_servers['hermes-studio'].command).toBe(process.execPath)
+    expect(updated.data.mcp_servers['hermes-studio'].args).toEqual([join(process.cwd(), 'bin/hermes-web-ui-mcp.mjs')])
   })
 
   it('uses the desktop command in desktop runtime', async () => {

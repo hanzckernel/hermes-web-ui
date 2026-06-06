@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { config } from '../../config'
 import { updateConfigYamlForProfile } from '../config-helpers'
 import { logger } from '../logger'
@@ -35,8 +37,31 @@ function isDesktopRuntime(): boolean {
   return String(process.env.HERMES_DESKTOP || '').trim().toLowerCase() === 'true'
 }
 
-function managedCommand(): string {
-  return isDesktopRuntime() ? 'hermes-studio-mcp' : 'hermes-web-ui-mcp'
+function candidateBundledMcpScripts(): string[] {
+  return [
+    process.env.HERMES_WEB_UI_MCP_BIN,
+    join(process.cwd(), 'bin/hermes-web-ui-mcp.mjs'),
+    join(__dirname, '../../bin/hermes-web-ui-mcp.mjs'),
+    join(__dirname, '../../../../../bin/hermes-web-ui-mcp.mjs'),
+  ].filter((value): value is string => !!value)
+}
+
+function bundledMcpScriptPath(): string | null {
+  return candidateBundledMcpScripts().find(candidate => existsSync(candidate)) || null
+}
+
+function managedCommandConfig(): Record<string, unknown> {
+  if (isDesktopRuntime()) {
+    return { command: 'hermes-studio-mcp' }
+  }
+
+  const bundledScript = bundledMcpScriptPath()
+  if (bundledScript) {
+    return { command: process.execPath, args: [bundledScript] }
+  }
+
+  logger.warn({ candidates: candidateBundledMcpScripts() }, '[mcp-autoinject] bundled MCP script not found; falling back to PATH command')
+  return { command: 'hermes-web-ui-mcp' }
 }
 
 function managedConfig(): Record<string, unknown> {
@@ -48,7 +73,7 @@ function managedConfig(): Record<string, unknown> {
   }
 
   return {
-    command: managedCommand(),
+    ...managedCommandConfig(),
     env,
     enabled: true,
   }
@@ -64,9 +89,18 @@ function isManagedServer(server: unknown): boolean {
   return typeof server.command === 'string' && LEGACY_COMMANDS.has(server.command)
 }
 
+function sameArgs(existing: Record<string, any>, desired: Record<string, unknown>): boolean {
+  const desiredArgs = Array.isArray(desired.args) ? desired.args : undefined
+  const existingArgs = Array.isArray(existing.args) ? existing.args : undefined
+  if (!desiredArgs && !existingArgs) return true
+  if (!desiredArgs || !existingArgs) return false
+  return desiredArgs.length === existingArgs.length && desiredArgs.every((arg, index) => existingArgs[index] === arg)
+}
+
 function sameConfig(existing: Record<string, any>, desired: Record<string, unknown>): boolean {
   const desiredEnv = desired.env as Record<string, string>
   return existing.command === desired.command &&
+    sameArgs(existing, desired) &&
     existing.enabled !== false &&
     isRecord(existing.env) &&
     existing.env.HERMES_WEB_UI_URL === desiredEnv.HERMES_WEB_UI_URL &&
