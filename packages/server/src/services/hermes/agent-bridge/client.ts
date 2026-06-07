@@ -1,21 +1,39 @@
 import { setTimeout as delay } from 'timers/promises'
 import { createConnection, type Socket } from 'net'
+import { createHash } from 'crypto'
 import { tmpdir } from 'os'
 import { URL } from 'url'
 import { join } from 'path'
+import { getWebUiHome } from '../../../config'
 import { bridgeLogger } from '../../logger'
 import { getActiveProfileName, getProfileDir } from '../hermes-profile'
 import type { McpActionResponse } from '../mcp-types'
 
-function resolveDefaultAgentBridgeEndpoint(): string {
-  if (process.env.VITEST) {
-    return process.platform === 'win32'
-      ? `tcp://127.0.0.1:${28000 + (process.pid % 10000)}`
-      : `ipc://${join(tmpdir(), `hermes-agent-bridge-test-${process.pid}.sock`)}`
+export function resolveDefaultAgentBridgeEndpoint(
+  env: Record<string, string | undefined> = process.env,
+  platform = process.platform,
+  pid = process.pid,
+): string {
+  if (env.VITEST) {
+    return platform === 'win32'
+      ? `tcp://127.0.0.1:${28000 + (pid % 10000)}`
+      : `ipc://${join(tmpdir(), `hermes-agent-bridge-test-${pid}.sock`)}`
   }
-  return process.platform === 'win32'
-    ? 'tcp://127.0.0.1:18765'
-    : 'ipc:///tmp/hermes-agent-bridge.sock'
+
+  const webUiHome = getWebUiHome(env)
+  if (platform === 'win32') {
+    // Windows uses TCP for the bridge.  Scope the default port to the Web UI
+    // home so multiple WUI runtimes do not silently attach to each other's
+    // broker on the historic fixed port.
+    const hash = createHash('sha256').update(webUiHome).digest().readUInt16BE(0)
+    return `tcp://127.0.0.1:${18765 + (hash % 1000)}`
+  }
+
+  // Keep the broker endpoint under the Web UI runtime home, not global /tmp.
+  // A global socket lets unrelated WUI previews or Hermes bridge processes
+  // attach to each other after restarts/reloads, which can surface as opaque
+  // bridge errors from the wrong broker.
+  return `ipc://${join(webUiHome, 'agent-bridge.sock')}`
 }
 
 export const DEFAULT_AGENT_BRIDGE_ENDPOINT = resolveDefaultAgentBridgeEndpoint()

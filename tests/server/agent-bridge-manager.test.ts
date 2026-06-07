@@ -122,6 +122,37 @@ describe('agent bridge manager command resolution', () => {
     expect(DEFAULT_AGENT_BRIDGE_ENDPOINT).not.toBe('ipc:///tmp/hermes-agent-bridge.sock')
   })
 
+  it('scopes the non-test Unix default bridge endpoint to the Web UI home', async () => {
+    const homeDir = join(tempDir, 'webui-home')
+    const { resolveDefaultAgentBridgeEndpoint } = await import('../../packages/server/src/services/hermes/agent-bridge/client')
+
+    const endpoint = resolveDefaultAgentBridgeEndpoint({ HERMES_WEB_UI_HOME: homeDir }, 'darwin', 12345)
+
+    expect(endpoint).toBe(`ipc://${join(homeDir, 'agent-bridge.sock')}`)
+    expect(endpoint).not.toBe('ipc:///tmp/hermes-agent-bridge.sock')
+  })
+
+  it('scopes the non-test Windows default bridge endpoint by Web UI home', async () => {
+    const { resolveDefaultAgentBridgeEndpoint } = await import('../../packages/server/src/services/hermes/agent-bridge/client')
+
+    const first = resolveDefaultAgentBridgeEndpoint({ HERMES_WEB_UI_HOME: 'C:\\Hermes\\one' }, 'win32', 12345)
+    const second = resolveDefaultAgentBridgeEndpoint({ HERMES_WEB_UI_HOME: 'C:\\Hermes\\two' }, 'win32', 12345)
+
+    expect(first).toMatch(/^tcp:\/\/127\.0\.0\.1:\d+$/)
+    expect(second).toMatch(/^tcp:\/\/127\.0\.0\.1:\d+$/)
+    expect(first).not.toBe(second)
+    expect(first).not.toBe('tcp://127.0.0.1:18765')
+  })
+
+  it('still honors an explicit bridge endpoint override in the client', async () => {
+    process.env.HERMES_AGENT_BRIDGE_ENDPOINT = 'ipc:///tmp/explicit-agent-bridge.sock'
+    const { AgentBridgeClient } = await import('../../packages/server/src/services/hermes/agent-bridge/client')
+
+    const client = new AgentBridgeClient()
+
+    expect(client.endpoint).toBe('ipc:///tmp/explicit-agent-bridge.sock')
+  })
+
   it('honors the bridge connect retry environment override', async () => {
     process.env.HERMES_AGENT_BRIDGE_CONNECT_RETRY_MS = '120000'
 
