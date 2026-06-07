@@ -453,12 +453,12 @@ for await (const chunk of bridge.streamOutput(run_id)) {
 python hermes_bridge.py --endpoint <endpoint> --agent-root <root> --hermes-home <home>
 ```
 
-默认 endpoint：
+Web UI 管理的默认 endpoint：
 
 | 平台 | 默认 |
 | --- | --- |
-| Windows | `tcp://127.0.0.1:18765` |
-| macOS/Linux | `ipc:///tmp/hermes-agent-bridge.sock` |
+| Windows | 从 `HERMES_WEB_UI_HOME` 派生的 `tcp://127.0.0.1:<port>` |
+| macOS/Linux | `ipc://<HERMES_WEB_UI_HOME>/agent-bridge.sock` |
 
 broker 会再按 profile 路由到 worker。worker 里维护实际 `AIAgent` 会话池。
 

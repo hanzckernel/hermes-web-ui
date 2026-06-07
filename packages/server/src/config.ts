@@ -22,6 +22,9 @@ import { homedir } from 'os'
  * Runtime behavior:
  * - PROFILE: Initial Hermes profile name. Default: default.
  * - GATEWAY_HOST: Default gateway host written into profile config. Default: 127.0.0.1.
+ * - HERMES_AGENT_BRIDGE_ENDPOINT: Explicit agent bridge endpoint override. If unset,
+ *   Web UI uses an endpoint scoped to HERMES_WEB_UI_HOME to avoid cross-instance
+ *   bridge attachment.
  * - HERMES_WEB_UI_STOP_GATEWAYS_ON_SHUTDOWN: Whether Web UI shutdown also stops gateways.
  * - HERMES_LAN_DISCOVERY_ENABLED: Set false/0/off to disable UDP LAN discovery responder.
  * - HERMES_LAN_DISCOVERY_HTTP_PORTS: HTTP ports to probe during UDP discovery scans. Default: 8648,8748 plus current PORT.

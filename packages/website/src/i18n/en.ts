@@ -226,7 +226,7 @@ export default {
           ['HERMES_AGENT_BRIDGE_UV', 'uv executable used to launch the agent bridge when available'],
           ['UV', 'Fallback uv executable path'],
           ['PYTHON', 'Fallback Python executable for the agent bridge'],
-          ['HERMES_AGENT_BRIDGE_ENDPOINT', 'Agent bridge broker endpoint. Windows defaults to tcp://127.0.0.1:18765; macOS/Linux defaults to ipc:///tmp/hermes-agent-bridge.sock'],
+          ['HERMES_AGENT_BRIDGE_ENDPOINT', 'Explicit agent bridge broker endpoint override. If unset, Web UI derives a runtime-home-scoped endpoint to avoid cross-instance bridge attachment'],
           ['HERMES_AGENT_BRIDGE_TIMEOUT_MS', 'Timeout for Node requests to the bridge broker'],
           ['HERMES_AGENT_BRIDGE_CONNECT_RETRY_MS', 'Short retry window for connecting to the bridge socket'],
           ['HERMES_AGENT_BRIDGE_STARTUP_TIMEOUT_MS', 'Timeout while waiting for the Python bridge to become ready'],

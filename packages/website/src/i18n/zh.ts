@@ -226,7 +226,7 @@ export default {
           ['HERMES_AGENT_BRIDGE_UV', '可用时用于启动 agent bridge 的 uv 可执行文件'],
           ['UV', 'uv 可执行文件 fallback'],
           ['PYTHON', 'agent bridge 的 Python 可执行文件 fallback'],
-          ['HERMES_AGENT_BRIDGE_ENDPOINT', 'Agent bridge broker endpoint。Windows 默认 tcp://127.0.0.1:18765；macOS/Linux 默认 ipc:///tmp/hermes-agent-bridge.sock'],
+          ['HERMES_AGENT_BRIDGE_ENDPOINT', '显式 agent bridge broker endpoint 覆盖；未设置时 Web UI 会按运行目录派生 endpoint，避免跨实例 bridge 串接'],
           ['HERMES_AGENT_BRIDGE_TIMEOUT_MS', 'Node 请求 bridge broker 的响应超时'],
           ['HERMES_AGENT_BRIDGE_CONNECT_RETRY_MS', '连接 bridge socket 失败时的短重试窗口'],
           ['HERMES_AGENT_BRIDGE_STARTUP_TIMEOUT_MS', '等待 Python bridge ready 的超时'],

@@ -11,19 +11,16 @@ This is intentionally separate from the current Web UI chat path.
 python packages/server/src/services/hermes/agent-bridge/hermes_bridge.py
 ```
 
-Default endpoint:
+When launched by the Web UI server, Node passes an explicit endpoint to the
+Python bridge:
 
-```text
-ipc:///tmp/hermes-agent-bridge.sock
-```
+- Unix-like platforms: `ipc://<HERMES_WEB_UI_HOME>/agent-bridge.sock`
+- Windows: `tcp://127.0.0.1:<port>`, where `<port>` is derived from
+  `HERMES_WEB_UI_HOME` in the 16650-17649 range
 
-On Windows, the default endpoint is TCP because Python may not support Unix
-domain sockets there:
-
-```text
-tcp://127.0.0.1:18765
-```
-
+This Web UI-managed endpoint is scoped to the runtime home so separate instances
+do not attach to each other's bridge broker. Directly running this Python script
+without `--endpoint` still uses the script's standalone fallback endpoint.
 Override with:
 
 ```bash

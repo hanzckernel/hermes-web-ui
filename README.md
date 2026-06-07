@@ -263,7 +263,7 @@ These variables configure Hermes Web UI, its local Hermes runtime integration, a
 | `HERMES_AGENT_BRIDGE_UV` | auto-discovered | `uv` executable used to launch the agent bridge when available. |
 | `UV` | auto-discovered | Fallback `uv` executable path. |
 | `PYTHON` | auto-discovered | Fallback Python executable for the agent bridge. |
-| `HERMES_AGENT_BRIDGE_ENDPOINT` | platform default | Agent bridge broker endpoint. Windows defaults to `tcp://127.0.0.1:18765`; macOS/Linux defaults to `ipc:///tmp/hermes-agent-bridge.sock`. |
+| `HERMES_AGENT_BRIDGE_ENDPOINT` | runtime-home scoped default | Explicit agent bridge broker endpoint override. If unset, Web UI derives an endpoint from `HERMES_WEB_UI_HOME` to avoid cross-instance bridge attachment. |
 | `HERMES_AGENT_BRIDGE_TIMEOUT_MS` | `120000` | Timeout for Node requests to the bridge broker. |
 | `HERMES_AGENT_BRIDGE_CONNECT_RETRY_MS` | `5000` | Short retry window for connecting to the bridge socket. |
 | `HERMES_AGENT_BRIDGE_STARTUP_TIMEOUT_MS` | `120000` | Timeout while waiting for the Python bridge to become ready. |
