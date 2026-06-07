@@ -715,6 +715,8 @@ export const useChatStore = defineStore('chat', () => {
                 addAgentErrorMessage(sessionId, e.error)
                 serverWorking.value.delete(sessionId)
                 queueLengths.value.delete(sessionId)
+              } else if (e.event === 'agent.event' || e.event === 'run.reattach_failed') {
+                handleAgentEvent(e)
               } else if (e.event === 'tool.started') {
                 const msgs = getSessionMsgs(sessionId)
                 const toolCallId = e.tool_call_id as string | undefined
@@ -1648,6 +1650,11 @@ export const useChatStore = defineStore('chat', () => {
               break
             }
 
+            case 'run.reattach_failed': {
+              handleAgentEvent(evt)
+              break
+            }
+
             case 'compression.started': {
               setCompressionState(sid, {
                 compressing: true,
@@ -2145,6 +2152,11 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         case 'agent.event': {
+          handleAgentEvent(evt)
+          break
+        }
+
+        case 'run.reattach_failed': {
           handleAgentEvent(evt)
           break
         }

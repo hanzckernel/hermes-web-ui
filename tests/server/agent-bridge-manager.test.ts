@@ -557,6 +557,130 @@ describe('agent bridge manager command resolution', () => {
     expect(startSpy).not.toHaveBeenCalled()
   })
 
+  it('bounds an in-flight start by caller timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const { AgentBridgeManager } = await import('../../packages/server/src/services/hermes/agent-bridge/manager')
+      const manager = new AgentBridgeManager({ endpoint: 'tcp://127.0.0.1:6565' })
+      ;(manager as any).starting = new Promise<void>(() => {})
+      const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+        .mockResolvedValueOnce({
+          endpoint: 'tcp://127.0.0.1:6565',
+          endpointKind: 'tcp',
+          status: 'starting',
+          reachable: false,
+          ready: false,
+          running: false,
+          attached: false,
+          starting: true,
+          stopping: false,
+          restartScheduled: false,
+          restartAttempts: 0,
+        })
+
+      const ensureReadyPromise = manager.ensureReady({ timeoutMs: 25 })
+      await vi.advanceTimersByTimeAsync(25)
+
+      await expect(ensureReadyPromise).resolves.toMatchObject({
+        endpoint: 'tcp://127.0.0.1:6565',
+        status: 'starting',
+        reachable: false,
+      })
+      expect(checkReadinessSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('coalesces callers onto an existing managed recovery', async () => {
+    const { AgentBridgeManager } = await import('../../packages/server/src/services/hermes/agent-bridge/manager')
+    const manager = new AgentBridgeManager({ endpoint: 'tcp://127.0.0.1:6566' })
+    const child = createMockManagedChild(45666)
+    ;(manager as any).child = child
+    ;(manager as any).ready = true
+    ;(manager as any).attached = false
+
+    const unreachable = {
+      endpoint: 'tcp://127.0.0.1:6566',
+      endpointKind: 'tcp' as const,
+      status: 'unreachable' as const,
+      reachable: false,
+      ready: false,
+      running: false,
+      attached: false,
+      starting: false,
+      stopping: false,
+      restartScheduled: false,
+      restartAttempts: 0,
+      pid: 45666,
+      error: 'connect ECONNREFUSED',
+    }
+    const recovered = {
+      ...unreachable,
+      status: 'ready' as const,
+      reachable: true,
+      ready: true,
+      running: true,
+      error: undefined,
+    }
+    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness').mockResolvedValue(unreachable)
+    let resolveRecovery: ((value: typeof recovered) => void) | undefined
+    const recoveryDeferred = new Promise<typeof recovered>((resolve) => {
+      resolveRecovery = resolve
+    })
+    const performRecoverySpy = vi.spyOn(manager as any, 'performManagedRecovery').mockReturnValue(recoveryDeferred)
+
+    const first = manager.ensureReady()
+    await Promise.resolve()
+    await Promise.resolve()
+    const second = manager.ensureReady()
+    await Promise.resolve()
+    resolveRecovery?.(recovered)
+
+    await expect(first).resolves.toBe(recovered)
+    await expect(second).resolves.toBe(recovered)
+    expect(checkReadinessSpy).toHaveBeenCalledTimes(2)
+    expect(performRecoverySpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not run destructive managed recovery on legacy global default endpoints', async () => {
+    const { AgentBridgeManager } = await import('../../packages/server/src/services/hermes/agent-bridge/manager')
+    const manager = new AgentBridgeManager({ endpoint: 'ipc:///tmp/hermes-agent-bridge.sock' })
+    const child = createMockManagedChild(45667)
+    ;(manager as any).child = child
+    ;(manager as any).ready = true
+    ;(manager as any).attached = false
+
+    vi.spyOn(manager, 'checkReadiness').mockResolvedValue({
+      endpoint: 'ipc:///tmp/hermes-agent-bridge.sock',
+      endpointKind: 'ipc',
+      status: 'unreachable',
+      reachable: false,
+      ready: false,
+      running: false,
+      attached: false,
+      starting: false,
+      stopping: false,
+      restartScheduled: false,
+      restartAttempts: 0,
+      pid: 45667,
+      error: 'connect ENOENT /tmp/hermes-agent-bridge.sock',
+    })
+    const performRecoverySpy = vi.spyOn(manager as any, 'performManagedRecovery')
+    const startSpy = vi.spyOn(manager, 'start').mockResolvedValue()
+
+    await expect(manager.ensureReady()).resolves.toMatchObject({
+      endpoint: 'ipc:///tmp/hermes-agent-bridge.sock',
+      status: 'unreachable',
+      reachable: false,
+      error: expect.stringContaining('merge endpoint scoping before enabling recovery'),
+    })
+    expect(child.kill).not.toHaveBeenCalled()
+    expect(performRecoverySpy).not.toHaveBeenCalled()
+    expect(startSpy).not.toHaveBeenCalled()
+    expect((manager as any).child).toBe(child)
+  })
+
   it('waits for the old managed child to exit before starting replacement recovery', async () => {
     const { AgentBridgeManager } = await import('../../packages/server/src/services/hermes/agent-bridge/manager')
     const manager = new AgentBridgeManager({ endpoint: 'tcp://127.0.0.1:6557' })
@@ -566,7 +690,7 @@ describe('agent bridge manager command resolution', () => {
     ;(manager as any).ready = true
     ;(manager as any).attached = false
 
-    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+    const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal')
       .mockResolvedValueOnce({
         endpoint: 'tcp://127.0.0.1:6557',
         endpointKind: 'tcp',
@@ -599,6 +723,8 @@ describe('agent bridge manager command resolution', () => {
 
     const ensureReadyPromise = manager.ensureReady()
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     expect(startSpy).not.toHaveBeenCalled()
@@ -624,7 +750,7 @@ describe('agent bridge manager command resolution', () => {
     ;(manager as any).ready = true
     ;(manager as any).attached = false
 
-    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+    const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal')
       .mockResolvedValueOnce({
         endpoint: 'tcp://127.0.0.1:6564',
         endpointKind: 'tcp',
@@ -658,12 +784,16 @@ describe('agent bridge manager command resolution', () => {
 
     const ensureReadyPromise = manager.ensureReady()
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     expect(startSpy).not.toHaveBeenCalled()
 
-    await manager.stop()
+    const stopPromise = manager.stop()
+    await Promise.resolve()
     child.emit('exit', 0, 'SIGTERM')
+    await stopPromise
 
     await expect(ensureReadyPromise).resolves.toMatchObject({
       endpoint: 'tcp://127.0.0.1:6564',
@@ -674,7 +804,7 @@ describe('agent bridge manager command resolution', () => {
     })
     expect(startSpy).not.toHaveBeenCalled()
     expect(checkReadinessSpy).toHaveBeenCalledTimes(2)
-    expect(checkReadinessSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ connectRetryMs: 0 }))
+    expect(checkReadinessSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ connectRetryMs: 0 }), true)
     expect((manager as any).child).toBeNull()
     expect(manager.getRuntimeState()).toMatchObject({
       ready: false,
@@ -696,7 +826,7 @@ describe('agent bridge manager command resolution', () => {
       ;(manager as any).ready = true
       ;(manager as any).attached = false
 
-      const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+      const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal')
         .mockResolvedValueOnce({
           endpoint: 'tcp://127.0.0.1:6563',
           endpointKind: 'tcp',
@@ -715,19 +845,23 @@ describe('agent bridge manager command resolution', () => {
         .mockResolvedValueOnce({
           endpoint: 'tcp://127.0.0.1:6563',
           endpointKind: 'tcp',
-          status: 'ready',
-          reachable: true,
-          ready: true,
-          running: true,
+          status: 'unreachable',
+          reachable: false,
+          ready: false,
+          running: false,
           attached: false,
           starting: false,
           stopping: false,
           restartScheduled: false,
           restartAttempts: 0,
+          pid: 12346,
+          error: 'connect ECONNREFUSED',
         })
       const startSpy = vi.spyOn(manager, 'start').mockResolvedValue()
 
       const ensureReadyPromise = manager.ensureReady()
+      await Promise.resolve()
+      await Promise.resolve()
       await Promise.resolve()
 
       expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGTERM')
@@ -741,10 +875,13 @@ describe('agent bridge manager command resolution', () => {
 
       await expect(ensureReadyPromise).resolves.toMatchObject({
         endpoint: 'tcp://127.0.0.1:6563',
-        status: 'ready',
-        reachable: true,
+        status: 'unreachable',
+        reachable: false,
+        ready: false,
+        running: false,
+        error: expect.stringContaining('did not exit after SIGTERM/SIGKILL'),
       })
-      expect(startSpy).toHaveBeenCalledTimes(1)
+      expect(startSpy).not.toHaveBeenCalled()
       expect(checkReadinessSpy).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
@@ -789,7 +926,7 @@ describe('agent bridge manager command resolution', () => {
       pid: 45671,
     })
 
-    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+    const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal')
       .mockResolvedValueOnce({
         endpoint: 'tcp://127.0.0.1:6562',
         endpointKind: 'tcp',
@@ -821,6 +958,8 @@ describe('agent bridge manager command resolution', () => {
       })
 
     const ensureReadyPromise = manager.ensureReady()
+    await Promise.resolve()
+    await Promise.resolve()
     await Promise.resolve()
 
     expect(oldChild.kill).toHaveBeenCalledWith('SIGTERM')
@@ -870,7 +1009,7 @@ describe('agent bridge manager command resolution', () => {
     ;(manager as any).ready = true
     ;(manager as any).attached = false
 
-    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+    const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal')
       .mockResolvedValueOnce({
         endpoint: 'tcp://127.0.0.1:6558',
         endpointKind: 'tcp',
@@ -891,13 +1030,15 @@ describe('agent bridge manager command resolution', () => {
 
     const ensureReadyPromise = manager.ensureReady()
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
     child.emit('exit', 0, 'SIGTERM')
 
     await expect(ensureReadyPromise).resolves.toEqual(recoveredReadiness)
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     expect(startSpy).toHaveBeenCalledTimes(1)
     expect(checkReadinessSpy).toHaveBeenCalledTimes(2)
-    expect(checkReadinessSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ connectRetryMs: 0 }))
+    expect(checkReadinessSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ connectRetryMs: 0 }), true)
     expect((manager as any).child).toBeNull()
   })
 
@@ -910,7 +1051,7 @@ describe('agent bridge manager command resolution', () => {
     ;(manager as any).ready = true
     ;(manager as any).attached = false
 
-    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness')
+    const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal')
       .mockResolvedValueOnce({
         endpoint: 'tcp://127.0.0.1:6559',
         endpointKind: 'tcp',
@@ -945,6 +1086,8 @@ describe('agent bridge manager command resolution', () => {
 
     const ensureReadyPromise = manager.ensureReady()
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
     child.emit('exit', 0, 'SIGTERM')
 
     await expect(ensureReadyPromise).resolves.toMatchObject({
@@ -958,7 +1101,7 @@ describe('agent bridge manager command resolution', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     expect(startSpy).toHaveBeenCalledTimes(1)
     expect(checkReadinessSpy).toHaveBeenCalledTimes(2)
-    expect(checkReadinessSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ connectRetryMs: 0 }))
+    expect(checkReadinessSpy).toHaveBeenNthCalledWith(2, expect.objectContaining({ connectRetryMs: 0 }), true)
     expect((manager as any).child).toBeNull()
   })
 
@@ -985,7 +1128,7 @@ describe('agent bridge manager command resolution', () => {
     ;(manager as any).attached = true
     ;(manager as any).ready = true
 
-    const checkReadinessSpy = vi.spyOn(manager, 'checkReadiness').mockResolvedValue(readiness)
+    const checkReadinessSpy = vi.spyOn(manager as any, 'checkReadinessInternal').mockResolvedValue(readiness)
     const startSpy = vi.spyOn(manager, 'start').mockResolvedValue()
     const shutdownSpy = vi.spyOn(AgentBridgeClient.prototype, 'shutdown').mockResolvedValue({ ok: true })
 

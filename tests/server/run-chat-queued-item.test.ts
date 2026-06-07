@@ -164,7 +164,7 @@ describe('ChatRunSocket queued bridge runs', () => {
     ;(server as any).onConnection(socket)
     await handlers.get('resume')?.({ session_id: 'session-1' })
 
-    expect(bridgeMock.statusIfLoaded).toHaveBeenCalledWith('session-1', 'default')
+    expect(bridgeMock.statusIfLoaded).toHaveBeenCalledWith('session-1', 'default', { timeoutMs: 1000 })
     expect(bridgeMock.status).not.toHaveBeenCalled()
     expect(resumeBridgeRunMock).not.toHaveBeenCalled()
     expect(socket.emit).toHaveBeenCalledWith('resumed', expect.objectContaining({

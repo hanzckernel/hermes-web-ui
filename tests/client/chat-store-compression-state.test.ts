@@ -42,7 +42,7 @@ vi.mock('@/utils/completion-sound', () => ({
   playCompletionSound: vi.fn(),
 }))
 
-import { useChatStore, type Session } from '@/stores/hermes/chat'
+import { useChatStore, type Message, type Session } from '@/stores/hermes/chat'
 
 function makeSession(id: string): Session {
   return {
@@ -103,6 +103,40 @@ describe('chat store compression state', () => {
     }))
   })
 
+  it('surfaces non-terminal reattach warnings replayed in a non-working resume payload', async () => {
+    chatApi.resumeSession.mockImplementationOnce((sessionId: string, onResumed: (data: any) => void) => {
+      onResumed({
+        session_id: sessionId,
+        messages: [],
+        isWorking: false,
+        events: [{
+          event: 'run.reattach_failed',
+          data: {
+            event: 'run.reattach_failed',
+            session_id: sessionId,
+            error: 'connect ECONNREFUSED configured endpoint',
+            message: 'Unable to confirm Agent Bridge status while resuming: connect ECONNREFUSED configured endpoint',
+            text: 'Unable to confirm Agent Bridge status while resuming: connect ECONNREFUSED configured endpoint',
+          },
+        }],
+      })
+      return {} as any
+    })
+    const store = useChatStore()
+    store.sessions = [makeSession('session-reattach')]
+
+    await store.switchSession('session-reattach')
+    await nextTick()
+
+    expect(store.activeSession?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'system',
+        commandAction: 'agent.event',
+        content: 'Unable to confirm Agent Bridge status while resuming: connect ECONNREFUSED configured endpoint',
+      }),
+    ]))
+  })
+
   it('preserves streamed content when run.completed parsed_content is blank', async () => {
     const store = useChatStore()
     store.sessions = [makeSession('session-1')]
@@ -118,11 +152,11 @@ describe('chat store compression state', () => {
     handlers.onRunCompleted({ event: 'run.completed', parsed_content: '', output: '', run_id: 'run-1' })
     await nextTick()
 
-    const assistant = store.activeSession?.messages.find(message => message.id === 'a1')
+    const assistant = store.activeSession?.messages.find((message: Message) => message.id === 'a1')
     expect(assistant?.content).toBe('final answer')
     expect(assistant?.isStreaming).toBe(false)
     expect(store.activeSession?.messages.some(
-      message => message.role === 'system' && message.content.includes('Agent returned no output'),
+      (message: Message) => message.role === 'system' && message.content.includes('Agent returned no output'),
     )).toBe(false)
   })
 
@@ -141,9 +175,9 @@ describe('chat store compression state', () => {
     handlers.onRunCompleted({ event: 'run.completed', parsed_content: '', output: '', run_id: 'run-2' })
     await nextTick()
 
-    expect(store.activeSession?.messages.find(message => message.id === 'old-a1')?.content).toBe('previous answer')
+    expect(store.activeSession?.messages.find((message: Message) => message.id === 'old-a1')?.content).toBe('previous answer')
     expect(store.activeSession?.messages.some(
-      message => message.role === 'system' && message.content.includes('Agent returned no output'),
+      (message: Message) => message.role === 'system' && message.content.includes('Agent returned no output'),
     )).toBe(true)
   })
 
@@ -163,7 +197,7 @@ describe('chat store compression state', () => {
     handlers.onToolCompleted({ event: 'tool.completed', tool_call_id: 'call-1', output: { ok: true }, run_id: 'run-1' })
     await nextTick()
 
-    const tool = store.activeSession?.messages.find(message => message.id === 'tool-1')
+    const tool = store.activeSession?.messages.find((message: Message) => message.id === 'tool-1')
     expect(tool?.toolStatus).toBe('done')
     expect(tool?.toolResult).toEqual({ ok: true })
   })

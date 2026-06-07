@@ -15,6 +15,7 @@ import { getSession } from '../../../db/hermes/session-store'
 import { getActiveProfileName, getProfileDir, listProfileNamesFromDisk } from '../hermes-profile'
 import { AgentBridgeClient } from '../agent-bridge'
 import { getAgentBridgeManager } from '../agent-bridge/manager'
+import { redactAgentBridgeError } from '../agent-bridge/redact'
 import { handleApiRun, resolveRunSource, loadSessionStateFromDb } from './handle-api-run'
 import { handleBridgeRun, resumeBridgeRun } from './handle-bridge-run'
 import { handleAbort } from './abort'
@@ -34,43 +35,14 @@ function currentProfileFromSocket(socket: Socket): string {
   return socketProfile || getActiveProfileName() || 'default'
 }
 
-function redactConfiguredTcpLoopbackEndpoint(error: string, endpoint?: string): string {
-  if (!endpoint?.startsWith('tcp://')) return error
-
-  try {
-    const url = new URL(endpoint)
-    if (!url.port) return error
-    const hosts = new Set<string>()
-    if (url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '::1') {
-      hosts.add(`127.0.0.1:${url.port}`)
-      hosts.add(`localhost:${url.port}`)
-      hosts.add(`::1:${url.port}`)
-      hosts.add(`[::1]:${url.port}`)
-    }
-
-    let redacted = error
-    for (const host of hosts) {
-      redacted = redacted.split(host).join('configured endpoint')
-    }
-    return redacted
-  } catch {
-    return error
-  }
-}
-
 function redactBridgeReadyError(error: string, endpoint?: string): string {
   const normalized = error.replace(/^Error:\s*/, '').trim() || 'unknown error'
-  let redacted = normalized
-  if (endpoint?.trim()) {
-    redacted = redacted.split(endpoint).join('configured endpoint')
-  }
-  redacted = redactConfiguredTcpLoopbackEndpoint(redacted, endpoint)
-  return redacted.replace(/ipc:\/\/[^\s),;]+/g, 'IPC endpoint')
+  return redactAgentBridgeError(normalized, endpoint, 'configured endpoint') || 'unknown error'
 }
 
 export async function ensureBridgeReadyForChatRun(): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    const readiness = await getAgentBridgeManager().ensureReady({ timeoutMs: 1000, connectRetryMs: 0 })
+    const readiness = await getAgentBridgeManager().ensureReady({ timeoutMs: 1000, connectRetryMs: 0, recover: false })
     if (readiness.reachable) {
       return { ok: true }
     }
@@ -410,6 +382,9 @@ export class ChatRunSocket {
       this.sessionMap.set(sid, state)
     }
     await this.reattachBridgeRun(socket, sid, state)
+    const resumeEvents = state.isWorking
+      ? state.events
+      : (state.events || []).filter(evt => evt?.event === 'run.reattach_failed')
     socket.emit('resumed', {
       session_id: sid,
       messages: state.messages,
@@ -419,7 +394,7 @@ export class ChatRunSocket {
       hasMoreBefore: state.hasMoreBefore,
       isWorking: state.isWorking,
       isAborting: state.isAborting || false,
-      events: state.isWorking ? state.events : [],
+      events: resumeEvents,
       inputTokens: state.inputTokens,
       outputTokens: state.outputTokens,
       contextTokens: state.contextTokens,
@@ -437,24 +412,13 @@ export class ChatRunSocket {
     const profile = session?.profile || currentProfileFromSocket(socket)
     let pollKey: string | undefined
     try {
-      const status = await this.bridge.statusIfLoaded(sid, profile) as Record<string, unknown>
+      const status = await this.bridge.statusIfLoaded(sid, profile, { timeoutMs: 1000 }) as Record<string, unknown>
       const running = status.running === true
       const runId = typeof status.current_run_id === 'string' ? status.current_run_id : ''
       if (!running || !runId) return
       pollKey = `${sid}:${runId}`
       if (this.bridgeResumePolls.has(pollKey)) return
       this.bridgeResumePolls.add(pollKey)
-      const bridgeReady = await ensureBridgeReadyForChatRun()
-      if (!bridgeReady.ok) {
-        this.bridgeResumePolls.delete(pollKey)
-        this.rollbackBridgeReattachState(state)
-        this.emitToSession(socket, sid, 'run.failed', {
-          event: 'run.failed',
-          session_id: sid,
-          error: `Agent Bridge is not reachable: ${bridgeReady.error}`,
-        })
-        return
-      }
       state.isWorking = true
       state.isAborting = state.isAborting === true
       state.runId = runId
@@ -483,26 +447,24 @@ export class ChatRunSocket {
       logger.info('[chat-run-socket] reattached running bridge run %s for session %s', runId, sid)
     } catch (err) {
       if (pollKey) this.bridgeResumePolls.delete(pollKey)
-      this.rollbackBridgeReattachState(state)
       logger.warn(err, '[chat-run-socket] bridge status lookup failed while resuming session %s', sid)
       const endpoint = getAgentBridgeManager().getRuntimeState?.().endpoint
       const error = redactBridgeReadyError(err instanceof Error ? err.message : String(err), endpoint)
-      this.emitToSession(socket, sid, 'run.failed', {
-        event: 'run.failed',
+      const payload = {
+        event: 'run.reattach_failed',
         session_id: sid,
-        error: `Agent Bridge is not reachable: ${error}`,
-      })
+        error,
+        message: `Unable to confirm Agent Bridge status while resuming: ${error}`,
+        text: `Unable to confirm Agent Bridge status while resuming: ${error}`,
+      }
+      const nextEvents = [...(state.events || [])]
+      const lastEvent = nextEvents[nextEvents.length - 1]
+      if (lastEvent?.event !== 'run.reattach_failed' || lastEvent?.data?.error !== error) {
+        nextEvents.push({ event: 'run.reattach_failed', data: payload })
+        state.events = nextEvents
+      }
+      this.emitToSession(socket, sid, 'run.reattach_failed', payload)
     }
-  }
-
-  private rollbackBridgeReattachState(state: SessionState) {
-    state.isWorking = false
-    state.isAborting = false
-    state.runId = undefined
-    state.activeRunMarker = undefined
-    state.profile = undefined
-    state.source = undefined
-    state.events = []
   }
 
   private resumeInstructionsForSession(sessionId: string): string {

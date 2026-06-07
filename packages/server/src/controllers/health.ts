@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 import * as hermesCli from '../services/hermes/hermes-cli'
 import { getAgentBridgeManager } from '../services/hermes/agent-bridge/manager'
+import { redactAgentBridgeError } from '../services/hermes/agent-bridge/redact'
 
 declare const __APP_VERSION__: string
 
@@ -45,6 +46,26 @@ const LOCAL_VERSION = typeof __APP_VERSION__ !== 'undefined'
   : PACKAGE_INFO?.version || ''
 
 let cachedLatestVersion = ''
+const AGENT_BRIDGE_HEALTH_CACHE_TTL_MS = 250
+const AGENT_BRIDGE_HEALTH_FIRST_WAIT_MS = 75
+
+type AgentBridgeHealthPayload = {
+  status: string
+  reachable: boolean
+  ready?: boolean
+  running?: boolean
+  attached?: boolean
+  starting?: boolean
+  stopping?: boolean
+  restart_scheduled?: boolean
+  restart_attempts?: number
+  endpoint_kind?: 'ipc' | 'tcp' | 'unknown'
+  pid?: number
+  error?: string
+}
+
+let cachedAgentBridgeHealth: { value: AgentBridgeHealthPayload; expiresAt: number } | null = null
+let pendingAgentBridgeHealthRefresh: Promise<AgentBridgeHealthPayload> | null = null
 
 /**
  * Whether the periodic npm-registry version check is disabled.
@@ -84,15 +105,42 @@ export function startVersionCheck(): void {
 }
 
 async function getAgentBridgeHealth() {
-  const manager = getAgentBridgeManager()
-  const endpoint = typeof manager.getRuntimeState === 'function'
-    ? manager.getRuntimeState().endpoint
-    : undefined
+  const now = Date.now()
+  if (cachedAgentBridgeHealth && cachedAgentBridgeHealth.expiresAt > now) {
+    return cachedAgentBridgeHealth.value
+  }
+
+  if (!pendingAgentBridgeHealthRefresh) {
+    pendingAgentBridgeHealthRefresh = refreshAgentBridgeHealth().finally(() => {
+      pendingAgentBridgeHealthRefresh = null
+    })
+  }
+
+  if (cachedAgentBridgeHealth) {
+    return cachedAgentBridgeHealth.value
+  }
+
+  const firstResult = await Promise.race([
+    pendingAgentBridgeHealthRefresh,
+    new Promise<AgentBridgeHealthPayload>((resolve) => {
+      setTimeout(() => resolve({ status: 'unknown', reachable: false }), AGENT_BRIDGE_HEALTH_FIRST_WAIT_MS)
+    }),
+  ])
+
+  return firstResult
+}
+
+async function refreshAgentBridgeHealth(): Promise<AgentBridgeHealthPayload> {
+  let endpoint: string | undefined
 
   try {
-    const readiness = await manager.checkReadiness({ timeoutMs: 750, connectRetryMs: 0 })
-    const error = redactAgentBridgeError(readiness.error, readiness.endpoint)
-    return {
+    const manager = getAgentBridgeManager()
+    endpoint = typeof manager.getRuntimeState === 'function'
+      ? manager.getRuntimeState().endpoint
+      : undefined
+
+    const readiness = await manager.checkReadiness({ timeoutMs: AGENT_BRIDGE_HEALTH_FIRST_WAIT_MS, connectRetryMs: 0 })
+    const value: AgentBridgeHealthPayload = {
       status: readiness.status,
       reachable: readiness.reachable,
       ready: readiness.ready,
@@ -104,39 +152,19 @@ async function getAgentBridgeHealth() {
       restart_attempts: readiness.restartAttempts,
       endpoint_kind: readiness.endpointKind,
       pid: readiness.pid,
-      error,
+      error: redactAgentBridgeError(readiness.error, readiness.endpoint),
     }
+    cachedAgentBridgeHealth = { value, expiresAt: Date.now() + AGENT_BRIDGE_HEALTH_CACHE_TTL_MS }
+    return value
   } catch (err) {
-    return {
+    const value: AgentBridgeHealthPayload = {
       status: 'unknown',
       reachable: false,
       error: redactAgentBridgeError(err instanceof Error ? err.message : String(err), endpoint),
     }
+    cachedAgentBridgeHealth = { value, expiresAt: Date.now() + AGENT_BRIDGE_HEALTH_CACHE_TTL_MS }
+    return value
   }
-}
-
-function redactAgentBridgeError(error: string | undefined, endpoint?: string): string | undefined {
-  if (!error) return undefined
-  if (!endpoint) return error
-
-  const candidates = [endpoint]
-
-  if (endpoint.startsWith('ipc://')) {
-    candidates.push(endpoint.slice('ipc://'.length))
-  }
-
-  if (endpoint.startsWith('tcp://')) {
-    try {
-      const url = new URL(endpoint)
-      candidates.push(url.host)
-    } catch {
-      // Ignore malformed endpoints and fall back to the original string.
-    }
-  }
-
-  return candidates
-    .filter(candidate => candidate)
-    .reduce((message, candidate) => message.split(candidate).join('[redacted endpoint]'), error)
 }
 
 export async function healthCheck(ctx: any) {

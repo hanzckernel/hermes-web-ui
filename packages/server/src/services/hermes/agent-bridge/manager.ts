@@ -46,7 +46,7 @@ export interface AgentBridgeManagerRuntimeState {
 
 export type AgentBridgeEndpointKind = 'ipc' | 'tcp' | 'unknown'
 
-export type AgentBridgeReadinessStatus = 'ready' | 'starting' | 'stopping' | 'restarting' | 'unreachable'
+export type AgentBridgeReadinessStatus = 'ready' | 'starting' | 'recovering' | 'stopping' | 'restarting' | 'unreachable'
 
 export interface AgentBridgeReadinessOptions {
   timeoutMs?: number
@@ -78,6 +78,13 @@ function envPositiveInt(name: string): number | undefined {
   if (!raw) return undefined
   const value = Number(raw)
   return Number.isFinite(value) && value > 0 ? value : undefined
+}
+
+function isLegacyGlobalDefaultEndpoint(endpoint: string): boolean {
+  const normalized = endpoint.trim().toLowerCase()
+  return normalized === 'ipc:///tmp/hermes-agent-bridge.sock' ||
+    normalized === 'tcp://127.0.0.1:18765' ||
+    normalized === 'tcp://localhost:18765'
 }
 
 export function buildAgentBridgeProcessEnv(endpoint: string, hermesHome: string | undefined, agentRoot: string | undefined): NodeJS.ProcessEnv {
@@ -476,6 +483,7 @@ export class AgentBridgeManager {
   private child: ChildProcess | null = null
   private attached = false
   private starting: Promise<void> | null = null
+  private recovery: Promise<AgentBridgeReadiness> | null = null
   private ready = false
   private stopping = false
   private stopGeneration = 0
@@ -506,7 +514,88 @@ export class AgentBridgeManager {
     }
   }
 
-  async checkReadiness(options: AgentBridgeReadinessOptions = {}): Promise<AgentBridgeReadiness> {
+  private transientReadiness(status: AgentBridgeReadinessStatus, error?: string): AgentBridgeReadiness {
+    const state = this.getRuntimeState()
+    const endpoint = state.endpoint
+    const readiness: AgentBridgeReadiness = {
+      endpoint,
+      endpointKind: classifyEndpointKind(endpoint),
+      status,
+      reachable: false,
+      ready: false,
+      running: false,
+      attached: state.attached,
+      starting: state.starting,
+      stopping: state.stopping,
+      restartScheduled: state.restartScheduled,
+      restartAttempts: state.restartAttempts,
+      pid: state.pid,
+    }
+    return error ? { ...readiness, error } : readiness
+  }
+
+  private async waitForPromiseSettlementWithin(promise: Promise<unknown>, timeoutMs?: number): Promise<boolean> {
+    if (!timeoutMs || timeoutMs <= 0) {
+      try {
+        await promise
+      } catch {}
+      return true
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false
+      const timeout = setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolve(false)
+      }, timeoutMs)
+
+      promise.finally(() => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        resolve(true)
+      }).catch(() => {})
+    })
+  }
+
+  private async waitForReadinessWithin(
+    promise: Promise<AgentBridgeReadiness>,
+    timeoutMs?: number,
+  ): Promise<AgentBridgeReadiness | null> {
+    if (!timeoutMs || timeoutMs <= 0) {
+      return promise
+    }
+
+    return new Promise<AgentBridgeReadiness | null>((resolve) => {
+      let settled = false
+      const timeout = setTimeout(() => {
+        if (settled) return
+        settled = true
+        resolve(null)
+      }, timeoutMs)
+
+      promise.then(
+        (value) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeout)
+          resolve(value)
+        },
+        (err) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeout)
+          resolve(this.transientReadiness('recovering', normalizeReadinessError(this.endpoint, err)))
+        },
+      )
+    })
+  }
+
+  private async checkReadinessInternal(
+    options: AgentBridgeReadinessOptions = {},
+    ignoreRecovery = false,
+  ): Promise<AgentBridgeReadiness> {
     const state = this.getRuntimeState()
     const endpoint = state.endpoint
     const endpointKind = classifyEndpointKind(endpoint)
@@ -529,6 +618,16 @@ export class AgentBridgeManager {
       return {
         ...readiness,
         status: 'stopping',
+        reachable: false,
+        ready: false,
+        running: false,
+      }
+    }
+
+    if (!ignoreRecovery && this.recovery) {
+      return {
+        ...readiness,
+        status: 'recovering',
         reachable: false,
         ready: false,
         running: false,
@@ -588,21 +687,67 @@ export class AgentBridgeManager {
     }
   }
 
+  async checkReadiness(options: AgentBridgeReadinessOptions = {}): Promise<AgentBridgeReadiness> {
+    return this.checkReadinessInternal(options)
+  }
+
+  private async performManagedRecovery(
+    child: ChildProcess,
+    options: AgentBridgeEnsureReadyOptions,
+  ): Promise<AgentBridgeReadiness> {
+    const recoveryStopGeneration = this.stopGeneration
+    this.ready = false
+
+    const exited = await this.waitForManagedChildExit(child)
+    if (!exited) {
+      const message = `managed child pid=${child.pid} did not exit after SIGTERM/SIGKILL during recovery`
+      const recoveryReadiness = await this.checkReadinessInternal({ ...options, connectRetryMs: 0 }, true)
+      return {
+        ...recoveryReadiness,
+        status: 'unreachable',
+        reachable: false,
+        ready: false,
+        running: false,
+        error: recoveryReadiness.error ? `${message}; ${recoveryReadiness.error}` : message,
+      }
+    }
+
+    if (this.stopGeneration !== recoveryStopGeneration || this.stopping) {
+      return this.checkReadinessInternal({ ...options, connectRetryMs: 0 }, true)
+    }
+
+    try {
+      await this.start()
+      return await this.checkReadinessInternal(options, true)
+    } catch (err) {
+      const recoveredReadiness = await this.checkReadinessInternal({ ...options, connectRetryMs: 0 }, true)
+      const error = mergeStartFailureReadinessError(recoveredReadiness, err)
+      return error
+        ? { ...recoveredReadiness, error }
+        : recoveredReadiness
+    }
+  }
+
   async ensureReady(options: AgentBridgeEnsureReadyOptions = {}): Promise<AgentBridgeReadiness> {
     const readiness = await this.checkReadiness(options)
     if (readiness.reachable) {
       return readiness
     }
 
-    if (readiness.status === 'starting' && this.starting) {
-      try {
-        await this.starting
-      } catch {}
-      return this.checkReadiness(options)
-    }
-
     if (options.recover === false) {
       return readiness
+    }
+
+    if (this.recovery) {
+      const recovered = await this.waitForReadinessWithin(this.recovery, options.timeoutMs)
+      return recovered ?? this.transientReadiness('recovering')
+    }
+
+    if (readiness.status === 'starting' && this.starting) {
+      const completed = await this.waitForPromiseSettlementWithin(this.starting, options.timeoutMs)
+      return completed
+        ? this.checkReadiness(options)
+        : this.transientReadiness('starting')
     }
 
     if (readiness.status !== 'unreachable') {
@@ -615,25 +760,25 @@ export class AgentBridgeManager {
       return readiness
     }
 
-    const recoveryStopGeneration = this.stopGeneration
-    this.ready = false
-    this.child = null
-    await this.waitForManagedChildExit(child)
-
-    if (this.stopGeneration !== recoveryStopGeneration || this.stopping) {
-      return this.checkReadiness({ ...options, connectRetryMs: 0 })
+    if (isLegacyGlobalDefaultEndpoint(this.endpoint)) {
+      this.ready = false
+      const message = 'managed bridge recovery is disabled for legacy global default endpoint; merge endpoint scoping before enabling recovery'
+      return {
+        ...readiness,
+        error: readiness.error ? `${readiness.error}; ${message}` : message,
+      }
     }
 
-    try {
-      await this.start()
-      return await this.checkReadiness(options)
-    } catch (err) {
-      const recoveredReadiness = await this.checkReadiness({ ...options, connectRetryMs: 0 })
-      const error = mergeStartFailureReadinessError(recoveredReadiness, err)
-      return error
-        ? { ...recoveredReadiness, error }
-        : recoveredReadiness
-    }
+    let recoveryPromise: Promise<AgentBridgeReadiness>
+    recoveryPromise = this.performManagedRecovery(child, options).finally(() => {
+      if (this.recovery === recoveryPromise) {
+        this.recovery = null
+      }
+    })
+    this.recovery = recoveryPromise
+
+    const recovered = await this.waitForReadinessWithin(recoveryPromise, options.timeoutMs)
+    return recovered ?? this.transientReadiness('recovering')
   }
 
   async start(): Promise<void> {
@@ -652,8 +797,8 @@ export class AgentBridgeManager {
     }
   }
 
-  private async waitForManagedChildExit(child: ChildProcess): Promise<void> {
-    await new Promise<void>((resolve) => {
+  private async waitForManagedChildExit(child: ChildProcess): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
       const gracefulTimeoutMs = envPositiveInt('HERMES_AGENT_BRIDGE_RECOVERY_EXIT_TIMEOUT_MS')
         ?? DEFAULT_AGENT_BRIDGE_RECOVERY_EXIT_TIMEOUT_MS
       const sigkillWaitMs = envPositiveInt('HERMES_AGENT_BRIDGE_RECOVERY_SIGKILL_WAIT_MS')
@@ -669,23 +814,36 @@ export class AgentBridgeManager {
         child.off('exit', onExit)
       }
 
-      const finish = () => {
+      const finish = (exited: boolean) => {
         if (settled) return
         settled = true
         cleanup()
-        resolve()
+        resolve(exited)
       }
 
       const onExit = () => {
-        finish()
+        if (this.child === child) {
+          this.child = null
+        }
+        finish(true)
       }
 
       const sendSignal = (signal: NodeJS.Signals) => {
         try {
-          child.kill(signal)
+          // Node marks child.killed=true after a signal is successfully sent, not
+          // after the process has actually exited. Recovery must still be able to
+          // escalate SIGTERM -> SIGKILL while waiting for an observed exit.
+          if (signal === 'SIGKILL' || !child.killed) {
+            child.kill(signal)
+          }
         } catch (err) {
           logger.warn(err, '[agent-bridge] failed to signal managed child pid=%s signal=%s', child.pid, signal)
         }
+      }
+
+      if (child.exitCode != null || child.signalCode != null) {
+        onExit()
+        return
       }
 
       child.once('exit', onExit)
@@ -701,11 +859,11 @@ export class AgentBridgeManager {
         sigkillTimeout = setTimeout(() => {
           if (settled) return
           logger.warn(
-            '[agent-bridge] managed child pid=%s still has not exited %dms after SIGKILL; continuing recovery',
+            '[agent-bridge] managed child pid=%s still has not exited %dms after SIGKILL; not starting a replacement',
             child.pid,
             sigkillWaitMs,
           )
-          finish()
+          finish(false)
         }, sigkillWaitMs)
       }, gracefulTimeoutMs)
 
@@ -919,7 +1077,11 @@ export class AgentBridgeManager {
       // Allow enough time for the broker to gracefully stop its worker
       // subprocesses (WorkerProcess.stop uses a 3s timeout per worker).
       const timeout = setTimeout(() => {
-        if (!child.killed) child.kill('SIGKILL')
+        // `child.killed` only means a signal was sent. Escalate on shutdown
+        // timeout even if SIGTERM was already sent by recovery.
+        try {
+          child.kill('SIGKILL')
+        } catch {}
         resolveStop()
       }, 10_000)
       child.once('exit', () => {

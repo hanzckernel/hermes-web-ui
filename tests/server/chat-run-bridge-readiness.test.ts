@@ -98,6 +98,14 @@ function makeServerHarness() {
 describe('ensureBridgeReadyForChatRun', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ensureReadyMock.mockReset()
+    getRuntimeStateMock.mockReset()
+    bridgeMock.status.mockReset()
+    bridgeMock.statusIfLoaded.mockReset()
+    handleBridgeRunMock.mockReset()
+    resumeBridgeRunMock.mockReset()
+    handleApiRunMock.mockReset()
+    loadSessionStateFromDbMock.mockReset()
     ensureReadyMock.mockResolvedValue({
       reachable: true,
       status: 'ready',
@@ -110,7 +118,7 @@ describe('ensureBridgeReadyForChatRun', () => {
     const { ensureBridgeReadyForChatRun } = await import('../../packages/server/src/services/hermes/run-chat')
 
     await expect(ensureBridgeReadyForChatRun()).resolves.toEqual({ ok: true })
-    expect(ensureReadyMock).toHaveBeenCalledWith({ timeoutMs: 1000, connectRetryMs: 0 })
+    expect(ensureReadyMock).toHaveBeenCalledWith({ timeoutMs: 1000, connectRetryMs: 0, recover: false })
   })
 
   it('returns a visible error when the bridge is unreachable', async () => {
@@ -128,12 +136,12 @@ describe('ensureBridgeReadyForChatRun', () => {
     })
   })
 
-  it('redacts configured loopback tcp host:port when the bridge is unreachable', async () => {
+  it('redacts configured tcp host:port when the bridge is unreachable', async () => {
     ensureReadyMock.mockResolvedValueOnce({
       reachable: false,
       status: 'unreachable',
-      endpoint: 'tcp://127.0.0.1:43123',
-      error: 'connect ECONNREFUSED 127.0.0.1:43123',
+      endpoint: 'tcp://example.internal:43123',
+      error: 'connect ECONNREFUSED example.internal:43123',
     })
     const { ensureBridgeReadyForChatRun } = await import('../../packages/server/src/services/hermes/run-chat')
 
@@ -157,6 +165,14 @@ describe('ensureBridgeReadyForChatRun', () => {
 describe('ChatRunSocket bridge readiness gating', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ensureReadyMock.mockReset()
+    getRuntimeStateMock.mockReset()
+    bridgeMock.status.mockReset()
+    bridgeMock.statusIfLoaded.mockReset()
+    handleBridgeRunMock.mockReset()
+    resumeBridgeRunMock.mockReset()
+    handleApiRunMock.mockReset()
+    loadSessionStateFromDbMock.mockReset()
     ensureReadyMock.mockResolvedValue({
       reachable: true,
       status: 'ready',
@@ -213,13 +229,7 @@ describe('ChatRunSocket bridge readiness gating', () => {
     expect(socket.emit).not.toHaveBeenCalledWith('run.failed', expect.anything())
   })
 
-  it('emits run.failed before resumeBridgeRun when the bridge is unreachable', async () => {
-    ensureReadyMock.mockResolvedValueOnce({
-      reachable: false,
-      status: 'unreachable',
-      endpoint: 'ipc:///tmp/hermes-agent-bridge.sock',
-      error: 'bridge offline',
-    })
+  it('reattaches a loaded running bridge run without probing manager readiness again', async () => {
     bridgeMock.statusIfLoaded
       .mockResolvedValueOnce({
         ok: true,
@@ -242,37 +252,26 @@ describe('ChatRunSocket bridge readiness gating', () => {
     ;(server as any).onConnection(socket)
     await handlers.get('resume')?.({ session_id: 'session-1' })
 
-    expect(resumeBridgeRunMock).not.toHaveBeenCalled()
+    expect(ensureReadyMock).not.toHaveBeenCalled()
+    expect(resumeBridgeRunMock).toHaveBeenCalledTimes(1)
     expect(socket.emit).toHaveBeenCalledWith('resumed', expect.objectContaining({
       session_id: 'session-1',
-      isWorking: false,
-      events: [],
+      isWorking: true,
     }))
-    expect(emitted).toContainEqual({
-      room: 'session:session-1',
-      event: 'run.failed',
-      payload: {
-        event: 'run.failed',
-        session_id: 'session-1',
-        error: 'Agent Bridge is not reachable: bridge offline',
-      },
-    })
+    expect(emitted.some(({ event }) => event === 'run.failed')).toBe(false)
     expect((server as any).sessionMap.get('session-1')).toEqual(expect.objectContaining({
-      isWorking: false,
-      runId: undefined,
+      isWorking: true,
+      isAborting: false,
+      runId: 'run-1',
       activeRunMarker: undefined,
-      profile: undefined,
-      source: undefined,
+      profile: 'default',
+      source: 'cli',
       events: [],
     }))
     expect((server as any).bridgeResumePolls.size).toBe(0)
-
-    await handlers.get('resume')?.({ session_id: 'session-1' })
-
-    expect(resumeBridgeRunMock).toHaveBeenCalledTimes(1)
   })
 
-  it('emits run.failed and clears stale state when bridge status lookup throws during resume', async () => {
+  it('emits a non-terminal reattach warning and preserves stale state when bridge status lookup throws during resume', async () => {
     bridgeMock.statusIfLoaded.mockRejectedValueOnce(new Error('connect ECONNREFUSED ipc:///tmp/hermes-agent-bridge.sock'))
     loadSessionStateFromDbMock.mockResolvedValueOnce({
       messages: [],
@@ -296,32 +295,42 @@ describe('ChatRunSocket bridge readiness gating', () => {
     expect(resumeBridgeRunMock).not.toHaveBeenCalled()
     expect(emitted).toContainEqual({
       room: 'session:session-1',
-      event: 'run.failed',
+      event: 'run.reattach_failed',
       payload: {
-        event: 'run.failed',
+        event: 'run.reattach_failed',
         session_id: 'session-1',
-        error: 'Agent Bridge is not reachable: connect ECONNREFUSED configured endpoint',
+        error: 'connect ECONNREFUSED configured endpoint',
+        message: 'Unable to confirm Agent Bridge status while resuming: connect ECONNREFUSED configured endpoint',
+        text: 'Unable to confirm Agent Bridge status while resuming: connect ECONNREFUSED configured endpoint',
       },
-    })
-    expect(socket.emit).toHaveBeenCalledWith('run.failed', {
-      event: 'run.failed',
-      session_id: 'session-1',
-      error: 'Agent Bridge is not reachable: connect ECONNREFUSED configured endpoint',
     })
     expect(socket.emit).toHaveBeenCalledWith('resumed', expect.objectContaining({
       session_id: 'session-1',
       isWorking: false,
-      isAborting: false,
-      events: [],
+      isAborting: true,
+      events: [expect.objectContaining({
+        event: 'run.reattach_failed',
+        data: expect.objectContaining({
+          error: 'connect ECONNREFUSED configured endpoint',
+        }),
+      })],
     }))
     expect((server as any).sessionMap.get('session-1')).toEqual(expect.objectContaining({
       isWorking: false,
-      isAborting: false,
-      runId: undefined,
-      activeRunMarker: undefined,
-      profile: undefined,
-      source: undefined,
-      events: [],
+      isAborting: true,
+      runId: 'stale-run',
+      activeRunMarker: 'marker-1',
+      profile: 'default',
+      source: 'cli',
+      events: expect.arrayContaining([
+        expect.objectContaining({ event: 'run.started' }),
+        expect.objectContaining({
+          event: 'run.reattach_failed',
+          data: expect.objectContaining({
+            error: 'connect ECONNREFUSED configured endpoint',
+          }),
+        }),
+      ]),
     }))
     expect((server as any).bridgeResumePolls.size).toBe(0)
   })
