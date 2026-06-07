@@ -4,6 +4,7 @@ const handleBridgeRunMock = vi.hoisted(() => vi.fn(async () => {}))
 const resumeBridgeRunMock = vi.hoisted(() => vi.fn(async () => {}))
 const handleApiRunMock = vi.hoisted(() => vi.fn(async () => {}))
 const loadSessionStateFromDbMock = vi.hoisted(() => vi.fn())
+const ensureReadyMock = vi.hoisted(() => vi.fn())
 const bridgeMock = vi.hoisted(() => ({
   status: vi.fn(),
   statusIfLoaded: vi.fn(),
@@ -28,6 +29,12 @@ vi.mock('../../packages/server/src/services/hermes/run-chat/session-command', ()
 
 vi.mock('../../packages/server/src/services/hermes/agent-bridge', () => ({
   AgentBridgeClient: vi.fn(() => bridgeMock),
+}))
+
+vi.mock('../../packages/server/src/services/hermes/agent-bridge/manager', () => ({
+  getAgentBridgeManager: vi.fn(() => ({
+    ensureReady: ensureReadyMock,
+  })),
 }))
 
 vi.mock('../../packages/server/src/services/logger', () => ({
@@ -84,6 +91,11 @@ function makeServerHarness() {
 describe('ChatRunSocket queued bridge runs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ensureReadyMock.mockResolvedValue({
+      reachable: true,
+      status: 'ready',
+      endpoint: 'ipc:///tmp/hermes-agent-bridge.sock',
+    })
     bridgeMock.statusIfLoaded.mockResolvedValue({ ok: true, exists: false, running: false, loaded: false })
     loadSessionStateFromDbMock.mockResolvedValue({
       messages: [],

@@ -14,6 +14,7 @@ import { getSystemPrompt } from '../../../lib/llm-prompt'
 import { getSession } from '../../../db/hermes/session-store'
 import { getActiveProfileName, getProfileDir, listProfileNamesFromDisk } from '../hermes-profile'
 import { AgentBridgeClient } from '../agent-bridge'
+import { getAgentBridgeManager } from '../agent-bridge/manager'
 import { handleApiRun, resolveRunSource, loadSessionStateFromDb } from './handle-api-run'
 import { handleBridgeRun, resumeBridgeRun } from './handle-bridge-run'
 import { handleAbort } from './abort'
@@ -31,6 +32,33 @@ function currentProfileFromSocket(socket: Socket): string {
     ? socket.handshake.query.profile.trim()
     : ''
   return socketProfile || getActiveProfileName() || 'default'
+}
+
+function redactBridgeReadyError(error: string, endpoint?: string): string {
+  const normalized = error.replace(/^Error:\s*/, '').trim() || 'unknown error'
+  let redacted = normalized
+  if (endpoint?.trim()) {
+    redacted = redacted.split(endpoint).join('configured endpoint')
+  }
+  return redacted.replace(/ipc:\/\/[^\s),;]+/g, 'IPC endpoint')
+}
+
+export async function ensureBridgeReadyForChatRun(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const readiness = await getAgentBridgeManager().ensureReady({ timeoutMs: 1000, connectRetryMs: 0 })
+    if (readiness.reachable) {
+      return { ok: true }
+    }
+    return {
+      ok: false,
+      error: redactBridgeReadyError(readiness.error || `Agent Bridge is ${readiness.status}`, readiness.endpoint),
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: redactBridgeReadyError(err instanceof Error ? err.message : String(err)),
+    }
+  }
 }
 
 export class ChatRunSocket {
@@ -302,6 +330,23 @@ export class ChatRunSocket {
     if (data.session_id && source === 'cli' && isSessionCommand(data.input)) return
 
     if (source === 'cli') {
+      const bridgeReady = await ensureBridgeReadyForChatRun()
+      if (!bridgeReady.ok) {
+        if (data.session_id) {
+          const state = this.sessionMap.get(data.session_id)
+          if (state && !state.runId && !state.abortController && !state.activeRunMarker) {
+            state.isWorking = false
+            state.profile = undefined
+          }
+        }
+        socket.emit('run.failed', {
+          event: 'run.failed',
+          session_id: data.session_id,
+          error: `Agent Bridge is not reachable: ${bridgeReady.error}`,
+        })
+        return
+      }
+
       let fullInstructions = data.instructions
         ? `${getSystemPrompt()}\n${data.instructions}`
         : getSystemPrompt()
@@ -365,20 +410,34 @@ export class ChatRunSocket {
     if (state.runId && state.isWorking) return
     const session = getSession(sid)
     const profile = session?.profile || currentProfileFromSocket(socket)
+    let reattachedStateApplied = false
     try {
       const status = await this.bridge.statusIfLoaded(sid, profile) as Record<string, unknown>
       const running = status.running === true
       const runId = typeof status.current_run_id === 'string' ? status.current_run_id : ''
       if (!running || !runId) return
-      state.isWorking = true
-      state.isAborting = state.isAborting === true
-      state.runId = runId
-      state.profile = profile
-      state.source = 'cli'
-      state.events = []
       const pollKey = `${sid}:${runId}`
       if (this.bridgeResumePolls.has(pollKey)) return
       this.bridgeResumePolls.add(pollKey)
+      const bridgeReady = await ensureBridgeReadyForChatRun()
+      if (!bridgeReady.ok) {
+        this.bridgeResumePolls.delete(pollKey)
+        this.rollbackBridgeReattachState(state)
+        this.emitToSession(socket, sid, 'run.failed', {
+          event: 'run.failed',
+          session_id: sid,
+          error: `Agent Bridge is not reachable: ${bridgeReady.error}`,
+        })
+        return
+      }
+      state.isWorking = true
+      state.isAborting = state.isAborting === true
+      state.runId = runId
+      state.activeRunMarker = undefined
+      state.profile = profile
+      state.source = 'cli'
+      state.events = []
+      reattachedStateApplied = true
       const instructions = this.resumeInstructionsForSession(sid)
       void resumeBridgeRun(
         this.nsp,
@@ -399,8 +458,20 @@ export class ChatRunSocket {
       })
       logger.info('[chat-run-socket] reattached running bridge run %s for session %s', runId, sid)
     } catch (err) {
+      if (reattachedStateApplied) {
+        this.rollbackBridgeReattachState(state)
+      }
       logger.warn(err, '[chat-run-socket] bridge status lookup failed while resuming session %s', sid)
     }
+  }
+
+  private rollbackBridgeReattachState(state: SessionState) {
+    state.isWorking = false
+    state.runId = undefined
+    state.activeRunMarker = undefined
+    state.profile = undefined
+    state.source = undefined
+    state.events = []
   }
 
   private resumeInstructionsForSession(sessionId: string): string {
