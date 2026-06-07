@@ -23,7 +23,7 @@ export interface OpenaiTtsOptions {
 
 export interface MimoTtsOptions {
   baseUrl: string
-  apiKey: string
+  apiKey?: string
   authMode?: 'api-key' | 'bearer' | 'both'
   model: string
   voice?: string              // preset voice ID (preset mode)
@@ -334,7 +334,6 @@ export function useSpeech() {
     provider: TtsProviderId,
     options: Record<string, unknown>,
     token: number,
-    requestErrorMessage: string,
     playbackErrorMessage: string,
   ) {
     currentTtsAbort?.abort()
@@ -369,7 +368,6 @@ export function useSpeech() {
       if (isAbortError(err)) {
         return
       }
-      console.error(requestErrorMessage, err)
       throw err
     } finally {
       if (currentTtsAbort === abortController) {
@@ -396,7 +394,6 @@ export function useSpeech() {
       provider,
       providerOptions as unknown as Record<string, unknown>,
       token,
-      '[useSpeech] OpenAI TTS 请求失败:',
       '[useSpeech] Custom TTS audio playback error',
     )
   }
@@ -432,7 +429,7 @@ export function useSpeech() {
 
   function startCustomPlayback(promise: Promise<void>) {
     void promise.catch(() => {
-      // openaiPlay/mimoPlay already log non-abort failures and clear state.
+      // openaiPlay/mimoPlay already clear state; inline card UI handles failures.
       // Toggle callers are fire-and-forget UI actions; do not leak unhandled rejections.
     })
   }
@@ -468,7 +465,6 @@ export function useSpeech() {
       'mimo',
       opts as unknown as Record<string, unknown>,
       token,
-      '[useSpeech] MiMo TTS 请求失败:',
       '[useSpeech] MiMo TTS audio playback error',
     )
   }
