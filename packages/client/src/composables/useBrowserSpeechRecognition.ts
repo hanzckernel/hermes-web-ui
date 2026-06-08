@@ -172,7 +172,63 @@ export function useBrowserSpeechRecognition() {
   }
 
   function resolvedTranscriptText() {
-    return transcript.value || partialTranscript.value
+    return joinTranscriptParts([transcript.value, partialTranscript.value])
+  }
+
+  function createRecognition(
+    recognitionConstructor: BrowserSpeechRecognitionConstructor,
+    token: number,
+    language: string,
+  ) {
+    const recognition = new recognitionConstructor()
+    activeRecognition = recognition
+
+    recognition.lang = language
+    recognition.interimResults = true
+    recognition.continuous = true
+
+    recognition.onresult = (event) => {
+      if (token !== sessionToken || activeRecognition !== recognition) {
+        return
+      }
+
+      const { finalText, interimText } = collectResultText(event)
+
+      if (finalText) {
+        transcript.value = joinTranscriptParts([transcript.value, finalText])
+      }
+
+      partialTranscript.value = interimText
+    }
+
+    recognition.onerror = (event) => {
+      const detail = typeof event.error === 'string' && event.error.trim()
+        ? `Browser speech recognition failed: ${event.error}.`
+        : 'Browser speech recognition failed.'
+      failRecognition(token, new Error(detail))
+    }
+
+    recognition.onend = () => {
+      if (token !== sessionToken || activeRecognition !== recognition) {
+        return
+      }
+
+      if (status.value === 'listening' && !stopPromise) {
+        activeRecognition = null
+        detachRecognition(recognition)
+        partialTranscript.value = ''
+        try {
+          createRecognition(recognitionConstructor, token, language).start()
+        } catch (cause) {
+          failRecognition(token, cause)
+        }
+        return
+      }
+
+      finishRecognition(token)
+    }
+
+    return recognition
   }
 
   function clearError() {
@@ -224,41 +280,12 @@ export function useBrowserSpeechRecognition() {
     cancel()
 
     const token = ++sessionToken
-    const recognition = new recognitionConstructor()
-    activeRecognition = recognition
+    const language = typeof options.language === 'string' ? options.language.trim() : ''
     transcript.value = ''
     partialTranscript.value = ''
     error.value = null
     status.value = 'listening'
-
-    recognition.lang = typeof options.language === 'string' ? options.language.trim() : ''
-    recognition.interimResults = true
-    recognition.continuous = false
-
-    recognition.onresult = (event) => {
-      if (token !== sessionToken || activeRecognition !== recognition) {
-        return
-      }
-
-      const { finalText, interimText } = collectResultText(event)
-
-      if (finalText) {
-        transcript.value = joinTranscriptParts([transcript.value, finalText])
-      }
-
-      partialTranscript.value = interimText
-    }
-
-    recognition.onerror = (event) => {
-      const detail = typeof event.error === 'string' && event.error.trim()
-        ? `Browser speech recognition failed: ${event.error}.`
-        : 'Browser speech recognition failed.'
-      failRecognition(token, new Error(detail))
-    }
-
-    recognition.onend = () => {
-      finishRecognition(token)
-    }
+    const recognition = createRecognition(recognitionConstructor, token, language)
 
     try {
       recognition.start()
