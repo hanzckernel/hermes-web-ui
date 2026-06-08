@@ -587,6 +587,7 @@ describe('VoiceDialogueControls', () => {
     expect(transcribeSpeechMock).not.toHaveBeenCalled()
     expect(chatStore.sendMessage).not.toHaveBeenCalled()
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('browser hello')
+    expect(wrapper.find('[data-testid="voice-transcript-overlay"]').exists()).toBe(false)
   })
 
   it('shows browser recognition errors only for the browser provider and clears stale browser errors before backend capture', async () => {
