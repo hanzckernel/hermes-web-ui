@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { darkTheme, NConfigProvider, NMessageProvider, NDialogProvider, NNotificationProvider } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
@@ -46,11 +46,15 @@ function handleMobileMenuClick() {
   appStore.toggleSidebar()
 }
 
-onMounted(() => {
-  if (!isLoginPage.value) {
-    appStore.loadModels()
-    appStore.startHealthPolling()
+watch(isLoginPage, (loginPage) => {
+  if (loginPage) {
+    appStore.stopHealthPolling()
+    return
   }
+  appStore.loadModels()
+  appStore.startHealthPolling()
+}, {
+  immediate: true,
 })
 
 onUnmounted(() => {
