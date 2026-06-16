@@ -38,6 +38,8 @@ const envPlatformMap: Record<string, [string, string]> = {
   MATRIX_HOMESERVER: ['matrix', 'extra.homeserver'],
   FEISHU_APP_ID: ['feishu', 'extra.app_id'],
   FEISHU_APP_SECRET: ['feishu', 'extra.app_secret'],
+  FEISHU_ENCRYPT_KEY: ['feishu', 'extra.encrypt_key'],
+  FEISHU_VERIFICATION_TOKEN: ['feishu', 'extra.verification_token'],
   DINGTALK_CLIENT_ID: ['dingtalk', 'extra.client_id'],
   DINGTALK_CLIENT_SECRET: ['dingtalk', 'extra.client_secret'],
   DINGTALK_APP_KEY: ['dingtalk', 'extra.app_key'],
@@ -313,6 +315,36 @@ export async function updateAuxiliaryModels(ctx: any) {
   }
 }
 
+function removeConfigPath(config: any, platform: string, cfgPath: string) {
+  const parts = cfgPath.split('.')
+  const obj: any = config.platforms?.[platform]
+  if (!obj) return
+  if (parts.length === 1) {
+    delete obj[parts[0]]
+  } else {
+    let cur = obj
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!cur?.[parts[i]]) return
+      cur = cur[parts[i]]
+    }
+    delete cur[parts[parts.length - 1]]
+    if (obj.extra && Object.keys(obj.extra).length === 0) delete obj.extra
+  }
+  if (Object.keys(obj).length === 0) {
+    if (!config.platforms) config.platforms = {}
+    delete config.platforms[platform]
+  }
+}
+
+function isSensitiveCredentialPath(cfgPath: string): boolean {
+  const normalized = cfgPath.toLowerCase()
+  return normalized.includes('token') ||
+    normalized.includes('secret') ||
+    normalized.includes('key') ||
+    normalized.includes('password') ||
+    normalized.includes('credential')
+}
+
 export async function updateCredentials(ctx: any) {
   const { platform, values } = ctx.request.body as { platform: string; values: Record<string, any> }
   if (!platform || !values) {
@@ -336,20 +368,10 @@ export async function updateCredentials(ctx: any) {
         if (!envVar) continue
         if (val === undefined || val === null || val === '') {
           await saveEnvValueForProfile(profile, envVar, '')
-          const parts = cfgPath.split('.')
-          let obj: any = config.platforms?.[platform]
-          if (obj) {
-            if (parts.length === 1) { delete obj[parts[0]] }
-            else {
-              let cur = obj
-              for (let i = 0; i < parts.length - 1; i++) { if (!cur[parts[i]]) break; cur = cur[parts[i]] }
-              delete cur[parts[parts.length - 1]]
-              if (obj.extra && Object.keys(obj.extra).length === 0) delete obj.extra
-            }
-            if (Object.keys(obj).length === 0) { if (!config.platforms) config.platforms = {}; delete config.platforms[platform] }
-          }
+          removeConfigPath(config, platform, cfgPath)
         } else {
           await saveEnvValueForProfile(profile, envVar, String(val))
+          if (isSensitiveCredentialPath(cfgPath)) removeConfigPath(config, platform, cfgPath)
         }
       }
       return config
