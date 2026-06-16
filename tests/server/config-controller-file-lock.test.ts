@@ -212,6 +212,7 @@ describe('config controller locked file updates', () => {
       '  feishu:',
       '    extra:',
       '      mode: webhook',
+      '      app_id: old-config-app',
       '      encrypt_key: old-config-encrypt',
       '      verification_token: old-config-verify',
       '',

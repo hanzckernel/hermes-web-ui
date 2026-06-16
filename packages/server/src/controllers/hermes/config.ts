@@ -6,6 +6,7 @@ import { readAppConfig, writeAppConfig, normalizeGatewayAutoStartConfig } from '
 import { saveEnvValueForProfile } from '../../services/config-helpers'
 import { logger } from '../../services/logger'
 import { safeFileStore } from '../../services/safe-file-store'
+import { EXCLUSIVE_PLATFORM_CREDENTIAL_KEYS } from '../../services/hermes/profile-credentials'
 
 const PLATFORM_SECTIONS = new Set([
   'telegram', 'discord', 'slack', 'whatsapp', 'matrix',
@@ -338,7 +339,9 @@ function removeConfigPath(config: any, platform: string, cfgPath: string) {
 
 function isSensitiveCredentialPath(cfgPath: string): boolean {
   const normalized = cfgPath.toLowerCase()
-  return normalized.includes('token') ||
+  const fieldName = normalized.split('.').pop() || normalized
+  return EXCLUSIVE_PLATFORM_CREDENTIAL_KEYS.includes(fieldName) ||
+    normalized.includes('token') ||
     normalized.includes('secret') ||
     normalized.includes('key') ||
     normalized.includes('password') ||
