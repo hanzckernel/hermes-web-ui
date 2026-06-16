@@ -236,6 +236,22 @@ describe('plan session command', () => {
     }))
   })
 
+  it('keeps the client known-command registry accepted by the server parser', async () => {
+    const { BRIDGE_SESSION_COMMAND_NAMES, isKnownBridgeSessionCommand } = await import('../../packages/client/src/utils/hermes/bridge-session-commands')
+    const { parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
+
+    for (const commandName of BRIDGE_SESSION_COMMAND_NAMES) {
+      expect(isKnownBridgeSessionCommand(`/${commandName}`)).toBe(true)
+      expect(parseSessionCommand(`/${commandName}`)).toEqual(expect.objectContaining({ name: commandName }))
+    }
+
+    expect(isKnownBridgeSessionCommand('/reload_skills')).toBe(true)
+    expect(parseSessionCommand('/reload_skills')).toEqual(expect.objectContaining({
+      name: 'reload-skills',
+      rawName: 'reload_skills',
+    }))
+  })
+
   it('returns null for unknown slash commands so bridge runs can pass them through', async () => {
     const { isSessionCommand, parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
 

@@ -10,31 +10,13 @@ import { useSettingsStore } from './settings'
 import { primeCompletionSound, playCompletionSound } from '@/utils/completion-sound'
 import { showCompletionNotification } from '@/utils/completion-notification'
 import { detectThinkingBoundary } from '@/utils/thinking-parser'
+import { isKnownBridgeSessionCommand } from '@/utils/hermes/bridge-session-commands'
 
 // Re-export ContentBlock for convenience
 export type ContentBlock = ContentBlockImport
 
 export const LIVE_CHAT_MESSAGE_PAGE_SIZE = 150
 export const LIVE_CHAT_MAX_LOADED_MESSAGES = 300
-
-const BRIDGE_SLASH_COMMANDS = new Set([
-  'usage',
-  'status',
-  'abort',
-  'queue',
-  'skill',
-  'plan',
-  'goal',
-  'subgoal',
-  'clear',
-  'title',
-  'compress',
-  'steer',
-  'destroy',
-  'reload-mcp',
-  'reload-skills',
-  'reload_skills',
-])
 
 export interface Attachment {
   id: string
@@ -138,14 +120,6 @@ interface CompressionState {
 
 function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-}
-
-function isKnownBridgeSlashCommand(input: string): boolean {
-  const trimmed = input.trim()
-  if (!trimmed.startsWith('/')) return false
-  const match = trimmed.match(/^\/([a-zA-Z][\w-]*)(?:\s|$)/)
-  if (!match) return false
-  return BRIDGE_SLASH_COMMANDS.has(match[1].toLowerCase())
 }
 
 function isToolOutputError(output: unknown): boolean {
@@ -1830,7 +1804,7 @@ export const useChatStore = defineStore('chat', () => {
       ? activeSession.value.messageCount == null || activeSession.value.messageCount === 0
       : false
     const isCodingAgentSession = isCodingAgentLikeSession(activeSession.value)
-    const isBridgeSlashCommand = !isCodingAgentSession && isKnownBridgeSlashCommand(trimmedContent)
+    const isBridgeSlashCommand = !isCodingAgentSession && isKnownBridgeSessionCommand(trimmedContent)
     const isBridgeCompressCommand = isBridgeSlashCommand && /^\/compress(?:\s|$)/i.test(trimmedContent)
     const isBridgePlanCommand = isBridgeSlashCommand && /^\/plan(?:\s|$)/i.test(trimmedContent)
     const isBridgeSkillCommand = isBridgeSlashCommand && /^\/skill(?:\s|$)/i.test(trimmedContent)
