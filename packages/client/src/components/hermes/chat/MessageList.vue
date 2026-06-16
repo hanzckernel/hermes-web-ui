@@ -163,6 +163,18 @@ const historyArchiveHref = computed(() => {
   return `#/hermes/history/session/${encodeURIComponent(session.id)}${profileQuery}`;
 });
 
+const forkLineage = computed(() => {
+  const session = chatStore.activeSession;
+  if (!session?.parentSessionId) return null;
+  return {
+    parentSessionId: session.parentSessionId,
+    parentTitle: session.parentTitle || session.parentSessionId,
+    parentHref: `#/hermes/history/session/${encodeURIComponent(session.parentSessionId)}${session.profile ? `?profile=${encodeURIComponent(session.profile)}` : ""}`,
+    lastRole: session.parentLastMessageRole || "",
+    lastMessage: session.parentLastMessage || "",
+  };
+});
+
 function handleApproval(choice: "once" | "session" | "always" | "deny") {
   chatStore.respondApproval(choice);
 }
@@ -407,6 +419,19 @@ defineExpose({
         </div>
       </template>
       <template #before>
+        <div v-if="forkLineage" class="fork-lineage-card">
+          <a class="fork-lineage-link" :href="forkLineage.parentHref">
+            <span class="fork-lineage-icon" aria-hidden="true">↪</span>
+            <span class="fork-lineage-copy">
+              <span class="fork-lineage-label">{{ t("chat.forkedFrom") }}</span>
+              <span class="fork-lineage-title">{{ forkLineage.parentTitle }}</span>
+            </span>
+          </a>
+          <div v-if="forkLineage.lastMessage" class="fork-lineage-last">
+            <span class="fork-lineage-last-label">{{ t("chat.previousLastMessage") }}{{ forkLineage.lastRole ? ` · ${forkLineage.lastRole}` : "" }}</span>
+            <span class="fork-lineage-last-text">{{ forkLineage.lastMessage }}</span>
+          </div>
+        </div>
         <div v-if="showHistoryArchiveLink" class="history-archive-link-wrap">
           <a class="history-archive-link" :href="historyArchiveHref">
             {{ t("chat.viewOlderInHistory") }}
@@ -1224,6 +1249,90 @@ defineExpose({
 
 .history-archive-link:hover {
   background: rgba(var(--accent-primary-rgb), 0.14);
+}
+
+.fork-lineage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 760px;
+  margin: 0 auto 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.20);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(var(--accent-primary-rgb), 0.10), rgba(var(--accent-primary-rgb), 0.035));
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.fork-lineage-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.fork-lineage-link:hover .fork-lineage-title {
+  color: var(--accent-primary);
+  text-decoration: underline;
+}
+
+.fork-lineage-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(var(--accent-primary-rgb), 0.14);
+  color: var(--accent-primary);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.fork-lineage-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.fork-lineage-label,
+.fork-lineage-last-label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.fork-lineage-title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fork-lineage-last {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 36px;
+  min-width: 0;
+}
+
+.fork-lineage-last-text {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fade-enter-active,

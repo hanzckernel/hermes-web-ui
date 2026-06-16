@@ -193,6 +193,7 @@ const bridgeCommands = computed<SlashCommandOption[]>(() => [
   { key: 'command:clear-history', name: 'clear', args: '--history', insertText: 'clear --history', description: t('chat.slashCommands.clearHistory') },
   { key: 'command:title', name: 'title', args: t('chat.slashCommandArgs.title'), description: t('chat.slashCommands.title') },
   { key: 'command:compress', name: 'compress', args: '', description: t('chat.slashCommands.compress') },
+  { key: 'command:fork', name: 'fork', args: t('chat.slashCommandArgs.title'), description: t('chat.slashCommands.fork') },
   { key: 'command:steer', name: 'steer', args: t('chat.slashCommandArgs.text'), description: t('chat.slashCommands.steer') },
   { key: 'command:destroy', name: 'destroy', args: '', description: t('chat.slashCommands.destroy') },
   { key: 'command:reload-mcp', name: 'reload-mcp', args: '', description: t('chat.slashCommands.reloadMcp') },
@@ -209,6 +210,7 @@ const skillPickerLoading = ref(false)
 let skillsLoadedKey = ''
 let skillsLoadRequest: Promise<void> | null = null
 const isBridgeSession = computed(() => chatStore.activeSession?.source === 'cli')
+const isForkCommandSession = computed(() => !!chatStore.activeSession && chatStore.activeSession.source !== 'coding_agent')
 const skillPickerItems = computed(() => {
   const byName = new Map<string, SkillInfo>()
   for (const category of skillCategories.value) {
@@ -229,7 +231,12 @@ const skillPickerItems = computed(() => {
 })
 const filteredBridgeCommands = computed(() => {
   const query = slashQuery.value.toLowerCase()
-  return bridgeCommands.value.filter(command =>
+  const commands = isBridgeSession.value
+    ? bridgeCommands.value
+    : isForkCommandSession.value
+      ? bridgeCommands.value.filter(command => command.name === 'fork')
+      : []
+  return commands.filter(command =>
     command.name.includes(query)
     || command.insertText?.includes(query)
     || command.description.toLowerCase().includes(query),
@@ -394,7 +401,7 @@ function scrollCommandIntoView() {
 }
 
 function updateSlashState() {
-  if (!isBridgeSession.value) {
+  if (!isBridgeSession.value && !isForkCommandSession.value) {
     slashActive.value = false
     return
   }

@@ -3,17 +3,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 const chatApi = vi.hoisted(() => ({
+  startRunViaSocket: vi.fn(),
   registerSessionHandlers: vi.fn(),
   unregisterSessionHandlers: vi.fn(),
   getChatRunSocket: vi.fn(() => ({ emit: vi.fn() })),
+  resumeSession: vi.fn((sessionId: string, onResumed: (data: any) => void) => {
+    onResumed({ session_id: sessionId, messages: [], isWorking: false, events: [], queueLength: 0 })
+    return {} as any
+  }),
   sessionCommandHandlers: [] as Array<(event: any) => void>,
   peerUserMessageHandlers: [] as Array<(event: any) => void>,
   sessionTitleUpdatedHandlers: [] as Array<(event: any) => void>,
 }))
 
 vi.mock('@/api/hermes/chat', () => ({
-  startRunViaSocket: vi.fn(),
-  resumeSession: vi.fn(),
+  startRunViaSocket: chatApi.startRunViaSocket,
+  resumeSession: chatApi.resumeSession,
   registerSessionHandlers: chatApi.registerSessionHandlers,
   unregisterSessionHandlers: chatApi.unregisterSessionHandlers,
   getChatRunSocket: chatApi.getChatRunSocket,
@@ -153,5 +158,85 @@ describe('chat store session.command fanout', () => {
 
     expect(store.sessions[0].title).toBe('Generated Title')
     expect(store.activeSession?.title).toBe('Generated Title')
+  })
+
+  it('adds and switches to a branched child session from session.command branch events', async () => {
+    const store = useChatStore()
+    const session = makeSession()
+    store.sessions = [session]
+    store.activeSessionId = 'session-1'
+    store.activeSession = session
+
+    chatApi.resumeSession.mockImplementationOnce((sessionId: string, onResumed: (data: any) => void) => {
+      onResumed({
+        session_id: sessionId,
+        messages: [
+          { id: 1, role: 'user', content: 'Previous question', timestamp: 1 },
+          { id: 2, role: 'assistant', content: 'Previous answer', timestamp: 2 },
+        ],
+        parentSessionId: 'session-1',
+        parentTitle: 'session',
+        parentLastMessage: 'Previous answer',
+        parentLastMessageRole: 'assistant',
+        messageLoadedCount: 2,
+        messageTotal: 2,
+        hasMoreBefore: false,
+        isWorking: false,
+        events: [],
+        queueLength: 0,
+      })
+      return {} as any
+    })
+
+    chatApi.sessionCommandHandlers[0]({
+      event: 'session.command',
+      session_id: 'session-1',
+      command: 'fork',
+      action: 'branch',
+      ok: true,
+      parentSessionId: 'session-1',
+      newSessionId: 'branch-1',
+      newSessionTitle: 'Side path',
+      branchSession: {
+        id: 'branch-1',
+        profile: 'default',
+        source: 'cli',
+        title: 'Side path',
+        model: 'openai/gpt-5.4',
+        provider: 'openai-codex',
+        parentSessionId: 'session-1',
+        parentTitle: 'session',
+        parentLastMessage: 'Previous answer',
+        parentLastMessageRole: 'assistant',
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
+        messageCount: 2,
+        workspace: '/repo',
+      },
+      message: 'Branched session "Side path" from session-1.',
+    })
+    await Promise.resolve()
+
+    const branch = store.sessions.find((item: Session) => item.id === 'branch-1')
+    expect(branch).toMatchObject({
+      title: 'Side path',
+      source: 'cli',
+      profile: 'default',
+      model: 'openai/gpt-5.4',
+      provider: 'openai-codex',
+      parentSessionId: 'session-1',
+      parentTitle: 'session',
+      parentLastMessage: 'Previous answer',
+      parentLastMessageRole: 'assistant',
+      messageCount: 2,
+      workspace: '/repo',
+    })
+    expect(store.activeSessionId).toBe('branch-1')
+    expect(chatApi.resumeSession).toHaveBeenCalledWith('branch-1', expect.any(Function), 'default', 'chat-run')
+    expect(store.sessions.find((item: Session) => item.id === 'session-1')?.messages.at(-1)).toMatchObject({
+      role: 'command',
+      commandAction: 'branch',
+      content: 'Branched session "Side path" from session-1.',
+    })
   })
 })

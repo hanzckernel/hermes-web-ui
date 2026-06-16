@@ -11,7 +11,7 @@
 import type { Server, Socket } from 'socket.io'
 import { logger } from '../../logger'
 import { getSystemPrompt } from '../../../lib/llm-prompt'
-import { getSession } from '../../../db/hermes/session-store'
+import { getSession, getSessionDetail } from '../../../db/hermes/session-store'
 import { getActiveProfileName, getProfileDir, listProfileNamesFromDisk } from '../hermes-profile'
 import { AgentBridgeClient } from '../agent-bridge'
 import { getAgentBridgeManager } from '../agent-bridge/manager'
@@ -192,7 +192,7 @@ export class ChatRunSocket {
         const state = getOrCreateSession(this.sessionMap, data.session_id)
         const source = resolveRunSource(data.source, data.session_id)
         const command = parseSessionCommand(data.input)
-        if (command && isBridgeRunSource(source)) {
+        if (command && (isBridgeRunSource(source) || command.name === 'branch')) {
           try {
             await handleSessionCommand(data.session_id, command, {
               nsp: this.nsp,
@@ -474,6 +474,7 @@ export class ChatRunSocket {
     const resumeEvents = state.isWorking
       ? state.events
       : (state.events || []).filter(evt => evt?.event === 'run.reattach_failed')
+    const sessionDetail = getSessionDetail(sid)
     socket.emit('resumed', {
       session_id: sid,
       messages: state.messages,
@@ -481,6 +482,10 @@ export class ChatRunSocket {
       messageLoadedCount: state.messageLoadedCount,
       messagePageLimit: state.messagePageLimit,
       hasMoreBefore: state.hasMoreBefore,
+      parentSessionId: sessionDetail?.parent_session_id || null,
+      parentTitle: sessionDetail?.parent_title || null,
+      parentLastMessage: sessionDetail?.parent_last_message || null,
+      parentLastMessageRole: sessionDetail?.parent_last_message_role || null,
       isWorking: state.isWorking,
       isAborting: state.isAborting || false,
       events: resumeEvents,

@@ -11,6 +11,10 @@ export interface SessionSummary {
   model: string
   provider?: string
   title: string | null
+  parent_session_id?: string | null
+  parent_title?: string | null
+  parent_last_message?: string | null
+  parent_last_message_role?: string | null
   preview?: string
   started_at: number
   ended_at: number | null
