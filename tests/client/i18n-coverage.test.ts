@@ -109,6 +109,13 @@ const APPROVAL_AND_WRITE_GATE_LOCALIZED_KEYS = [
   'settings.session.skillsWriteApproval',
 ]
 
+const PLATFORM_SETTINGS_LOCALIZED_KEYS = [
+  'platform.encryptKey',
+  'platform.encryptKeyHint',
+  'platform.verificationToken',
+  'platform.verificationTokenHint',
+]
+
 function labelLength(value: unknown): number {
   return typeof value === 'string' ? Array.from(value.replace(/\{[^}]+\}/g, '')).length : Infinity
 }
@@ -177,6 +184,20 @@ describe('i18n locale coverage', () => {
     expect(untranslated).toEqual([])
   })
 
+  it('localizes platform settings copy in every non-English locale instead of falling back to English', () => {
+    const englishMessages = messages.en
+    const untranslated = Object.entries(messages).flatMap(([locale, localeMessages]) => {
+      if (locale === 'en') return []
+
+      return PLATFORM_SETTINGS_LOCALIZED_KEYS.flatMap((key) => {
+        const localeValue = getPath(localeMessages, key)
+        if (typeof localeValue === 'undefined') return [`${locale}: ${key} missing`]
+        return localeValue === getPath(englishMessages, key) ? [`${locale}: ${key}`] : []
+      })
+    })
+
+    expect(untranslated).toEqual([])
+  })
 
   it('keeps Skills Usage summary and table labels compact across locales', () => {
     const oversized = Object.entries(messages).flatMap(([locale, localeMessages]) =>
