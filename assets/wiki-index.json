@@ -1,0 +1,594 @@
+{
+  "repo": "hanzckernel/hermes-web-ui",
+  "upstream": "EKKOLearnAI/hermes-web-ui",
+  "synced_upstream_sha": "0cb047c31e36da2d5e11eb7751c4fa6c48748df3",
+  "fork_main_sha": "0cb047c31e36da2d5e11eb7751c4fa6c48748df3",
+  "version": "0.6.15",
+  "generated_at": "2026-06-16T16:20:00+02:00",
+  "routes": [
+    {
+      "path": "/",
+      "name": "login"
+    },
+    {
+      "path": "/hermes/chat",
+      "name": "hermes.chat"
+    },
+    {
+      "path": "/hermes/session/:sessionId",
+      "name": "hermes.session"
+    },
+    {
+      "path": "/hermes/history",
+      "name": "hermes.history"
+    },
+    {
+      "path": "/hermes/history/session/:sessionId",
+      "name": "hermes.historySession"
+    },
+    {
+      "path": "/hermes/global-agent",
+      "name": "hermes.globalAgent"
+    },
+    {
+      "path": "/hermes/global-agent/session/:sessionId",
+      "name": "hermes.globalAgentSession"
+    },
+    {
+      "path": "/hermes/jobs",
+      "name": "hermes.jobs"
+    },
+    {
+      "path": "/hermes/kanban",
+      "name": "hermes.kanban"
+    },
+    {
+      "path": "/hermes/models",
+      "name": "hermes.models"
+    },
+    {
+      "path": "/hermes/profiles",
+      "name": "hermes.profiles"
+    },
+    {
+      "path": "/hermes/logs",
+      "name": "hermes.logs"
+    },
+    {
+      "path": "/hermes/usage",
+      "name": "hermes.usage"
+    },
+    {
+      "path": "/hermes/performance",
+      "name": "hermes.performance"
+    },
+    {
+      "path": "/hermes/skills-usage",
+      "name": "hermes.skillsUsage"
+    },
+    {
+      "path": "/hermes/skills",
+      "name": "hermes.skills"
+    },
+    {
+      "path": "/hermes/plugins",
+      "name": "hermes.plugins"
+    },
+    {
+      "path": "/hermes/memory",
+      "name": "hermes.memory"
+    },
+    {
+      "path": "/hermes/settings",
+      "name": "hermes.settings"
+    },
+    {
+      "path": "/hermes/channels",
+      "name": "hermes.channels"
+    },
+    {
+      "path": "/hermes/terminal",
+      "name": "hermes.terminal"
+    },
+    {
+      "path": "/hermes/devices",
+      "name": "hermes.devices"
+    },
+    {
+      "path": "/hermes/group-chat",
+      "name": "hermes.groupChat"
+    },
+    {
+      "path": "/hermes/group-chat/room/:roomId",
+      "name": "hermes.groupChatRoom"
+    },
+    {
+      "path": "/hermes/files",
+      "name": "hermes.files"
+    },
+    {
+      "path": "/hermes/coding-agents",
+      "name": "hermes.codingAgents"
+    },
+    {
+      "path": "/hermes/version-preview",
+      "name": "hermes.versionPreview"
+    },
+    {
+      "path": "/hermes/mcp",
+      "name": "hermes.mcp"
+    },
+    {
+      "path": "/hermes/chat",
+      "name": "login"
+    }
+  ],
+  "openapi_path_count": 227,
+  "pages": [
+    {
+      "title": "Quick Start",
+      "file": "01-Quick-Start.md",
+      "routes": [
+        "/"
+      ],
+      "source_files": [
+        "README.md",
+        "bin/hermes-web-ui.mjs",
+        "docker-compose.yml"
+      ],
+      "screenshots": [
+        "assets/screenshots/startup-login.png",
+        "assets/screenshots/chat-main-overview.png"
+      ],
+      "summary": "安装、启动、认证、健康检查和第一次打开 Hermes Web UI。"
+    },
+    {
+      "title": "Architecture",
+      "file": "02-Architecture.md",
+      "routes": [
+        "/hermes/chat",
+        "/hermes/history"
+      ],
+      "source_files": [
+        "packages/client/src/App.vue",
+        "packages/server/src/index.ts",
+        "packages/server/src/routes/index.ts",
+        "packages/server/src/services/hermes/agent-bridge/README.md"
+      ],
+      "screenshots": [
+        "assets/screenshots/chat-main-overview.png"
+      ],
+      "summary": "浏览器、Koa server、Socket.IO、Hermes Agent Bridge、SQLite、本地文件/配置之间的边界。"
+    },
+    {
+      "title": "Chat and Sessions",
+      "file": "03-Chat-and-Sessions.md",
+      "routes": [
+        "/hermes/chat",
+        "/hermes/session/:sessionId"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/ChatView.vue",
+        "packages/client/src/components/hermes/chat/ChatPanel.vue",
+        "packages/client/src/stores/hermes/chat.ts",
+        "packages/server/src/services/hermes/run-chat/index.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/chat-main-overview.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/files-workspace-drawer.png",
+        "assets/screenshots/terminal-drawer.png"
+      ],
+      "summary": "实时聊天、会话列表、模型切换、全局搜索、文件/终端抽屉、Markdown/工具输出渲染。"
+    },
+    {
+      "title": "History and Search",
+      "file": "04-History-and-Search.md",
+      "routes": [
+        "/hermes/history",
+        "/hermes/history/session/:sessionId"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/HistoryView.vue",
+        "packages/client/src/components/hermes/chat/HistoryMessageList.vue",
+        "packages/server/src/routes/hermes/sessions.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/history-sessions.png",
+        "assets/screenshots/global-search-modal.png"
+      ],
+      "summary": "历史会话浏览、搜索、深链打开和 Chat/History 范围差异。"
+    },
+    {
+      "title": "Models and Providers",
+      "file": "05-Models-and-Providers.md",
+      "routes": [
+        "/hermes/models"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/ModelsView.vue",
+        "packages/client/src/components/hermes/models/ProvidersPanel.vue",
+        "packages/server/src/routes/hermes/models.ts",
+        "packages/server/src/routes/hermes/providers.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/models-management.png",
+        "assets/screenshots/models-add-provider-modal.png",
+        "assets/screenshots/model-selector.png"
+      ],
+      "summary": "模型提供商、credential pool/OAuth、自定义 OpenAI-compatible provider、默认模型和辅助模型。"
+    },
+    {
+      "title": "Profiles",
+      "file": "06-Profiles.md",
+      "routes": [
+        "/hermes/profiles"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/ProfilesView.vue",
+        "packages/client/src/stores/hermes/profiles.ts",
+        "packages/server/src/routes/hermes/profiles.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/profiles-management.png",
+        "assets/screenshots/profiles-create-modal.png"
+      ],
+      "summary": "Hermes profiles 创建、克隆、导入、导出、切换与 profile-scoped 配置隔离。"
+    },
+    {
+      "title": "Group Chat",
+      "file": "07-Group-Chat.md",
+      "routes": [
+        "/hermes/group-chat",
+        "/hermes/group-chat/room/:roomId"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/GroupChatView.vue",
+        "packages/client/src/components/hermes/group-chat/GroupChatPanel.vue",
+        "packages/server/src/routes/hermes/group-chat.ts",
+        "packages/server/src/services/hermes/group-chat/index.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/group-chat-rooms.png",
+        "assets/screenshots/group-chat-create-room-modal.png"
+      ],
+      "summary": "多 agent 房间、成员、@mention 路由、typing/progress、profile-per-agent 约束。"
+    },
+    {
+      "title": "Kanban",
+      "file": "08-Kanban.md",
+      "routes": [
+        "/hermes/kanban"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/KanbanView.vue",
+        "packages/client/src/components/hermes/kanban/KanbanTaskDrawer.vue",
+        "packages/server/src/routes/hermes/kanban.ts",
+        "packages/server/src/services/hermes/hermes-kanban.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/kanban-board.png",
+        "assets/screenshots/kanban-new-task-modal.png"
+      ],
+      "summary": "Hermes Kanban board、任务列、任务 drawer、创建任务、与 Hermes dashboard parity 的边界。"
+    },
+    {
+      "title": "Jobs and Cron",
+      "file": "09-Jobs-and-Cron.md",
+      "routes": [
+        "/hermes/jobs"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/JobsView.vue",
+        "packages/client/src/components/hermes/jobs/JobsPanel.vue",
+        "packages/server/src/routes/hermes/jobs.ts",
+        "packages/server/src/routes/hermes/cron-history.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/jobs-manager.png",
+        "assets/screenshots/jobs-create-modal.png"
+      ],
+      "summary": "Cron job 创建、编辑、暂停、恢复、立即运行和运行历史。"
+    },
+    {
+      "title": "Files and Workspaces",
+      "file": "10-Files-and-Workspaces.md",
+      "routes": [
+        "/hermes/files"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/FilesView.vue",
+        "packages/client/src/stores/hermes/files.ts",
+        "packages/server/src/routes/hermes/files.ts",
+        "packages/server/src/services/hermes/file-provider.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/files-workspace-drawer.png"
+      ],
+      "summary": "文件浏览、上传/下载、预览/编辑、重命名/复制/移动/删除，多 backend 路径处理。"
+    },
+    {
+      "title": "Skills, Memory, and Plugins",
+      "file": "11-Skills-Memory-and-Plugins.md",
+      "routes": [
+        "/hermes/skills",
+        "/hermes/memory",
+        "/hermes/plugins"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/SkillsView.vue",
+        "packages/client/src/views/hermes/MemoryView.vue",
+        "packages/client/src/views/hermes/PluginsView.vue",
+        "packages/server/src/routes/hermes/skills.ts",
+        "packages/server/src/routes/hermes/memory.ts",
+        "packages/server/src/routes/hermes/plugins.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/skills-list.png",
+        "assets/screenshots/memory-notes.png",
+        "assets/screenshots/plugins-inventory.png"
+      ],
+      "summary": "Skill 浏览/详情、Memory/Profile notes、plugin inventory 与 agent 可复用能力。"
+    },
+    {
+      "title": "Usage, Performance, and Skills Analytics",
+      "file": "12-Usage-Performance-and-Skills-Analytics.md",
+      "routes": [
+        "/hermes/usage",
+        "/hermes/performance",
+        "/hermes/skills-usage"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/UsageView.vue",
+        "packages/client/src/views/hermes/PerformanceView.vue",
+        "packages/client/src/views/hermes/SkillsUsageView.vue",
+        "packages/server/src/routes/hermes/usage.ts",
+        "packages/server/src/routes/hermes/performance-monitor.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/usage-analytics.png",
+        "assets/screenshots/performance-dashboard.png",
+        "assets/screenshots/skills-usage.png"
+      ],
+      "summary": "Token/成本/缓存统计、性能仪表盘、技能使用统计和趋势图。"
+    },
+    {
+      "title": "Channels and Gateways",
+      "file": "13-Channels-and-Gateways.md",
+      "routes": [
+        "/hermes/channels"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/ChannelsView.vue",
+        "packages/client/src/components/hermes/settings/PlatformSettings.vue",
+        "packages/server/src/routes/hermes/config.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/channels-integrations.png"
+      ],
+      "summary": "Telegram/Discord/Slack/Feishu/WeChat 等平台配置、状态检测和 env/config 写入边界。"
+    },
+    {
+      "title": "Settings and Security",
+      "file": "14-Settings-and-Security.md",
+      "routes": [
+        "/hermes/settings"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/SettingsView.vue",
+        "packages/client/src/components/hermes/settings/AccountSettings.vue",
+        "packages/server/src/routes/auth.ts",
+        "packages/server/src/security.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/settings-overview.png",
+        "assets/screenshots/settings-account-modal.png"
+      ],
+      "summary": "显示、agent、memory、privacy、session、voice、账号、安全相关设置。"
+    },
+    {
+      "title": "Web Terminal",
+      "file": "15-Web-Terminal.md",
+      "routes": [
+        "/hermes/terminal"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/TerminalView.vue",
+        "packages/client/src/components/hermes/chat/TerminalPanel.vue",
+        "packages/server/src/routes/hermes/terminal.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/terminal-drawer.png"
+      ],
+      "summary": "基于 node-pty/xterm 的网页终端，多 session、resize、WebSocket 输入输出。"
+    },
+    {
+      "title": "Coding Agents, Global Agent, and MCP",
+      "file": "16-Coding-Agents-Global-Agent-and-MCP.md",
+      "routes": [
+        "/hermes/coding-agents",
+        "/hermes/global-agent",
+        "/hermes/mcp"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/CodingAgentsView.vue",
+        "packages/client/src/views/hermes/GlobalAgentView.vue",
+        "packages/client/src/views/hermes/McpManagerView.vue",
+        "packages/server/src/routes/hermes/mcp.ts",
+        "packages/server/src/services/agent-runner/coding-agent-run-manager.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/coding-agents.png",
+        "assets/screenshots/mcp-servers.png",
+        "assets/screenshots/mcp-add-server-modal.png"
+      ],
+      "summary": "Coding agent runner、Global Agent 会话、MCP server 管理和工具注入边界。"
+    },
+    {
+      "title": "Devices, Version Preview, and Logs",
+      "file": "17-Devices-Version-Logs.md",
+      "routes": [
+        "/hermes/devices",
+        "/hermes/version-preview",
+        "/hermes/logs"
+      ],
+      "source_files": [
+        "packages/client/src/views/hermes/DevicesView.vue",
+        "packages/client/src/views/hermes/VersionPreviewView.vue",
+        "packages/client/src/views/hermes/LogsView.vue",
+        "packages/server/src/routes/hermes/devices.ts",
+        "packages/server/src/routes/hermes/runtime-versions.ts"
+      ],
+      "screenshots": [
+        "assets/screenshots/devices-management.png",
+        "assets/screenshots/version-preview.png",
+        "assets/screenshots/logs-viewer.png"
+      ],
+      "summary": "LAN/remote device 管理、版本预览/更新可见性、日志查看和排错入口。"
+    },
+    {
+      "title": "Docker and Deployment",
+      "file": "18-Docker-and-Deployment.md",
+      "routes": [
+        "/"
+      ],
+      "source_files": [
+        "README.md",
+        "docs/docker.md",
+        "Dockerfile",
+        "docker-compose.yml",
+        "bin/hermes-web-ui.mjs"
+      ],
+      "screenshots": [
+        "assets/screenshots/startup-login.png"
+      ],
+      "summary": "npm、setup script、Docker Compose、环境变量、持久化目录和 health check。"
+    },
+    {
+      "title": "Troubleshooting",
+      "file": "19-Troubleshooting.md",
+      "routes": [],
+      "source_files": [
+        "README.md",
+        "docs/docker.md",
+        "packages/server/src/services/hermes/agent-bridge/README.md"
+      ],
+      "screenshots": [
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/settings-overview.png"
+      ],
+      "summary": "认证、端口、Hermes runtime、bridge、Docker、profile gateway、模型鉴权、WebSocket/terminal 常见故障定位。"
+    },
+    {
+      "title": "API and Route Map",
+      "file": "20-API-and-Route-Map.md",
+      "routes": [
+        "/hermes/chat",
+        "/hermes/session/:sessionId",
+        "/hermes/history",
+        "/hermes/history/session/:sessionId",
+        "/hermes/global-agent",
+        "/hermes/global-agent/session/:sessionId",
+        "/hermes/jobs",
+        "/hermes/kanban",
+        "/hermes/models",
+        "/hermes/profiles"
+      ],
+      "source_files": [
+        "packages/client/src/router/index.ts",
+        "docs/openapi.json",
+        "packages/server/src/routes/index.ts"
+      ],
+      "screenshots": [],
+      "summary": "client route、server API route、OpenAPI tag、wiki page 的机器可读映射。"
+    },
+    {
+      "title": "Screenshot Gallery",
+      "file": "21-Screenshot-Gallery.md",
+      "routes": [],
+      "source_files": [
+        "packages/website/public/docs/hermes-studio-0.6.12-full-cn/screenshots/"
+      ],
+      "screenshots": [
+        "assets/screenshots/startup-login.png",
+        "assets/screenshots/chat-main-overview.png",
+        "assets/screenshots/global-search-modal.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/files-workspace-drawer.png",
+        "assets/screenshots/terminal-drawer.png",
+        "assets/screenshots/history-sessions.png",
+        "assets/screenshots/group-chat-rooms.png",
+        "assets/screenshots/jobs-manager.png",
+        "assets/screenshots/jobs-create-modal.png",
+        "assets/screenshots/kanban-board.png",
+        "assets/screenshots/kanban-new-task-modal.png",
+        "assets/screenshots/channels-integrations.png",
+        "assets/screenshots/skills-list.png",
+        "assets/screenshots/plugins-inventory.png",
+        "assets/screenshots/mcp-servers.png",
+        "assets/screenshots/mcp-add-server-modal.png",
+        "assets/screenshots/memory-notes.png",
+        "assets/screenshots/models-management.png",
+        "assets/screenshots/models-add-provider-modal.png",
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/usage-analytics.png",
+        "assets/screenshots/performance-dashboard.png",
+        "assets/screenshots/skills-usage.png",
+        "assets/screenshots/coding-agents.png",
+        "assets/screenshots/version-preview.png",
+        "assets/screenshots/profiles-management.png",
+        "assets/screenshots/settings-overview.png",
+        "assets/screenshots/group-chat-create-room-modal.png",
+        "assets/screenshots/profiles-create-modal.png",
+        "assets/screenshots/settings-account-modal.png",
+        "assets/screenshots/devices-management.png"
+      ],
+      "summary": "全部截图索引：文件名、功能页面、截图来源和隐私说明。"
+    },
+    {
+      "title": "Release Sync Notes",
+      "file": "22-Release-Sync-Notes.md",
+      "routes": [],
+      "source_files": [
+        "package.json",
+        "docs/openapi.json"
+      ],
+      "screenshots": [],
+      "summary": "本次 fork sync/wiki 生成的 upstream SHA、验证命令、截图资产和后续刷新规则。"
+    }
+  ],
+  "screenshots": [
+    "assets/screenshots/startup-login.png",
+    "assets/screenshots/chat-main-overview.png",
+    "assets/screenshots/global-search-modal.png",
+    "assets/screenshots/model-selector.png",
+    "assets/screenshots/files-workspace-drawer.png",
+    "assets/screenshots/terminal-drawer.png",
+    "assets/screenshots/history-sessions.png",
+    "assets/screenshots/group-chat-rooms.png",
+    "assets/screenshots/jobs-manager.png",
+    "assets/screenshots/jobs-create-modal.png",
+    "assets/screenshots/kanban-board.png",
+    "assets/screenshots/kanban-new-task-modal.png",
+    "assets/screenshots/channels-integrations.png",
+    "assets/screenshots/skills-list.png",
+    "assets/screenshots/plugins-inventory.png",
+    "assets/screenshots/mcp-servers.png",
+    "assets/screenshots/mcp-add-server-modal.png",
+    "assets/screenshots/memory-notes.png",
+    "assets/screenshots/models-management.png",
+    "assets/screenshots/models-add-provider-modal.png",
+    "assets/screenshots/logs-viewer.png",
+    "assets/screenshots/usage-analytics.png",
+    "assets/screenshots/performance-dashboard.png",
+    "assets/screenshots/skills-usage.png",
+    "assets/screenshots/coding-agents.png",
+    "assets/screenshots/version-preview.png",
+    "assets/screenshots/profiles-management.png",
+    "assets/screenshots/settings-overview.png",
+    "assets/screenshots/group-chat-create-room-modal.png",
+    "assets/screenshots/profiles-create-modal.png",
+    "assets/screenshots/settings-account-modal.png",
+    "assets/screenshots/devices-management.png"
+  ]
+}

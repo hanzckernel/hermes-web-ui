@@ -1,0 +1,11 @@
+flowchart LR
+  Browser[Vue Web UI] --> Koa[Koa server]
+  Browser <--> SocketIO[Socket.IO realtime]
+  Koa --> WebUIDB[(Web UI SQLite)]
+  Koa --> HermesState[(Hermes state.db read/bridge paths)]
+  Koa --> Bridge[Agent Bridge client]
+  Bridge --> Python[hermes_bridge.py / AIAgent]
+  Python --> Hermes[Hermes Agent runtime]
+  Koa --> Files[File/workspace providers]
+  Koa --> Config[Hermes config/auth/profile files]
+  Koa --> MCP[MCP + agent-runner services]
