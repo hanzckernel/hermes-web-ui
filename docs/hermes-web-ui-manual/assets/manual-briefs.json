@@ -362,6 +362,18 @@
       "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
     },
     {
+      "file": "20-API-and-Route-Map.md",
+      "title": "Technical Appendix: API and Route Map",
+      "screenshots": [],
+      "capabilities_to_preserve": [
+        "Keep the Technical Appendix: API and Route Map page accurate for user and agent navigation."
+      ],
+      "notes_to_preserve": [
+        "Keep this page concise and aligned with current release coverage."
+      ],
+      "rewrite_goal": "English product manual page for end users and agents; feature-first, natural, concise, screenshot-aware."
+    },
+    {
       "file": "21-Screenshot-Gallery.md",
       "title": "Screenshot Gallery",
       "screenshots": [
@@ -415,8 +427,21 @@
         "The gallery uses demo/manual screenshots. Treat visible data as example content."
       ],
       "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "22-Release-Sync-Notes.md",
+      "title": "Technical Appendix: Release Sync Notes",
+      "screenshots": [],
+      "capabilities_to_preserve": [
+        "Keep the Technical Appendix: Release Sync Notes page accurate for user and agent navigation."
+      ],
+      "notes_to_preserve": [
+        "Keep this page concise and aligned with current release coverage."
+      ],
+      "rewrite_goal": "English product manual page for end users and agents; feature-first, natural, concise, screenshot-aware."
     }
   ],
   "manual_package": "docs/hermes-web-ui-manual",
-  "packaging_note": "Top-level docs package; excluded from npm package files and desktop webui extraResources by current packaging configuration."
+  "packaging_note": "Top-level docs package; excluded from npm package files and desktop webui extraResources by current packaging configuration.",
+  "page_count": 22
 }

@@ -49,6 +49,6 @@ This appendix tracks how the manual maps to recent Hermes Web UI releases. It is
 - Map each release item to either a user-facing manual page, this appendix, or an explicit "not an in-app workflow" note.
 - Add screenshots for visible user workflows; keep runtime-only, shutdown-only, and packaging-only changes textual unless a stable UI state exists.
 - Review screenshots for stale UI and sensitive data before publishing.
-- Check that visible pages avoid code-first and provenance-heavy language.
+- Check that visible pages avoid code-first and implementation-history language.
 - Validate that internal links resolve as GitHub Wiki pages.
 - Keep archived translations separate from the English manual until translation work resumes.

@@ -18,7 +18,7 @@ This directory contains the source package for the Hermes Web UI user manual. It
 - [Agent Index](00-Agent-Index.md) is the natural first page for agents.
 - `assets/wiki-index.json` maps pages, capabilities, related pages, and screenshot references.
 - `assets/manual-briefs.json` preserves page-writing constraints and notes to retain during future refreshes.
-- `assets/manual-version-audit-0.6.15.json` maps release coverage, screenshot provenance, and privacy-review status.
+- `assets/manual-version-audit-0.6.15.json` maps release coverage, screenshot sources, and privacy-review status.
 
 ## Packaging note
 
