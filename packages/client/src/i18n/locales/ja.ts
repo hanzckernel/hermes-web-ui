@@ -952,6 +952,7 @@ export default {
     provider: 'プロバイダー',
     contextLength: 'コンテキスト長',
     contextLengthPlaceholder: '例: 256000（任意）',
+    apiMode: 'API モード',
     local: 'ローカル ({host})',
     selectProviderRequired: 'プロバイダーを選択してください',
     baseUrlRequired: 'ベース URL は必須です',

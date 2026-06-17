@@ -952,6 +952,7 @@ export default {
     provider: '공급자',
     contextLength: '컨텍스트 길이',
     contextLengthPlaceholder: '예: 256000 (선택사항)',
+    apiMode: 'API 모드',
     local: '로컬 ({host})',
     selectProviderRequired: 'Provider를 선택해 주세요',
     baseUrlRequired: 'Base URL을 입력해 주세요',

@@ -995,6 +995,7 @@ export default {
     provider: 'Провайдер',
     contextLength: 'Длина контекста',
     contextLengthPlaceholder: 'Например, 200000 (необязательно)',
+    apiMode: 'Режим API',
     local: 'Локальный ({host})',
     selectProviderRequired: 'Выберите провайдера',
     baseUrlRequired: 'Базовый URL обязателен',

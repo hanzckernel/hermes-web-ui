@@ -1057,6 +1057,7 @@ export default {
     provider: 'Provider',
     contextLength: '上下文長度',
     contextLengthPlaceholder: '例如 256000（選填）',
+    apiMode: 'API 模式',
     local: '本地 ({host})',
     selectProviderRequired: '請選擇 Provider',
     baseUrlRequired: 'Base URL 為必填項',
