@@ -44,9 +44,9 @@ describe('provider presets', () => {
     expect(preset?.api_mode).toBe('codex_responses')
   })
 
-  it('routes LongCat through the Chat Completions transport', () => {
+  it('routes LongCat through the Responses transport', () => {
     const preset = SERVER_PROVIDER_PRESETS.find((candidate) => candidate.value === LONGCAT_PROVIDER)
-    expect(preset?.api_mode).toBe('chat_completions')
+    expect(preset?.api_mode).toBe('codex_responses')
   })
 
   it('lists GPT-5.5 for OpenAI Codex', () => {
