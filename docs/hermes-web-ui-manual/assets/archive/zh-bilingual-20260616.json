@@ -1,0 +1,378 @@
+{
+  "archived_at": "2026-06-16",
+  "reason": "Chinese inline content archived before English user-manual rewrite",
+  "pages": [
+    {
+      "file": "00-Agent-Index.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Agent Index / Agent 索引",
+        "## 中文\n\n本页是 Wiki 的紧凑机器/人类索引。用它把问题路由到正确页面、route、源码文件、截图或 API family。改代码前必须回源到源码和 tests 验证行为。",
+        "## Repository state / 仓库状态\n\n- Fork: `hanzckernel/hermes-web-ui`\n- Upstream: `EKKOLearnAI/hermes-web-ui`\n- Upstream SHA: `0cb047c31e36da2d5e11eb7751c4fa6c48748df3`\n- Fork main SHA after sync: `0cb047c31e36da2d5e11eb7751c4fa6c48748df3`\n- Package version: `0.6.15`\n- OpenAPI paths: `227`\n- Client routes: `29`\n- Languages: English + 中文",
+        "## Route to page map / Route 到页面映射\n\n| Route | Vue route name | Wiki page |\n| --- | --- | --- |\n| `/` | `login` | [Quick Start](01-Quick-Start), [Docker and Deployment](18-Docker-and-Deployment) |\n| `/hermes/chat` | `hermes.chat` | [Architecture](02-Architecture), [Chat and Sessions](03-Chat-and-Sessions), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/session/:sessionId` | `hermes.session` | [Chat and Sessions](03-Chat-and-Sessions), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/history` | `hermes.history` | [Architecture](02-Architecture), [History and Search](04-History-and-Search), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/history/session/:sessionId` | `hermes.historySession` | [History and Search](04-History-and-Search), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/global-agent` | `hermes.globalAgent` | [Coding Agents, Global Agent, and MCP](16-Coding-Agents-Global-Agent-and-MCP), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/global-agent/session/:sessionId` | `hermes.globalAgentSession` | [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/jobs` | `hermes.jobs` | [Jobs and Cron](09-Jobs-and-Cron), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/kanban` | `hermes.kanban` | [Kanban](08-Kanban), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/models` | `hermes.models` | [Models and Providers](05-Models-and-Providers), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/profiles` | `hermes.profiles` | [Profiles](06-Profiles), [API and Route Map](20-API-and-Route-Map) |\n| `/hermes/logs` | `hermes.logs` | [Devices, Version Preview, and Logs](17-Devices-Version-Logs) |\n| `/hermes/usage` | `hermes.usage` | [Usage, Performance, and Skills Analytics](12-Usage-Performance-and-Skills-Analytics) |\n| `/hermes/performance` | `hermes.performance` | [Usage, Performance, and Skills Analytics](12-Usage-Performance-and-Skills-Analytics) |\n| `/hermes/skills-usage` | `hermes.skillsUsage` | [Usage, Performance, and Skills Analytics](12-Usage-Performance-and-Skills-Analytics) |\n| `/hermes/skills` | `hermes.skills` | [Skills, Memory, and Plugins](11-Skills-Memory-and-Plugins) |\n| `/hermes/plugins` | `hermes.plugins` | [Skills, Memory, and Plugins](11-Skills-Memory-and-Plugins) |\n| `/hermes/memory` | `hermes.memory` | [Skills, Memory, and Plugins](11-Skills-Memory-and-Plugins) |\n| `/hermes/settings` | `hermes.settings` | [Settings and Security](14-Settings-and-Security) |\n| `/hermes/channels` | `hermes.channels` | [Channels and Gateways](13-Channels-and-Gateways) |\n| `/hermes/terminal` | `hermes.terminal` | [Web Terminal](15-Web-Terminal) |\n| `/hermes/devices` | `hermes.devices` | [Devices, Version Preview, and Logs](17-Devices-Version-Logs) |\n| `/hermes/group-chat` | `hermes.groupChat` | [Group Chat](07-Group-Chat) |\n| `/hermes/group-chat/room/:roomId` | `hermes.groupChatRoom` | [Group Chat](07-Group-Chat) |\n| `/hermes/files` | `hermes.files` | [Files and Workspaces](10-Files-and-Workspaces) |\n| `/hermes/coding-agents` | `hermes.codingAgents` | [Coding Agents, Global Agent, and MCP](16-Coding-Agents-Global-Agent-and-MCP) |\n| `/hermes/version-preview` | `hermes.versionPreview` | [Devices, Version Preview, and Logs](17-Devices-Version-Logs) |\n| `/hermes/mcp` | `hermes.mcp` | [Coding Agents, Global Agent, and MCP](16-Coding-Agents-Global-Agent-and-MCP) |\n| `/hermes/chat` | `login` | [Architecture](02-Architecture), [Chat and Sessions](03-Chat-and-Sessions), [API and Route Map](20-API-and-Route-Map) |",
+        "## Agent routing hints / Agent 路由提示\n\n| Topic | English | 中文 |\n| --- | --- | --- |\n| Chat/session | Start at Chat and Sessions; inspect `chat.ts` and server `run-chat`. | 从聊天与会话开始；检查 `chat.ts` 和 server `run-chat`。 |\n| History/search | Do not assume Chat scope equals History scope. | 不要假设 Chat 范围等于 History 范围。 |\n| Models/providers | Credential pools and custom providers are sensitive. | credential pool 和 custom provider 是敏感面。 |\n| Group chat | Runtime/bridge readiness matters, not only @mention highlighting. | 关键是 runtime/bridge readiness，不只是 @mention 高亮。 |\n| Kanban | Compare dashboard/canonical behavior before UI-only changes. | UI-only 改动前先比对 dashboard/canonical 行为。 |\n| Cron/jobs | External delivery and scripts can have side effects. | 外发和脚本执行有副作用。 |\n| Settings/channels | Avoid exposing tokens, env values, and private config. | 避免暴露 tokens、env 值和私人配置。 |",
+        "## Machine-readable index / 机器可读索引\n\n- `assets/wiki-index.json`"
+      ]
+    },
+    {
+      "file": "01-Quick-Start.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Quick Start / Quick Start（双语）",
+        "## 中文\n\n安装、启动、认证、健康检查和第一次打开 Hermes Web UI。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/`",
+        "## Screenshots / 截图\n\n![startup login](assets/screenshots/startup-login.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![chat main overview](assets/screenshots/chat-main-overview.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `README.md`\n- `bin/hermes-web-ui.mjs`\n- `docker-compose.yml`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "02-Architecture.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Architecture / 架构",
+        "## 中文\n\n浏览器、Koa server、Socket.IO、Hermes Agent Bridge、SQLite、本地文件/配置之间的边界。",
+        "## System map / 系统地图\n\n```mermaid\nflowchart LR\n  Browser[Vue Web UI] --> Koa[Koa server]\n  Browser <--> SocketIO[Socket.IO realtime]\n  Koa --> WebUIDB[(Web UI SQLite)]\n  Koa --> HermesState[(Hermes state.db read/bridge paths)]\n  Koa --> Bridge[Agent Bridge client]\n  Bridge --> Python[hermes_bridge.py / AIAgent]\n  Python --> Hermes[Hermes Agent runtime]\n  Koa --> Files[File/workspace providers]\n  Koa --> Config[Hermes config/auth/profile files]\n  Koa --> MCP[MCP + agent-runner services]\n```\n\n![chat main overview](assets/screenshots/chat-main-overview.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Boundaries / 边界\n\nEN:\n- The browser owns navigation, visual state, drawers, tables, modals, local UI preferences, and realtime feedback.\n- The server owns API boundaries, auth, Socket.IO/WebSocket coordination, local DB access, and Hermes runtime bridges.\n- Chat and History may use different session scopes; verify route, controller, and DB source.\n\n中文：\n- 浏览器负责导航、视觉状态、抽屉、表格、弹窗、本地 UI 偏好和实时反馈。\n- Server 负责 API 边界、认证、Socket.IO/WebSocket 协调、本地 DB 访问和 Hermes runtime bridge。\n- Chat 和 History 的 session scope 可能不同；必须验证 route、controller 和 DB source。",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/App.vue`\n- `packages/server/src/index.ts`\n- `packages/server/src/routes/index.ts`\n- `packages/server/src/services/hermes/agent-bridge/README.md`",
+        "## Related pages / 相关页面\n\n- [Chat and Sessions](03-Chat-and-Sessions)\n- [API and Route Map](20-API-and-Route-Map)\n- [Troubleshooting](19-Troubleshooting)"
+      ]
+    },
+    {
+      "file": "03-Chat-and-Sessions.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Chat and Sessions / Chat and Sessions（双语）",
+        "## 中文\n\n实时聊天、会话列表、模型切换、全局搜索、文件/终端抽屉、Markdown/工具输出渲染。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/chat`\n- `/hermes/session/:sessionId`",
+        "## Screenshots / 截图\n\n![chat main overview](assets/screenshots/chat-main-overview.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![model selector](assets/screenshots/model-selector.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![files workspace drawer](assets/screenshots/files-workspace-drawer.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![terminal drawer](assets/screenshots/terminal-drawer.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/ChatView.vue`\n- `packages/client/src/components/hermes/chat/ChatPanel.vue`\n- `packages/client/src/stores/hermes/chat.ts`\n- `packages/server/src/services/hermes/run-chat/index.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "04-History-and-Search.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# History and Search / History and Search（双语）",
+        "## 中文\n\n历史会话浏览、搜索、深链打开和 Chat/History 范围差异。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/history`\n- `/hermes/history/session/:sessionId`",
+        "## Screenshots / 截图\n\n![history sessions](assets/screenshots/history-sessions.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![global search modal](assets/screenshots/global-search-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/HistoryView.vue`\n- `packages/client/src/components/hermes/chat/HistoryMessageList.vue`\n- `packages/server/src/routes/hermes/sessions.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "05-Models-and-Providers.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Models and Providers / Models and Providers（双语）",
+        "## 中文\n\n模型提供商、credential pool/OAuth、自定义 OpenAI-compatible provider、默认模型和辅助模型。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/models`",
+        "## Screenshots / 截图\n\n![models management](assets/screenshots/models-management.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![models add provider modal](assets/screenshots/models-add-provider-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![model selector](assets/screenshots/model-selector.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/ModelsView.vue`\n- `packages/client/src/components/hermes/models/ProvidersPanel.vue`\n- `packages/server/src/routes/hermes/models.ts`\n- `packages/server/src/routes/hermes/providers.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "06-Profiles.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Profiles / Profiles（双语）",
+        "## 中文\n\nHermes profiles 创建、克隆、导入、导出、切换与 profile-scoped 配置隔离。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/profiles`",
+        "## Screenshots / 截图\n\n![profiles management](assets/screenshots/profiles-management.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![profiles create modal](assets/screenshots/profiles-create-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/ProfilesView.vue`\n- `packages/client/src/stores/hermes/profiles.ts`\n- `packages/server/src/routes/hermes/profiles.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "07-Group-Chat.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Group Chat / Group Chat（双语）",
+        "## 中文\n\n多 agent 房间、成员、@mention 路由、typing/progress、profile-per-agent 约束。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/group-chat`\n- `/hermes/group-chat/room/:roomId`",
+        "## Screenshots / 截图\n\n![group chat rooms](assets/screenshots/group-chat-rooms.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![group chat create room modal](assets/screenshots/group-chat-create-room-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/GroupChatView.vue`\n- `packages/client/src/components/hermes/group-chat/GroupChatPanel.vue`\n- `packages/server/src/routes/hermes/group-chat.ts`\n- `packages/server/src/services/hermes/group-chat/index.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "08-Kanban.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Kanban / Kanban（双语）",
+        "## 中文\n\nHermes Kanban board、任务列、任务 drawer、创建任务、与 Hermes dashboard parity 的边界。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/kanban`",
+        "## Screenshots / 截图\n\n![kanban board](assets/screenshots/kanban-board.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![kanban new task modal](assets/screenshots/kanban-new-task-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/KanbanView.vue`\n- `packages/client/src/components/hermes/kanban/KanbanTaskDrawer.vue`\n- `packages/server/src/routes/hermes/kanban.ts`\n- `packages/server/src/services/hermes/hermes-kanban.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "09-Jobs-and-Cron.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Jobs and Cron / Jobs and Cron（双语）",
+        "## 中文\n\nCron job 创建、编辑、暂停、恢复、立即运行和运行历史。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/jobs`",
+        "## Screenshots / 截图\n\n![jobs manager](assets/screenshots/jobs-manager.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![jobs create modal](assets/screenshots/jobs-create-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/JobsView.vue`\n- `packages/client/src/components/hermes/jobs/JobsPanel.vue`\n- `packages/server/src/routes/hermes/jobs.ts`\n- `packages/server/src/routes/hermes/cron-history.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "10-Files-and-Workspaces.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Files and Workspaces / Files and Workspaces（双语）",
+        "## 中文\n\n文件浏览、上传/下载、预览/编辑、重命名/复制/移动/删除，多 backend 路径处理。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/files`",
+        "## Screenshots / 截图\n\n![files workspace drawer](assets/screenshots/files-workspace-drawer.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/FilesView.vue`\n- `packages/client/src/stores/hermes/files.ts`\n- `packages/server/src/routes/hermes/files.ts`\n- `packages/server/src/services/hermes/file-provider.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "11-Skills-Memory-and-Plugins.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Skills, Memory, and Plugins / Skills, Memory, and Plugins（双语）",
+        "## 中文\n\nSkill 浏览/详情、Memory/Profile notes、plugin inventory 与 agent 可复用能力。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/skills`\n- `/hermes/memory`\n- `/hermes/plugins`",
+        "## Screenshots / 截图\n\n![skills list](assets/screenshots/skills-list.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![memory notes](assets/screenshots/memory-notes.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![plugins inventory](assets/screenshots/plugins-inventory.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/SkillsView.vue`\n- `packages/client/src/views/hermes/MemoryView.vue`\n- `packages/client/src/views/hermes/PluginsView.vue`\n- `packages/server/src/routes/hermes/skills.ts`\n- `packages/server/src/routes/hermes/memory.ts`\n- `packages/server/src/routes/hermes/plugins.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "12-Usage-Performance-and-Skills-Analytics.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Usage, Performance, and Skills Analytics / Usage, Performance, and Skills Analytics（双语）",
+        "## 中文\n\nToken/成本/缓存统计、性能仪表盘、技能使用统计和趋势图。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/usage`\n- `/hermes/performance`\n- `/hermes/skills-usage`",
+        "## Screenshots / 截图\n\n![usage analytics](assets/screenshots/usage-analytics.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![performance dashboard](assets/screenshots/performance-dashboard.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![skills usage](assets/screenshots/skills-usage.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/UsageView.vue`\n- `packages/client/src/views/hermes/PerformanceView.vue`\n- `packages/client/src/views/hermes/SkillsUsageView.vue`\n- `packages/server/src/routes/hermes/usage.ts`\n- `packages/server/src/routes/hermes/performance-monitor.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "13-Channels-and-Gateways.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Channels and Gateways / Channels and Gateways（双语）",
+        "## 中文\n\nTelegram/Discord/Slack/Feishu/WeChat 等平台配置、状态检测和 env/config 写入边界。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/channels`",
+        "## Screenshots / 截图\n\n![channels integrations](assets/screenshots/channels-integrations.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/ChannelsView.vue`\n- `packages/client/src/components/hermes/settings/PlatformSettings.vue`\n- `packages/server/src/routes/hermes/config.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "14-Settings-and-Security.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Settings and Security / Settings and Security（双语）",
+        "## 中文\n\n显示、agent、memory、privacy、session、voice、账号、安全相关设置。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/settings`",
+        "## Screenshots / 截图\n\n![settings overview](assets/screenshots/settings-overview.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![settings account modal](assets/screenshots/settings-account-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/SettingsView.vue`\n- `packages/client/src/components/hermes/settings/AccountSettings.vue`\n- `packages/server/src/routes/auth.ts`\n- `packages/server/src/security.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "15-Web-Terminal.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Web Terminal / Web Terminal（双语）",
+        "## 中文\n\n基于 node-pty/xterm 的网页终端，多 session、resize、WebSocket 输入输出。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/terminal`",
+        "## Screenshots / 截图\n\n![terminal drawer](assets/screenshots/terminal-drawer.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/TerminalView.vue`\n- `packages/client/src/components/hermes/chat/TerminalPanel.vue`\n- `packages/server/src/routes/hermes/terminal.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "16-Coding-Agents-Global-Agent-and-MCP.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Coding Agents, Global Agent, and MCP / Coding Agents, Global Agent, and MCP（双语）",
+        "## 中文\n\nCoding agent runner、Global Agent 会话、MCP server 管理和工具注入边界。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/coding-agents`\n- `/hermes/global-agent`\n- `/hermes/mcp`",
+        "## Screenshots / 截图\n\n![coding agents](assets/screenshots/coding-agents.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![mcp servers](assets/screenshots/mcp-servers.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![mcp add server modal](assets/screenshots/mcp-add-server-modal.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/CodingAgentsView.vue`\n- `packages/client/src/views/hermes/GlobalAgentView.vue`\n- `packages/client/src/views/hermes/McpManagerView.vue`\n- `packages/server/src/routes/hermes/mcp.ts`\n- `packages/server/src/services/agent-runner/coding-agent-run-manager.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "17-Devices-Version-Logs.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Devices, Version Preview, and Logs / Devices, Version Preview, and Logs（双语）",
+        "## 中文\n\nLAN/remote device 管理、版本预览/更新可见性、日志查看和排错入口。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/hermes/devices`\n- `/hermes/version-preview`\n- `/hermes/logs`",
+        "## Screenshots / 截图\n\n![devices management](assets/screenshots/devices-management.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![version preview](assets/screenshots/version-preview.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![logs viewer](assets/screenshots/logs-viewer.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `packages/client/src/views/hermes/DevicesView.vue`\n- `packages/client/src/views/hermes/VersionPreviewView.vue`\n- `packages/client/src/views/hermes/LogsView.vue`\n- `packages/server/src/routes/hermes/devices.ts`\n- `packages/server/src/routes/hermes/runtime-versions.ts`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "18-Docker-and-Deployment.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Docker and Deployment / Docker and Deployment（双语）",
+        "## 中文\n\nnpm、setup script、Docker Compose、环境变量、持久化目录和 health check。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- `/`",
+        "## Screenshots / 截图\n\n![startup login](assets/screenshots/startup-login.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `README.md`\n- `docs/docker.md`\n- `Dockerfile`\n- `docker-compose.yml`\n- `bin/hermes-web-ui.mjs`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "19-Troubleshooting.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Troubleshooting / Troubleshooting（双语）",
+        "## 中文\n\n认证、端口、Hermes runtime、bridge、Docker、profile gateway、模型鉴权、WebSocket/terminal 常见故障定位。",
+        "### 什么时候用\n\n当你需要操作、审查、测试或修改这个 WUI 功能面时，先读本页。先看 route 和截图，再检查源码锚点和 tests。",
+        "### 怎么用\n\n1. 打开对应 route，或从左侧导航进入。\n2. 确认当前 profile、认证状态、provider/model 状态或 runtime 状态。\n3. 执行目标 UI 动作。配置、文件、终端、cron、channel、provider、profile 相关动作可能有副作用。\n4. 如果要改代码，先读源码锚点和现有 tests。",
+        "## Routes / 路由\n\n- None / 无",
+        "## Screenshots / 截图\n\n![logs viewer](assets/screenshots/logs-viewer.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>\n\n![settings overview](assets/screenshots/settings-overview.png)\n\n<sub>EN: Demo/manual latest-main screenshot; no private Han data.  \\nZH: latest-main 演示/手册截图，不包含 Han 的私人数据。</sub>",
+        "## Source anchors / 源码锚点\n\n- `README.md`\n- `docs/docker.md`\n- `packages/server/src/services/hermes/agent-bridge/README.md`",
+        "## Agent notes / Agent 注意事项",
+        "### 中文\n- 本页描述 latest-main 中由源码/docs/截图支持的行为；改代码前仍需回源验证。\n- 涉及凭据、日志、profiles 或 workspace 的截图/测试要使用隔离 home 或 fixture。\n- 修改此区域前优先补最小 regression test。",
+        "## Related pages / 相关页面\n\n- [Agent Index](00-Agent-Index)\n- [API and Route Map](20-API-and-Route-Map)\n- [Screenshot Gallery](21-Screenshot-Gallery)"
+      ]
+    },
+    {
+      "file": "20-API-and-Route-Map.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# API and Route Map / API 与 Route 地图",
+        "## 中文\n\nclient route、server API route、OpenAPI tag、wiki page 的机器可读映射。 本页是 inventory；最终行为仍以 handler 和 tests 为准。",
+        "## Client routes / 客户端路由\n\n| Path | Route name |\n| --- | --- |\n| `/` | `login` |\n| `/hermes/chat` | `hermes.chat` |\n| `/hermes/session/:sessionId` | `hermes.session` |\n| `/hermes/history` | `hermes.history` |\n| `/hermes/history/session/:sessionId` | `hermes.historySession` |\n| `/hermes/global-agent` | `hermes.globalAgent` |\n| `/hermes/global-agent/session/:sessionId` | `hermes.globalAgentSession` |\n| `/hermes/jobs` | `hermes.jobs` |\n| `/hermes/kanban` | `hermes.kanban` |\n| `/hermes/models` | `hermes.models` |\n| `/hermes/profiles` | `hermes.profiles` |\n| `/hermes/logs` | `hermes.logs` |\n| `/hermes/usage` | `hermes.usage` |\n| `/hermes/performance` | `hermes.performance` |\n| `/hermes/skills-usage` | `hermes.skillsUsage` |\n| `/hermes/skills` | `hermes.skills` |\n| `/hermes/plugins` | `hermes.plugins` |\n| `/hermes/memory` | `hermes.memory` |\n| `/hermes/settings` | `hermes.settings` |\n| `/hermes/channels` | `hermes.channels` |\n| `/hermes/terminal` | `hermes.terminal` |\n| `/hermes/devices` | `hermes.devices` |\n| `/hermes/group-chat` | `hermes.groupChat` |\n| `/hermes/group-chat/room/:roomId` | `hermes.groupChatRoom` |\n| `/hermes/files` | `hermes.files` |\n| `/hermes/coding-agents` | `hermes.codingAgents` |\n| `/hermes/version-preview` | `hermes.versionPreview` |\n| `/hermes/mcp` | `hermes.mcp` |\n| `/hermes/chat` | `login` |",
+        "## Server OpenAPI paths / Server OpenAPI 路径\n\nTotal / 总数: 227\n\n| Path | Methods |\n| --- | --- |\n| `/api/auth/avatar` | GET, PUT |\n| `/api/auth/change-password` | POST |\n| `/api/auth/change-username` | POST |\n| `/api/auth/locked-ips` | GET, DELETE |\n| `/api/auth/login` | POST |\n| `/api/auth/mcu-login` | POST |\n| `/api/auth/me` | GET |\n| `/api/auth/password` | DELETE |\n| `/api/auth/setup` | POST |\n| `/api/auth/status` | GET |\n| `/api/auth/users` | GET, POST |\n| `/api/auth/users/{id}` | PUT, DELETE |\n| `/api/chat-run/runs` | POST |\n| `/api/coding-agents` | GET |\n| `/api/coding-agents/runs/{sessionId}` | DELETE |\n| `/api/coding-agents/runs/{sessionId}/input` | POST |\n| `/api/coding-agents/{id}` | DELETE |\n| `/api/coding-agents/{id}/config-files/{key}` | GET, PUT |\n| `/api/coding-agents/{id}/install` | POST |\n| `/api/coding-agents/{id}/launch/native` | POST |\n| `/api/coding-agents/{id}/launch/prepare` | POST |\n| `/api/coding-agents/{id}/runs` | POST |\n| `/api/cron-history` | GET |\n| `/api/cron-history/{jobId}/{fileName}` | GET |\n| `/api/devices` | GET |\n| `/api/devices/link-info` | GET |\n| `/api/devices/link-request` | POST |\n| `/api/devices/link-status` | POST |\n| `/api/devices/manual-request` | POST |\n| `/api/devices/pairing-link` | GET |\n| `/api/devices/peer-connections` | GET |\n| `/api/devices/peer-connections/{connectionId}/disconnect` | POST |\n| `/api/devices/peer-connections/{connectionId}/download` | POST |\n| `/api/devices/peer-connections/{connectionId}/exec` | POST |\n| `/api/devices/peer-connections/{connectionId}/terminal` | POST |\n| `/api/devices/peer-connections/{connectionId}/terminal/{terminalId}/close` | POST |\n| `/api/devices/peer-connections/{connectionId}/terminal/{terminalId}/input` | POST |\n| `/api/devices/peer-connections/{connectionId}/terminal/{terminalId}/read` | GET |\n| `/api/devices/peer-connections/{connectionId}/terminal/{terminalId}/resize` | POST |\n| `/api/devices/peer-connections/{connectionId}/terminals` | GET |\n| `/api/devices/peer-connections/{connectionId}/upload` | POST |\n| `/api/devices/scan` | POST |\n| `/api/devices/{id}/approve` | POST |\n| `/api/devices/{id}/block` | POST |\n| `/api/devices/{id}/connect` | POST |\n| `/api/devices/{id}/reject` | POST |\n| `/api/devices/{id}/request` | POST |\n| `/api/devices/{id}/request-history` | DELETE |\n| `/api/devices/{id}/unblock` | POST |\n| `/api/hermes/auth/anthropic/start` | POST |\n| `/api/hermes/auth/anthropic/status` | GET |\n| `/api/hermes/auth/anthropic/submit/{sessionId}` | POST |\n| `/api/hermes/auth/codex/poll/{sessionId}` | GET |\n| `/api/hermes/auth/codex/start` | POST |\n| `/api/hermes/auth/codex/status` | GET |\n| `/api/hermes/auth/copilot/check-token` | GET |\n| `/api/hermes/auth/copilot/disable` | POST |\n| `/api/hermes/auth/copilot/enable` | POST |\n| `/api/hermes/auth/copilot/poll/{sessionId}` | GET |\n| `/api/hermes/auth/copilot/start` | POST |\n| `/api/hermes/auth/gemini/poll/{sessionId}` | GET |\n| `/api/hermes/auth/gemini/start` | POST |\n| `/api/hermes/auth/gemini/status` | GET |\n| `/api/hermes/auth/nous/poll/{sessionId}` | GET |\n| `/api/hermes/auth/nous/start` | POST |\n| `/api/hermes/auth/nous/status` | GET |\n| `/api/hermes/auth/xai/poll/{sessionId}` | GET |\n| `/api/hermes/auth/xai/start` | POST |\n| `/api/hermes/auth/xai/status` | GET |\n| `/api/hermes/available-models` | GET |\n| `/api/hermes/config` | GET, PUT |\n| `/api/hermes/config/auxiliary-models` | GET, PUT |\n| `/api/hermes/config/credentials` | PUT |\n| `/api/hermes/config/model` | PUT |\n| `/api/hermes/config/models` | GET |\n| `/api/hermes/config/providers` | POST |\n| `/api/hermes/config/providers/{poolKey}` | PUT, DELETE |\n| `/api/hermes/custom-model` | PUT, DELETE |\n| `/api/hermes/download` | GET |\n| `/api/hermes/files/copy` | POST |\n| `/api/hermes/files/delete` | DELETE |\n| `/api/hermes/files/list` | GET |\n| `/api/hermes/files/mkdir` | POST |\n| `/api/hermes/files/read` | GET |\n| `/api/hermes/files/rename` | POST |\n| `/api/hermes/files/stat` | GET |\n| `/api/hermes/files/upload` | POST |\n| `/api/hermes/files/write` | PUT |\n| `/api/hermes/group-chat/rooms` | POST, GET |\n| `/api/hermes/group-chat/rooms/join/{code}` | GET |\n| `/api/hermes/group-chat/rooms/{roomId}` | GET, DELETE |\n| `/api/hermes/group-chat/rooms/{roomId}/agents` | POST, GET |\n| `/api/hermes/group-chat/rooms/{roomId}/agents/{agentId}` | DELETE |\n| `/api/hermes/group-chat/rooms/{roomId}/clear-context` | POST |\n| `/api/hermes/group-chat/rooms/{roomId}/clone` | POST |\n| `/api/hermes/group-chat/rooms/{roomId}/compress` | POST |\n| `/api/hermes/group-chat/rooms/{roomId}/config` | PUT |\n| `/api/hermes/group-chat/rooms/{roomId}/invite-code` | PUT |\n| `/api/hermes/jobs` | GET, POST |\n| `/api/hermes/jobs/{id}` | GET, PATCH, DELETE |\n| `/api/hermes/jobs/{id}/pause` | POST |\n| `/api/hermes/jobs/{id}/resume` | POST |\n| `/api/hermes/jobs/{id}/run` | POST |\n| `/api/hermes/kanban` | GET, POST |\n| `/api/hermes/kanban/artifact` | GET |\n| `/api/hermes/kanban/assignees` | GET |\n| `/api/hermes/kanban/boards` | GET, POST |\n| `/api/hermes/kanban/boards/{slug}` | DELETE |\n| `/api/hermes/kanban/capabilities` | GET |\n| `/api/hermes/kanban/complete` | POST |\n| `/api/hermes/kanban/diagnostics` | GET |\n| `/api/hermes/kanban/dispatch` | POST |\n| `/api/hermes/kanban/links` | POST, DELETE |\n| `/api/hermes/kanban/search-sessions` | GET |\n| `/api/hermes/kanban/stats` | GET |\n| `/api/hermes/kanban/tasks/bulk` | POST |\n| `/api/hermes/kanban/unblock` | POST |\n| `/api/hermes/kanban/{id}` | GET |\n| `/api/hermes/kanban/{id}/assign` | POST |\n| `/api/hermes/kanban/{id}/block` | POST |\n| `/api/hermes/kanban/{id}/comments` | POST |\n| `/api/hermes/kanban/{id}/log` | GET |\n| `/api/hermes/kanban/{id}/reassign` | POST |\n| `/api/hermes/kanban/{id}/reclaim` | POST |\n| `/api/hermes/kanban/{id}/specify` | POST |\n| `/api/hermes/logs` | GET |\n| `/api/hermes/logs/{name}` | GET |\n| `/api/hermes/mcp/reload` | POST |\n| `/api/hermes/mcp/servers` | GET, POST |\n| `/api/hermes/mcp/servers/{name}` | PATCH, DELETE |\n| `/api/hermes/mcp/servers/{name}/test` | POST |\n| `/api/hermes/mcp/tools` | GET |\n| `/api/hermes/media/apikey-image-generate` | POST |\n| `/api/hermes/media/grok-image-to-video` | POST |\n| `/api/hermes/memory` | GET, POST |\n| `/api/hermes/model-alias` | PUT |\n| `/api/hermes/model-context` | GET, PUT |\n| `/api/hermes/model-context/{provider}/{model}` | GET, PUT |\n| `/api/hermes/model-visibility` | PUT |\n| `/api/hermes/openapi.json` | GET |\n| `/api/hermes/performance/runtime` | GET |\n| `/api/hermes/plugins` | GET |\n| `/api/hermes/profiles` | GET, POST |\n| `/api/hermes/profiles/active` | PUT |\n| `/api/hermes/profiles/import` | POST |\n| `/api/hermes/profiles/runtime-statuses` | GET |\n| `/api/hermes/profiles/{name}` | GET, DELETE |\n| `/api/hermes/profiles/{name}/avatar` | PUT, DELETE |\n| `/api/hermes/profiles/{name}/export` | POST |\n| `/api/hermes/profiles/{name}/gateway/restart` | POST |\n| `/api/hermes/profiles/{name}/rename` | POST |\n| `/api/hermes/profiles/{name}/restart` | POST |\n| `/api/hermes/profiles/{name}/runtime-status` | GET |\n| `/api/hermes/provider-models` | POST |\n| `/api/hermes/provider-models/cache/refresh` | POST |\n| `/api/hermes/runtime-versions` | GET |\n| `/api/hermes/runtime-versions/active-runtime` | POST |\n| `/api/hermes/runtime-versions/active-webui` | POST |\n| `/api/hermes/runtime-versions/jobs` | GET |\n| `/api/hermes/runtime-versions/jobs/{id}` | GET |\n| `/api/hermes/runtime-versions/runtime/download` | POST |\n| `/api/hermes/runtime-versions/runtime/{version}` | DELETE |\n| `/api/hermes/runtime-versions/webui/download` | POST |\n| `/api/hermes/runtime-versions/webui/{version}` | DELETE |\n| `/api/hermes/search/sessions` | GET |\n| `/api/hermes/sessions` | GET |\n| `/api/hermes/sessions/batch-delete` | POST |\n| `/api/hermes/sessions/context-length` | GET |\n| `/api/hermes/sessions/conversations` | GET |\n| `/api/hermes/sessions/conversations/{id}/messages` | GET |\n| `/api/hermes/sessions/conversations/{id}/messages/paginated` | GET |\n| `/api/hermes/sessions/hermes` | GET |\n| `/api/hermes/sessions/hermes/{id}` | GET |\n| `/api/hermes/sessions/hermes/{id}/import` | POST |\n| `/api/hermes/sessions/search` | GET |\n| `/api/hermes/sessions/usage` | GET |\n| `/api/hermes/sessions/{id}` | GET, DELETE |\n| `/api/hermes/sessions/{id}/export` | GET |\n| `/api/hermes/sessions/{id}/model` | POST |\n| `/api/hermes/sessions/{id}/rename` | POST |\n| `/api/hermes/sessions/{id}/usage` | GET |\n| `/api/hermes/sessions/{id}/workspace` | POST |\n| `/api/hermes/skills` | GET |\n| `/api/hermes/skills/external-dirs` | GET, PUT |\n| `/api/hermes/skills/import` | POST |\n| `/api/hermes/skills/pin` | PUT |\n| `/api/hermes/skills/toggle` | PUT |\n| `/api/hermes/skills/usage/stats` | GET |\n| `/api/hermes/skills/{category}/{skill}` | DELETE |\n| `/api/hermes/skills/{category}/{skill}/files` | GET |\n| `/api/hermes/skills/{path}` | GET |\n| `/api/hermes/stt/settings` | GET |\n| `/api/hermes/stt/settings/active` | PUT |\n| `/api/hermes/stt/settings/{provider}` | PUT |\n| `/api/hermes/stt/settings/{provider}/base-url-preset` | DELETE |\n| `/api/hermes/stt/settings/{provider}/secret/{secretName}` | DELETE |\n| `/api/hermes/stt/transcribe` | POST |\n| `/api/hermes/terminal` | GET |\n| `/api/hermes/tts` | POST |\n| `/api/hermes/tts/settings` | GET |\n| `/api/hermes/tts/settings/{provider}` | PUT |\n| `/api/hermes/tts/settings/{provider}/base-url-preset` | DELETE |\n| `/api/hermes/tts/settings/{provider}/secret/{secretName}` | DELETE |\n| `/api/hermes/tts/synthesize` | POST |\n| `/api/hermes/update` | POST |\n| `/api/hermes/update/preview` | GET |\n| `/api/hermes/update/preview/install` | POST |\n| `/api/hermes/update/preview/prepare` | POST |\n| `/api/hermes/update/preview/start` | POST |\n| `/api/hermes/update/preview/stop` | POST |\n| `/api/hermes/update/preview/tags` | GET |\n| `/api/hermes/usage/stats` | GET |\n| `/api/hermes/weixin/qrcode` | GET |\n| `/api/hermes/weixin/qrcode/status` | GET |\n| `/api/hermes/weixin/save` | POST |\n| `/api/hermes/workspace/folders` | GET, POST, DELETE |\n| `/api/hermes/workspace/folders/rename` | POST |\n| `/api/hermes/write-gate/pending` | GET |\n| `/api/hermes/write-gate/pending/{subsystem}/{id}/approve` | POST |\n| `/api/hermes/write-gate/pending/{subsystem}/{id}/diff` | GET |\n| `/api/hermes/write-gate/pending/{subsystem}/{id}/reject` | POST |\n| `/api/openapi.json` | GET |\n| `/api/tts/proxy/audio/speech` | POST |\n| `/api/voice/providers/probe` | POST |\n| `/health` | GET |\n| `/upload` | POST |\n| `/webhook` | POST |",
+        "## Sensitive/mutating API families / 敏感或有副作用的 API family\n\n| Family | English | 中文 |\n| --- | --- | --- |\n| `/api/auth/**` | Auth, login, user/account state. | 认证、登录、用户/账号状态。 |\n| `/api/hermes/config/**` | Hermes config/provider/credential writes. | Hermes 配置、provider、credential 写入。 |\n| `/api/hermes/profiles/**` | Profile create/import/export/switch. | Profile 创建、导入、导出、切换。 |\n| `/api/hermes/jobs/**` | Cron job creation/runs may execute or deliver externally. | Cron 创建/运行可能执行脚本或外发。 |\n| `/api/hermes/files/**` | File operations can mutate workspaces. | 文件操作可能修改 workspace。 |\n| Terminal WS | Interactive command execution surface. | 交互式命令执行面。 |\n| Group chat / MCP / coding agents | Runtime dispatch and tool execution. | Runtime dispatch 和工具执行。 |"
+      ]
+    },
+    {
+      "file": "21-Screenshot-Gallery.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Screenshot Gallery / 截图库",
+        "## 中文\n\n全部截图索引：文件名、功能页面、截图来源和隐私说明。 在计划、审查或文档中引用视觉证据时使用这些资产。\n\n| Preview | Asset | Notes |\n| --- | --- | --- |\n| ![startup-login.png](assets/screenshots/startup-login.png) | `assets/screenshots/startup-login.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![chat-main-overview.png](assets/screenshots/chat-main-overview.png) | `assets/screenshots/chat-main-overview.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![global-search-modal.png](assets/screenshots/global-search-modal.png) | `assets/screenshots/global-search-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![model-selector.png](assets/screenshots/model-selector.png) | `assets/screenshots/model-selector.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![files-workspace-drawer.png](assets/screenshots/files-workspace-drawer.png) | `assets/screenshots/files-workspace-drawer.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![terminal-drawer.png](assets/screenshots/terminal-drawer.png) | `assets/screenshots/terminal-drawer.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![history-sessions.png](assets/screenshots/history-sessions.png) | `assets/screenshots/history-sessions.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![group-chat-rooms.png](assets/screenshots/group-chat-rooms.png) | `assets/screenshots/group-chat-rooms.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![jobs-manager.png](assets/screenshots/jobs-manager.png) | `assets/screenshots/jobs-manager.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![jobs-create-modal.png](assets/screenshots/jobs-create-modal.png) | `assets/screenshots/jobs-create-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![kanban-board.png](assets/screenshots/kanban-board.png) | `assets/screenshots/kanban-board.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![kanban-new-task-modal.png](assets/screenshots/kanban-new-task-modal.png) | `assets/screenshots/kanban-new-task-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![channels-integrations.png](assets/screenshots/channels-integrations.png) | `assets/screenshots/channels-integrations.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![skills-list.png](assets/screenshots/skills-list.png) | `assets/screenshots/skills-list.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![plugins-inventory.png](assets/screenshots/plugins-inventory.png) | `assets/screenshots/plugins-inventory.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![mcp-servers.png](assets/screenshots/mcp-servers.png) | `assets/screenshots/mcp-servers.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![mcp-add-server-modal.png](assets/screenshots/mcp-add-server-modal.png) | `assets/screenshots/mcp-add-server-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![memory-notes.png](assets/screenshots/memory-notes.png) | `assets/screenshots/memory-notes.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![models-management.png](assets/screenshots/models-management.png) | `assets/screenshots/models-management.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![models-add-provider-modal.png](assets/screenshots/models-add-provider-modal.png) | `assets/screenshots/models-add-provider-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![logs-viewer.png](assets/screenshots/logs-viewer.png) | `assets/screenshots/logs-viewer.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![usage-analytics.png](assets/screenshots/usage-analytics.png) | `assets/screenshots/usage-analytics.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![performance-dashboard.png](assets/screenshots/performance-dashboard.png) | `assets/screenshots/performance-dashboard.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![skills-usage.png](assets/screenshots/skills-usage.png) | `assets/screenshots/skills-usage.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![coding-agents.png](assets/screenshots/coding-agents.png) | `assets/screenshots/coding-agents.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![version-preview.png](assets/screenshots/version-preview.png) | `assets/screenshots/version-preview.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![profiles-management.png](assets/screenshots/profiles-management.png) | `assets/screenshots/profiles-management.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![settings-overview.png](assets/screenshots/settings-overview.png) | `assets/screenshots/settings-overview.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![group-chat-create-room-modal.png](assets/screenshots/group-chat-create-room-modal.png) | `assets/screenshots/group-chat-create-room-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![profiles-create-modal.png](assets/screenshots/profiles-create-modal.png) | `assets/screenshots/profiles-create-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![settings-account-modal.png](assets/screenshots/settings-account-modal.png) | `assets/screenshots/settings-account-modal.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |\n| ![devices-management.png](assets/screenshots/devices-management.png) | `assets/screenshots/devices-management.png` | EN: demo/manual screenshot. ZH: 演示/手册截图。 |",
+        "## Privacy / provenance · 隐私 / 来源\n\nEN: These images were copied from latest-main product/manual screenshots or generated as review artifacts. Treat visible data as demo data.\n\n中文：这些图片来自 latest-main 产品/手册截图，或作为审查 artifact 生成。图片中的可见数据应视为演示数据。"
+      ]
+    },
+    {
+      "file": "22-Release-Sync-Notes.md",
+      "title": "<!--",
+      "zh_blocks": [
+        "# Release Sync Notes / 同步记录",
+        "## 中文\n\n本页记录双语 Wiki 的 freshness 和验证证据。",
+        "## Synced refs / 同步 refs\n\n- Upstream: `EKKOLearnAI/hermes-web-ui@0cb047c31e36da2d5e11eb7751c4fa6c48748df3`\n- Fork main after fast-forward: `hanzckernel/hermes-web-ui@0cb047c31e36da2d5e11eb7751c4fa6c48748df3`\n- Package version: `0.6.15`\n- Date: 2026-06-16 Europe/Berlin\n- Languages: English + 中文",
+        "## Validation performed / 已执行验证\n\n```bash\nnpm ci\nnpm test -- --run tests/server/health-controller.test.ts tests/server/sessions-controller.test.ts tests/client/app-store.test.ts\nnpm run build\npython3 /private/tmp/wui-fork-wiki-20260616-155924/tools/validate-wiki.py .\npython3 -m json.tool assets/wiki-index.json >/dev/null\n```\n\nEN result:\n- `npm ci`: completed; npm reported existing dependency audit warnings.\n- Targeted tests: 3 files passed, 55 tests passed.\n- `npm run build`: passed; OpenAPI generated 227 endpoints / 38 tags; large chunk warnings only.\n- Wiki validation: passed with 26 required pages and 32 screenshots.\n\n中文结果：\n- `npm ci` 完成；npm 报告当前依赖树已有 audit warnings。\n- targeted tests：3 个文件通过，55 个测试通过。\n- `npm run build` 通过；OpenAPI 生成 227 endpoints / 38 tags；只有 large chunk warnings。\n- Wiki validation：26 个必需页面、32 张截图通过。",
+        "## Remote boundary / 远程边界\n\nEN: Fork main and wiki were pushed only to Han's fork/remotes. Nothing was pushed to `EKKOLearnAI` upstream.\n\n中文：fork main 和 wiki 只 push 到 Han 自己的 fork/remotes。没有 push 到 `EKKOLearnAI` upstream。",
+        "## Refresh rule / 刷新规则\n\nEN: When upstream advances, regenerate route map, API map, screenshot gallery, bilingual summaries, and release notes.\n\n中文：upstream 更新后，应重新生成 route map、API map、截图索引、双语摘要和同步记录。"
+      ]
+    },
+    {
+      "file": "Home.md",
+      "title": "Hermes Web UI Wiki / Hermes Web UI 双语 Wiki",
+      "zh_blocks": [
+        "# Hermes Web UI Wiki / Hermes Web UI 双语 Wiki\n\n![Hermes Web UI chat overview](assets/screenshots/chat-main-overview.png)",
+        "## 中文\n\n这是 Han 的 fork `hanzckernel/hermes-web-ui` 的审查用双语 Wiki，内容基于 upstream `EKKOLearnAI/hermes-web-ui@0cb047c31e36da2d5e11eb7751c4fa6c48748df3`。它同时服务两类读者：\n\n- 人：快速理解安装、功能、部署、运维和排错。\n- Agent：快速定位 route、源码文件、API、截图证据、freshness 和安全边界。",
+        "## Start here / 入口\n\n- [Quick Start / 快速开始](01-Quick-Start)\n- [Architecture / 架构](02-Architecture)\n- [Chat and Sessions / 聊天与会话](03-Chat-and-Sessions)\n- [Agent Index / Agent 索引](00-Agent-Index)\n- [Screenshot Gallery / 截图库](21-Screenshot-Gallery)",
+        "## Core feature map / 核心功能地图\n\n| Area | 页面 | Route | Screenshot |\n| --- | --- | --- | --- |\n| Chat / 聊天 | [Chat and Sessions](03-Chat-and-Sessions) | `/hermes/chat` | `chat-main-overview.png` |\n| History / 历史 | [History and Search](04-History-and-Search) | `/hermes/history` | `history-sessions.png` |\n| Models / 模型 | [Models and Providers](05-Models-and-Providers) | `/hermes/models` | `models-management.png` |\n| Profiles / Profile | [Profiles](06-Profiles) | `/hermes/profiles` | `profiles-management.png` |\n| Group Chat / 群聊 | [Group Chat](07-Group-Chat) | `/hermes/group-chat` | `group-chat-rooms.png` |\n| Kanban / 看板 | [Kanban](08-Kanban) | `/hermes/kanban` | `kanban-board.png` |\n| Jobs / 定时任务 | [Jobs and Cron](09-Jobs-and-Cron) | `/hermes/jobs` | `jobs-manager.png` |\n| Files / 文件 | [Files and Workspaces](10-Files-and-Workspaces) | `/hermes/files` | `files-workspace-drawer.png` |\n| Analytics / 分析 | [Usage, Performance, and Skills Analytics](12-Usage-Performance-and-Skills-Analytics) | `/hermes/usage` | `usage-analytics.png` |\n| Coding/MCP | [Coding Agents, Global Agent, and MCP](16-Coding-Agents-Global-Agent-and-MCP) | `/hermes/coding-agents` | `coding-agents.png` |",
+        "## For agents / 给 Agent\n\nEN: Start from [Agent Index](00-Agent-Index), then read `assets/wiki-index.json`. Each page has an HTML-comment metadata block with languages, routes, source files, and screenshots. Do not treat the wiki as the only spec; verify against latest source and tests before changing code.\n\nZH: 先读 [Agent Index](00-Agent-Index)，再读 `assets/wiki-index.json`。每个页面顶部都有 HTML 注释 metadata，包含语言、routes、source files、screenshots。不要把 wiki 当成唯一 spec；改代码前仍要回源到源码和 tests。",
+        "## Privacy note / 隐私说明\n\nEN: Screenshots are demo/manual assets or isolated latest-main captures. Do not infer Han's real sessions, credentials, logs, profiles, or filesystem from them.\n\nZH: 截图来自演示/手册资产或隔离 latest-main 运行环境。不要从截图推断 Han 的真实会话、凭据、日志、profiles 或文件系统。"
+      ]
+    },
+    {
+      "file": "_Footer.md",
+      "title": "Synced from `EKKOLearnAI/hermes-web-ui@0cb047c31e36da2d5e11eb7751c4fa6c48748df3` into `hanzckernel/hermes-web-ui`. 双语 Wiki；screenshots are demo/manual assets, not private user data.",
+      "zh_blocks": [
+        "Synced from `EKKOLearnAI/hermes-web-ui@0cb047c31e36da2d5e11eb7751c4fa6c48748df3` into `hanzckernel/hermes-web-ui`. 双语 Wiki；screenshots are demo/manual assets, not private user data."
+      ]
+    },
+    {
+      "file": "_Sidebar.md",
+      "title": "Hermes Web UI / 双语 Wiki",
+      "zh_blocks": [
+        "## Hermes Web UI / 双语 Wiki\n\n- [Home / 首页](Home)\n- [Agent Index / Agent 索引](00-Agent-Index)\n- [Quick Start / 快速开始](01-Quick-Start)\n- [Architecture / 架构](02-Architecture)",
+        "## Core UI / 核心界面\n\n- [Chat and Sessions / 聊天与会话](03-Chat-and-Sessions)\n- [History and Search / 历史与搜索](04-History-and-Search)\n- [Models and Providers / 模型与提供商](05-Models-and-Providers)\n- [Profiles / Profiles](06-Profiles)\n- [Group Chat / 群聊](07-Group-Chat)\n- [Kanban / 看板](08-Kanban)\n- [Jobs and Cron / 定时任务](09-Jobs-and-Cron)\n- [Files and Workspaces / 文件与工作区](10-Files-and-Workspaces)\n- [Skills, Memory, and Plugins / 技能、记忆与插件](11-Skills-Memory-and-Plugins)\n- [Usage, Performance, and Skills Analytics / 用量、性能与技能分析](12-Usage-Performance-and-Skills-Analytics)\n- [Channels and Gateways / 渠道与网关](13-Channels-and-Gateways)\n- [Settings and Security / 设置与安全](14-Settings-and-Security)\n- [Web Terminal / 网页终端](15-Web-Terminal)\n- [Coding Agents, Global Agent, and MCP / Coding Agents、Global Agent 与 MCP](16-Coding-Agents-Global-Agent-and-MCP)\n- [Devices, Version Preview, and Logs / 设备、版本预览与日志](17-Devices-Version-Logs)",
+        "## Operations / 运维\n\n- [Docker and Deployment / Docker 与部署](18-Docker-and-Deployment)\n- [Troubleshooting / 排错](19-Troubleshooting)\n- [API and Route Map / API 与 Route 地图](20-API-and-Route-Map)\n- [Screenshot Gallery / 截图库](21-Screenshot-Gallery)\n- [Release Sync Notes / 同步记录](22-Release-Sync-Notes)"
+      ]
+    }
+  ]
+}

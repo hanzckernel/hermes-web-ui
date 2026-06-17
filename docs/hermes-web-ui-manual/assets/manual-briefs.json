@@ -1,0 +1,422 @@
+{
+  "pages": [
+    {
+      "file": "01-Quick-Start.md",
+      "title": "Quick Start",
+      "screenshots": [
+        "assets/screenshots/startup-login.png",
+        "assets/screenshots/chat-main-overview.png"
+      ],
+      "capabilities_to_preserve": [
+        "Sign in or complete the first-run setup flow.",
+        "Open the main chat workspace and confirm the app is responsive.",
+        "Use the sidebar to move between chat, history, models, jobs, files, analytics, and settings.",
+        "Check health, version, and runtime indicators before starting longer work."
+      ],
+      "notes_to_preserve": [
+        "If the UI loads but chat does not respond, check runtime status, provider credentials, and logs before changing settings.",
+        "Avoid pasting secrets into chat or screenshots; configure credentials through the intended settings or environment path."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "02-Architecture.md",
+      "title": "Interface Overview",
+      "screenshots": [
+        "assets/screenshots/chat-main-overview.png"
+      ],
+      "capabilities_to_preserve": [
+        "Understand the main navigation areas and what each one is for.",
+        "Recognize which pages are for daily use and which are for administration.",
+        "Know where to look when a feature depends on runtime, credentials, or external services."
+      ],
+      "notes_to_preserve": [
+        "Some pages can run commands, write files, schedule work, or connect external channels; review the action before confirming.",
+        "If you are documenting or debugging behavior, use screenshots plus logs rather than relying on memory."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "03-Chat-and-Sessions.md",
+      "title": "Chat and Sessions",
+      "screenshots": [
+        "assets/screenshots/chat-main-overview.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/files-workspace-drawer.png",
+        "assets/screenshots/terminal-drawer.png",
+        "assets/screenshots/chat-skill-command-picker.png"
+      ],
+      "capabilities_to_preserve": [
+        "Start a new conversation or continue an existing session.",
+        "Switch models before sending a message.",
+        "Use Markdown and tool output rendering to review structured responses.",
+        "Open related files or a terminal drawer when a task needs local context.",
+        "Search across current work and jump to relevant sessions."
+      ],
+      "notes_to_preserve": [
+        "Model changes usually affect the next turn, not past answers.",
+        "Terminal and file drawers can expose or modify local data; use them deliberately."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "04-History-and-Search.md",
+      "title": "History and Search",
+      "screenshots": [
+        "assets/screenshots/history-sessions.png",
+        "assets/screenshots/global-search-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Browse recent sessions and open a specific conversation.",
+        "Search by title, content, or relevant terms.",
+        "Use deep links to return to a session view.",
+        "Distinguish saved history from the currently open chat session."
+      ],
+      "notes_to_preserve": [
+        "Search is useful for recall, but stale sessions may not reflect current files or settings.",
+        "Use the session content as context; verify current project state before acting on old instructions."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "05-Models-and-Providers.md",
+      "title": "Models and Providers",
+      "screenshots": [
+        "assets/screenshots/models-management.png",
+        "assets/screenshots/models-add-provider-modal.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/models-refresh-and-oauth-overview.png",
+        "assets/screenshots/models-oauth-provider-picker.png",
+        "assets/screenshots/models-claude-oauth-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Review configured providers and available models.",
+        "Add or adjust custom provider entries when supported.",
+        "Choose defaults and aliases used by the chat experience.",
+        "Check whether provider authentication appears ready."
+      ],
+      "notes_to_preserve": [
+        "Provider credentials are sensitive. Do not expose tokens in screenshots, chat, or issue reports.",
+        "If a model is missing, check provider configuration, credentials, visibility settings, and server logs."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "06-Profiles.md",
+      "title": "Profiles",
+      "screenshots": [
+        "assets/screenshots/profiles-management.png",
+        "assets/screenshots/profiles-create-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Create, clone, import, export, and switch profiles.",
+        "Keep provider and channel settings isolated by profile.",
+        "Review profile-specific status before starting work."
+      ],
+      "notes_to_preserve": [
+        "Switching profiles can change credentials, models, gateways, skills, and memory behavior.",
+        "Avoid editing production-like profiles when experimenting; clone first if unsure."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "07-Group-Chat.md",
+      "title": "Group Chat",
+      "screenshots": [
+        "assets/screenshots/group-chat-rooms.png",
+        "assets/screenshots/group-chat-create-room-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Create and open group chat rooms.",
+        "Add or review room members.",
+        "Mention participants to direct a question or task.",
+        "Watch message flow and participant status."
+      ],
+      "notes_to_preserve": [
+        "Multi-agent rooms are only as useful as their configured members and runtime availability.",
+        "Do not put secrets in group chat unless every configured participant and channel is appropriate for that data."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "08-Kanban.md",
+      "title": "Kanban",
+      "screenshots": [
+        "assets/screenshots/kanban-board.png",
+        "assets/screenshots/kanban-new-task-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "View tasks by status column.",
+        "Create new tasks with enough context to execute.",
+        "Open task details and update status.",
+        "Use the board as an operational overview for ongoing work."
+      ],
+      "notes_to_preserve": [
+        "Kanban is a coordination tool; it does not replace verification. Mark work complete only after the result is checked."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "09-Jobs-and-Cron.md",
+      "title": "Jobs and Cron",
+      "screenshots": [
+        "assets/screenshots/jobs-manager.png",
+        "assets/screenshots/jobs-create-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Create scheduled jobs with prompts, skills, scripts, or delivery targets.",
+        "Pause, resume, run, edit, or remove jobs.",
+        "Review job history and output.",
+        "Use jobs for monitoring, briefings, reminders, or repeated workflows."
+      ],
+      "notes_to_preserve": [
+        "Jobs can execute scripts, call tools, or send messages. Review prompts and delivery targets carefully before enabling automation.",
+        "Prefer smoke-testing a job before letting it run unattended."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "10-Files-and-Workspaces.md",
+      "title": "Files and Workspaces",
+      "screenshots": [
+        "assets/screenshots/files-workspace-drawer.png"
+      ],
+      "capabilities_to_preserve": [
+        "Browse workspace folders and files.",
+        "Preview common text and document formats.",
+        "Upload or download files.",
+        "Edit, rename, copy, move, or delete supported files.",
+        "Use files alongside Chat when a task needs project context."
+      ],
+      "notes_to_preserve": [
+        "File actions mutate workspace data. Verify paths before editing or deleting.",
+        "Do not expose private files in screenshots or shared manual examples."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "11-Skills-Memory-and-Plugins.md",
+      "title": "Skills, Memory, and Plugins",
+      "screenshots": [
+        "assets/screenshots/skills-list.png",
+        "assets/screenshots/memory-notes.png",
+        "assets/screenshots/plugins-inventory.png",
+        "assets/screenshots/skills-write-approvals.png"
+      ],
+      "capabilities_to_preserve": [
+        "Browse available skills and read skill details.",
+        "Review memory or notes exposed through the UI.",
+        "Inspect plugin inventory and availability.",
+        "Use skills as reusable procedures for recurring tasks."
+      ],
+      "notes_to_preserve": [
+        "Memory and skills can influence future assistant behavior. Treat personal, credential, or project-sensitive entries carefully."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "12-Usage-Performance-and-Skills-Analytics.md",
+      "title": "Usage and Analytics",
+      "screenshots": [
+        "assets/screenshots/usage-analytics.png",
+        "assets/screenshots/performance-dashboard.png",
+        "assets/screenshots/skills-usage.png"
+      ],
+      "capabilities_to_preserve": [
+        "Review usage and cost trends.",
+        "Inspect model and cache activity.",
+        "Monitor performance over time.",
+        "See which skills are used and when."
+      ],
+      "notes_to_preserve": [
+        "Analytics are best for trends and investigations; confirm billing or provider-side totals with the provider when precision matters."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "13-Channels-and-Gateways.md",
+      "title": "Channels and Gateways",
+      "screenshots": [
+        "assets/screenshots/channels-integrations.png"
+      ],
+      "capabilities_to_preserve": [
+        "Review connected channel status.",
+        "Configure supported gateway settings.",
+        "Understand where replies or job output may be delivered.",
+        "Diagnose channel connection issues."
+      ],
+      "notes_to_preserve": [
+        "Channel settings can send messages outside the web UI. Confirm recipients and tokens before enabling delivery.",
+        "Never publish screenshots that expose bot tokens, webhook URLs, or private channel identifiers."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "14-Settings-and-Security.md",
+      "title": "Settings and Security",
+      "screenshots": [
+        "assets/screenshots/settings-overview.png",
+        "assets/screenshots/settings-account-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Adjust account and display preferences.",
+        "Review privacy, memory, and session-related settings.",
+        "Configure voice or accessibility-related options when available.",
+        "Understand which settings may affect credentials or sensitive data."
+      ],
+      "notes_to_preserve": [
+        "Settings can affect security, retention, and external integrations. Avoid changing multiple unrelated settings at once when troubleshooting."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "15-Web-Terminal.md",
+      "title": "Web Terminal",
+      "screenshots": [
+        "assets/screenshots/terminal-drawer.png"
+      ],
+      "capabilities_to_preserve": [
+        "Open a browser terminal session.",
+        "Run commands in the configured environment.",
+        "Use multiple sessions or resized terminal panes when supported.",
+        "Pair terminal output with Chat or file inspection."
+      ],
+      "notes_to_preserve": [
+        "Terminal commands can read or modify local files and services. Do not paste secrets, destructive commands, or credentials into shared contexts."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "16-Coding-Agents-Global-Agent-and-MCP.md",
+      "title": "Coding Agents, Global Agent, and MCP",
+      "screenshots": [
+        "assets/screenshots/coding-agents.png",
+        "assets/screenshots/mcp-servers.png",
+        "assets/screenshots/mcp-add-server-modal.png"
+      ],
+      "capabilities_to_preserve": [
+        "Start or review coding-agent runs.",
+        "Open Global Agent sessions.",
+        "Add, inspect, or manage MCP servers.",
+        "Understand which tools are available before asking an agent to use them."
+      ],
+      "notes_to_preserve": [
+        "Advanced agent tools may read files, run commands, call external services, or modify workspaces. Use narrow instructions and review results."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "17-Devices-Version-Logs.md",
+      "title": "Devices, Version, and Logs",
+      "screenshots": [
+        "assets/screenshots/devices-management.png",
+        "assets/screenshots/version-preview.png",
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/devices-pairing-overview.png",
+        "assets/screenshots/devices-pairing-code-modal.png",
+        "assets/screenshots/devices-requests-drawer.png"
+      ],
+      "capabilities_to_preserve": [
+        "Inspect linked or discoverable devices.",
+        "Review version preview or update information.",
+        "Open logs while diagnosing failures.",
+        "Use runtime evidence when reporting issues."
+      ],
+      "notes_to_preserve": [
+        "Logs may include paths, profile names, channel identifiers, or error details. Review before sharing."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "18-Docker-and-Deployment.md",
+      "title": "Docker and Deployment",
+      "screenshots": [
+        "assets/screenshots/startup-login.png"
+      ],
+      "capabilities_to_preserve": [
+        "Install dependencies and start the development or production server.",
+        "Use Docker Compose when containerized deployment is preferred.",
+        "Understand persistent storage and environment variables at a high level.",
+        "Check health endpoints and logs after startup."
+      ],
+      "notes_to_preserve": [
+        "Do not put credentials in screenshots or shared compose files. Use environment management appropriate for your deployment."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "19-Troubleshooting.md",
+      "title": "Troubleshooting",
+      "screenshots": [
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/settings-overview.png"
+      ],
+      "capabilities_to_preserve": [
+        "Narrow a problem to UI, server, runtime, provider, profile, workspace, or channel configuration.",
+        "Use logs, health checks, and status pages to collect evidence.",
+        "Fix common startup, authentication, provider, WebSocket, terminal, and Docker issues."
+      ],
+      "notes_to_preserve": [
+        "Do not paste full logs publicly without checking for tokens, local paths, profile names, or private message content."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    },
+    {
+      "file": "21-Screenshot-Gallery.md",
+      "title": "Screenshot Gallery",
+      "screenshots": [
+        "assets/screenshots/startup-login.png",
+        "assets/screenshots/chat-main-overview.png",
+        "assets/screenshots/global-search-modal.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/files-workspace-drawer.png",
+        "assets/screenshots/terminal-drawer.png",
+        "assets/screenshots/history-sessions.png",
+        "assets/screenshots/group-chat-rooms.png",
+        "assets/screenshots/jobs-manager.png",
+        "assets/screenshots/jobs-create-modal.png",
+        "assets/screenshots/kanban-board.png",
+        "assets/screenshots/kanban-new-task-modal.png",
+        "assets/screenshots/channels-integrations.png",
+        "assets/screenshots/skills-list.png",
+        "assets/screenshots/plugins-inventory.png",
+        "assets/screenshots/mcp-servers.png",
+        "assets/screenshots/mcp-add-server-modal.png",
+        "assets/screenshots/memory-notes.png",
+        "assets/screenshots/models-management.png",
+        "assets/screenshots/models-add-provider-modal.png",
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/usage-analytics.png",
+        "assets/screenshots/performance-dashboard.png",
+        "assets/screenshots/skills-usage.png",
+        "assets/screenshots/coding-agents.png",
+        "assets/screenshots/version-preview.png",
+        "assets/screenshots/profiles-management.png",
+        "assets/screenshots/settings-overview.png",
+        "assets/screenshots/group-chat-create-room-modal.png",
+        "assets/screenshots/profiles-create-modal.png",
+        "assets/screenshots/settings-account-modal.png",
+        "assets/screenshots/devices-management.png",
+        "assets/screenshots/chat-skill-command-picker.png",
+        "assets/screenshots/models-refresh-and-oauth-overview.png",
+        "assets/screenshots/models-oauth-provider-picker.png",
+        "assets/screenshots/models-claude-oauth-modal.png",
+        "assets/screenshots/skills-write-approvals.png",
+        "assets/screenshots/devices-pairing-overview.png",
+        "assets/screenshots/devices-pairing-code-modal.png",
+        "assets/screenshots/devices-requests-drawer.png"
+      ],
+      "capabilities_to_preserve": [
+        "Browse every manual screenshot in one place.",
+        "Map screenshot filenames to product areas.",
+        "Use screenshots as visual references during review or support."
+      ],
+      "notes_to_preserve": [
+        "The gallery uses demo/manual screenshots. Treat visible data as example content."
+      ],
+      "rewrite_goal": "English product manual page for end users; feature-first, natural, concise, screenshot-aware."
+    }
+  ],
+  "manual_package": "docs/hermes-web-ui-manual",
+  "packaging_note": "Top-level docs package; excluded from npm package files and desktop webui extraResources by current packaging configuration."
+}

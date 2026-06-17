@@ -1,0 +1,115 @@
+{
+  "checked_against_version": "0.6.15",
+  "previous_screenshot_source": "bundled 0.6.12 manual screenshots",
+  "manual_updates": [
+    {
+      "page": "Home.md",
+      "topic": "Current version coverage"
+    },
+    {
+      "page": "01-Quick-Start.md",
+      "topic": "0.6.15 startup notes"
+    },
+    {
+      "page": "02-Architecture.md",
+      "topic": "Current interface changes"
+    },
+    {
+      "page": "03-Chat-and-Sessions.md",
+      "topic": "Current chat behavior"
+    },
+    {
+      "page": "04-History-and-Search.md",
+      "topic": "Current history behavior"
+    },
+    {
+      "page": "05-Models-and-Providers.md",
+      "topic": "Current provider behavior"
+    },
+    {
+      "page": "10-Files-and-Workspaces.md",
+      "topic": "Current file handling behavior"
+    },
+    {
+      "page": "11-Skills-Memory-and-Plugins.md",
+      "topic": "Current skills and memory behavior"
+    },
+    {
+      "page": "13-Channels-and-Gateways.md",
+      "topic": "Current gateway behavior"
+    },
+    {
+      "page": "14-Settings-and-Security.md",
+      "topic": "Current settings behavior"
+    },
+    {
+      "page": "16-Coding-Agents-Global-Agent-and-MCP.md",
+      "topic": "Current agent behavior"
+    },
+    {
+      "page": "17-Devices-Version-Logs.md",
+      "topic": "Current device and version behavior"
+    },
+    {
+      "page": "18-Docker-and-Deployment.md",
+      "topic": "Current deployment behavior"
+    },
+    {
+      "page": "19-Troubleshooting.md",
+      "topic": "Current troubleshooting notes"
+    },
+    {
+      "page": "03-Chat-and-Sessions.md",
+      "topic": "Added screenshot for chat /skill command picker"
+    },
+    {
+      "page": "05-Models-and-Providers.md",
+      "topic": "Added screenshots for model cache refresh and OAuth provider setup"
+    },
+    {
+      "page": "11-Skills-Memory-and-Plugins.md",
+      "topic": "Added screenshot for pending write approvals"
+    },
+    {
+      "page": "17-Devices-Version-Logs.md",
+      "topic": "Added screenshots for device pairing overview, pairing code entry, and pairing requests drawer"
+    },
+    {
+      "page": "21-Screenshot-Gallery.md",
+      "topic": "Added all new 0.6.15 visual coverage to the gallery"
+    },
+    {
+      "page": "22-Release-Sync-Notes.md",
+      "topic": "Full release-to-manual coverage checklist for 0.6.13 through 0.6.15"
+    }
+  ],
+  "source_evidence": [
+    "packages/client/src/i18n/locales/en.ts changelog entries for 0.6.13, 0.6.14, 0.6.15",
+    "git diff v0.6.12..v0.6.15 across packages/client/src and packages/server/src",
+    "manual screenshot checksum match to bundled documentation assets",
+    "Mocked local capture of 0.6.15 UI states for devices pairing, OAuth provider setup, write approvals, and chat skill picker",
+    "Release Sync Notes now maps every 0.6.13-0.6.15 changelog item to manual text and visual coverage status"
+  ],
+  "screenshot_privacy_status": "Legacy screenshots remain redacted as before. New 0.6.15 screenshots were captured from mocked local/demo API responses and visually reviewed; they intentionally use demo admin/profile labels, demo pairing code, documentation URL/IP-style examples, and contain no real tokens, emails, webhook URLs, account secrets, or personal paths.",
+  "redacted_screenshots": [
+    "assets/screenshots/channels-integrations.png",
+    "assets/screenshots/settings-account-modal.png",
+    "assets/screenshots/coding-agents.png",
+    "assets/screenshots/plugins-inventory.png",
+    "assets/screenshots/memory-notes.png",
+    "assets/screenshots-contact-sheet.jpg"
+  ],
+  "new_0_6_15_screenshots": [
+    "assets/screenshots/devices-pairing-overview.png",
+    "assets/screenshots/devices-pairing-code-modal.png",
+    "assets/screenshots/devices-requests-drawer.png",
+    "assets/screenshots/models-refresh-and-oauth-overview.png",
+    "assets/screenshots/models-oauth-provider-picker.png",
+    "assets/screenshots/models-claude-oauth-modal.png",
+    "assets/screenshots/skills-write-approvals.png",
+    "assets/screenshots/chat-skill-command-picker.png",
+    "assets/screenshots-contact-sheet.jpg"
+  ],
+  "manual_package": "docs/hermes-web-ui-manual",
+  "packaging_note": "Top-level docs package; excluded from npm package files and desktop webui extraResources by current packaging configuration."
+}

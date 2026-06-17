@@ -1,0 +1,533 @@
+{
+  "product": "Hermes Web UI",
+  "manual_language": "en",
+  "manual_purpose": "User manual for Hermes Web UI core features and common workflows.",
+  "chinese_archive": "assets/archive/zh-bilingual-20260616.json",
+  "technical_archive": "assets/archive/technical-appendix-20260616.json",
+  "navigation": {
+    "home": "Home",
+    "sidebar": "_Sidebar.md",
+    "gallery": "21-Screenshot-Gallery"
+  },
+  "pages": [
+    {
+      "file": "01-Quick-Start.md",
+      "manual_page": "01-Quick-Start",
+      "title": "Quick Start",
+      "audience": "user",
+      "summary": "Welcome to your new workspace. The Quick Start guide covers the essential steps to get your environment running, log in, and ensure everything is functioning correctly before you dive into deeper work.",
+      "screenshots": [
+        "assets/screenshots/startup-login.png",
+        "assets/screenshots/chat-main-overview.png"
+      ],
+      "capabilities": [
+        "Sign in or complete the first-run setup flow.",
+        "Open the main chat workspace and confirm the app is responsive.",
+        "Use the sidebar to move between chat, history, models, jobs, files, analytics, and settings.",
+        "Check health, version, and runtime indicators before starting longer work."
+      ],
+      "related_pages": [
+        "02-Architecture",
+        "03-Chat-and-Sessions",
+        "05-Models-and-Providers"
+      ]
+    },
+    {
+      "file": "02-Architecture.md",
+      "manual_page": "02-Architecture",
+      "title": "Interface Overview",
+      "audience": "user",
+      "summary": "The Interface Overview provides a structural map of the application, helping you understand where everything is located and how the various components interact.",
+      "screenshots": [
+        "assets/screenshots/chat-main-overview.png"
+      ],
+      "capabilities": [
+        "Understand the main navigation areas and what each one is for.",
+        "Recognize which pages are for daily use and which are for administration.",
+        "Know where to look when a feature depends on runtime, credentials, or external services."
+      ],
+      "related_pages": [
+        "01-Quick-Start",
+        "19-Troubleshooting"
+      ]
+    },
+    {
+      "file": "03-Chat-and-Sessions.md",
+      "manual_page": "03-Chat-and-Sessions",
+      "title": "Chat and Sessions",
+      "audience": "user",
+      "summary": "The Chat and Sessions area is your primary workspace for interacting with models, managing active conversations, and leveraging local context through files and terminals.",
+      "screenshots": [
+        "assets/screenshots/chat-main-overview.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/files-workspace-drawer.png",
+        "assets/screenshots/terminal-drawer.png",
+        "assets/screenshots/chat-skill-command-picker.png"
+      ],
+      "capabilities": [
+        "Start a new conversation or continue an existing session.",
+        "Switch models before sending a message.",
+        "Use Markdown and tool output rendering to review structured responses.",
+        "Open related files or a terminal drawer when a task needs local context.",
+        "Search across current work and jump to relevant sessions."
+      ],
+      "related_pages": [
+        "04-History-and-Search",
+        "10-Files-and-Workspaces",
+        "15-Web-Terminal"
+      ]
+    },
+    {
+      "file": "04-History-and-Search.md",
+      "manual_page": "04-History-and-Search",
+      "title": "History and Search",
+      "audience": "user",
+      "summary": "History and Search allows you to retrieve past conversations, resume previous work, and find specific information across all your recorded sessions.",
+      "screenshots": [
+        "assets/screenshots/history-sessions.png",
+        "assets/screenshots/global-search-modal.png"
+      ],
+      "capabilities": [
+        "Browse recent sessions and open a specific conversation.",
+        "Search by title, content, or relevant terms.",
+        "Use deep links to return to a session view.",
+        "Distinguish saved history from the currently open chat session."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions"
+      ]
+    },
+    {
+      "file": "05-Models-and-Providers.md",
+      "manual_page": "05-Models-and-Providers",
+      "title": "Models and Providers",
+      "audience": "user",
+      "summary": "The Models and Providers section lets you configure external AI services, manage credentials, and select the specific models that power your chat experience.",
+      "screenshots": [
+        "assets/screenshots/models-management.png",
+        "assets/screenshots/models-add-provider-modal.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/models-refresh-and-oauth-overview.png",
+        "assets/screenshots/models-oauth-provider-picker.png",
+        "assets/screenshots/models-claude-oauth-modal.png"
+      ],
+      "capabilities": [
+        "Review configured providers and available models.",
+        "Add or adjust custom provider entries when supported.",
+        "Choose defaults and aliases used by the chat experience.",
+        "Check whether provider authentication appears ready."
+      ],
+      "related_pages": [
+        "14-Settings-and-Security",
+        "19-Troubleshooting"
+      ]
+    },
+    {
+      "file": "06-Profiles.md",
+      "manual_page": "06-Profiles",
+      "title": "Profiles",
+      "audience": "user",
+      "summary": "Profiles allow you to maintain distinct, isolated contexts for your work, ensuring that credentials, configurations, and settings remain separated across different tasks or environments.",
+      "screenshots": [
+        "assets/screenshots/profiles-management.png",
+        "assets/screenshots/profiles-create-modal.png"
+      ],
+      "capabilities": [
+        "Create, clone, import, export, and switch profiles.",
+        "Keep provider and channel settings isolated by profile.",
+        "Review profile-specific status before starting work."
+      ],
+      "related_pages": [
+        "14-Settings-and-Security"
+      ]
+    },
+    {
+      "file": "07-Group-Chat.md",
+      "manual_page": "07-Group-Chat",
+      "title": "Group Chat",
+      "audience": "user",
+      "summary": "Group Chat provides a collaborative space where multiple participants, including different agents or configured users, can interact in a shared environment.",
+      "screenshots": [
+        "assets/screenshots/group-chat-rooms.png",
+        "assets/screenshots/group-chat-create-room-modal.png"
+      ],
+      "capabilities": [
+        "Create and open group chat rooms.",
+        "Add or review room members.",
+        "Mention participants to direct a question or task.",
+        "Watch message flow and participant status."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions",
+        "16-Coding-Agents-Global-Agent-and-MCP"
+      ]
+    },
+    {
+      "file": "08-Kanban.md",
+      "manual_page": "08-Kanban",
+      "title": "Kanban",
+      "audience": "user",
+      "summary": "The Kanban board offers a visual operational overview, allowing you to organize, track, and update the status of ongoing work items and tasks.",
+      "screenshots": [
+        "assets/screenshots/kanban-board.png",
+        "assets/screenshots/kanban-new-task-modal.png"
+      ],
+      "capabilities": [
+        "View tasks by status column.",
+        "Create new tasks with enough context to execute.",
+        "Open task details and update status.",
+        "Use the board as an operational overview for ongoing work."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions",
+        "09-Jobs-and-Cron"
+      ]
+    },
+    {
+      "file": "09-Jobs-and-Cron.md",
+      "manual_page": "09-Jobs-and-Cron",
+      "title": "Jobs and Cron",
+      "audience": "user",
+      "summary": "Jobs and Cron enable automated, scheduled background tasks, allowing you to run scripts, use skills, or trigger notifications without manual intervention.",
+      "screenshots": [
+        "assets/screenshots/jobs-manager.png",
+        "assets/screenshots/jobs-create-modal.png"
+      ],
+      "capabilities": [
+        "Create scheduled jobs with prompts, skills, scripts, or delivery targets.",
+        "Pause, resume, run, edit, or remove jobs.",
+        "Review job history and output.",
+        "Use jobs for monitoring, briefings, reminders, or repeated workflows."
+      ],
+      "related_pages": [
+        "11-Skills-Memory-and-Plugins",
+        "13-Channels-and-Gateways"
+      ]
+    },
+    {
+      "file": "10-Files-and-Workspaces.md",
+      "manual_page": "10-Files-and-Workspaces",
+      "title": "Files and Workspaces",
+      "audience": "user",
+      "summary": "Files and Workspaces lets you inspect project files without leaving the browser. Use it to browse folders, preview content, move files in or out of the workspace, and make small file changes when the deployment allows editing.",
+      "screenshots": [
+        "assets/screenshots/files-workspace-drawer.png"
+      ],
+      "capabilities": [
+        "Browse workspace folders and files.",
+        "Preview common text and document formats.",
+        "Upload or download files.",
+        "Edit, rename, copy, move, or delete supported files.",
+        "Use files alongside Chat when a task needs project context."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions",
+        "15-Web-Terminal",
+        "19-Troubleshooting"
+      ]
+    },
+    {
+      "file": "11-Skills-Memory-and-Plugins.md",
+      "manual_page": "11-Skills-Memory-and-Plugins",
+      "title": "Skills, Memory, and Plugins",
+      "audience": "user",
+      "summary": "Skills, Memory, and Plugins form the extensible core of the assistant, allowing you to view taught procedures, inspect stored context, and review available integrations.",
+      "screenshots": [
+        "assets/screenshots/skills-list.png",
+        "assets/screenshots/memory-notes.png",
+        "assets/screenshots/plugins-inventory.png",
+        "assets/screenshots/skills-write-approvals.png"
+      ],
+      "capabilities": [
+        "Browse available skills and read skill details.",
+        "Review memory or notes exposed through the UI.",
+        "Inspect plugin inventory and availability.",
+        "Use skills as reusable procedures for recurring tasks."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions",
+        "09-Jobs-and-Cron"
+      ]
+    },
+    {
+      "file": "12-Usage-Performance-and-Skills-Analytics.md",
+      "manual_page": "12-Usage-Performance-and-Skills-Analytics",
+      "title": "Usage and Analytics",
+      "audience": "user",
+      "summary": "Usage and Analytics provide insights into how the system is performing, helping you track model activity, review costs, and understand skill utilization.",
+      "screenshots": [
+        "assets/screenshots/usage-analytics.png",
+        "assets/screenshots/performance-dashboard.png",
+        "assets/screenshots/skills-usage.png"
+      ],
+      "capabilities": [
+        "Review usage and cost trends.",
+        "Inspect model and cache activity.",
+        "Monitor performance over time.",
+        "See which skills are used and when."
+      ],
+      "related_pages": [
+        "05-Models-and-Providers",
+        "11-Skills-Memory-and-Plugins"
+      ]
+    },
+    {
+      "file": "13-Channels-and-Gateways.md",
+      "manual_page": "13-Channels-and-Gateways",
+      "title": "Channels and Gateways",
+      "audience": "user",
+      "summary": "Channels and Gateways connect the web UI to external communication surfaces. Use this page to check which integrations are configured, where outbound messages may go, and whether a channel is safe to use for jobs, notifications, or interactive conversations.",
+      "screenshots": [
+        "assets/screenshots/channels-integrations.png"
+      ],
+      "capabilities": [
+        "Review connected channel status.",
+        "Configure supported gateway settings.",
+        "Understand where replies or job output may be delivered.",
+        "Diagnose channel connection issues."
+      ],
+      "related_pages": [
+        "09-Jobs-and-Cron",
+        "14-Settings-and-Security",
+        "19-Troubleshooting"
+      ]
+    },
+    {
+      "file": "14-Settings-and-Security.md",
+      "manual_page": "14-Settings-and-Security",
+      "title": "Settings and Security",
+      "audience": "user",
+      "summary": "Settings is where you adjust how the web UI behaves and how sensitive features are exposed. Use it for account preferences, display choices, memory/session behavior, voice-related options, and security controls that affect access or data handling.",
+      "screenshots": [
+        "assets/screenshots/settings-overview.png",
+        "assets/screenshots/settings-account-modal.png"
+      ],
+      "capabilities": [
+        "Adjust account and display preferences.",
+        "Review privacy, memory, and session-related settings.",
+        "Configure voice or accessibility-related options when available.",
+        "Understand which settings may affect credentials or sensitive data."
+      ],
+      "related_pages": [
+        "06-Profiles",
+        "05-Models-and-Providers",
+        "13-Channels-and-Gateways",
+        "19-Troubleshooting"
+      ]
+    },
+    {
+      "file": "15-Web-Terminal.md",
+      "manual_page": "15-Web-Terminal",
+      "title": "Web Terminal",
+      "audience": "user",
+      "summary": "The Web Terminal provides a command-line interface directly within your browser, allowing you to execute local commands and manage environments without leaving the workspace.",
+      "screenshots": [
+        "assets/screenshots/terminal-drawer.png"
+      ],
+      "capabilities": [
+        "Open a browser terminal session.",
+        "Run commands in the configured environment.",
+        "Use multiple sessions or resized terminal panes when supported.",
+        "Pair terminal output with Chat or file inspection."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions",
+        "10-Files-and-Workspaces"
+      ]
+    },
+    {
+      "file": "16-Coding-Agents-Global-Agent-and-MCP.md",
+      "manual_page": "16-Coding-Agents-Global-Agent-and-MCP",
+      "title": "Coding Agents, Global Agent, and MCP",
+      "audience": "user",
+      "summary": "This section manages advanced automated assistants, including coding agents and Global Agent sessions, and configures external capabilities through Model Context Protocol (MCP) servers.",
+      "screenshots": [
+        "assets/screenshots/coding-agents.png",
+        "assets/screenshots/mcp-servers.png",
+        "assets/screenshots/mcp-add-server-modal.png"
+      ],
+      "capabilities": [
+        "Start or review coding-agent runs.",
+        "Open Global Agent sessions.",
+        "Add, inspect, or manage MCP servers.",
+        "Understand which tools are available before asking an agent to use them."
+      ],
+      "related_pages": [
+        "03-Chat-and-Sessions",
+        "07-Group-Chat"
+      ]
+    },
+    {
+      "file": "17-Devices-Version-Logs.md",
+      "manual_page": "17-Devices-Version-Logs",
+      "title": "Devices, Version, and Logs",
+      "audience": "user",
+      "summary": "This section provides visibility into your connected hardware, current software version, and detailed runtime logs, which are essential for monitoring system health and diagnosing issues.",
+      "screenshots": [
+        "assets/screenshots/devices-management.png",
+        "assets/screenshots/version-preview.png",
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/devices-pairing-overview.png",
+        "assets/screenshots/devices-pairing-code-modal.png",
+        "assets/screenshots/devices-requests-drawer.png"
+      ],
+      "capabilities": [
+        "Inspect linked or discoverable devices.",
+        "Review version preview or update information.",
+        "Open logs while diagnosing failures.",
+        "Use runtime evidence when reporting issues."
+      ],
+      "related_pages": [
+        "19-Troubleshooting"
+      ]
+    },
+    {
+      "file": "18-Docker-and-Deployment.md",
+      "manual_page": "18-Docker-and-Deployment",
+      "title": "Docker and Deployment",
+      "audience": "user",
+      "summary": "Use this page when you are getting Hermes Web UI running in a local, server, or containerized environment. The goal of a deployment is simple: the web app opens, the login or setup screen appears, health checks respond, and logs do not show runtime or configuration errors.",
+      "screenshots": [
+        "assets/screenshots/startup-login.png"
+      ],
+      "capabilities": [
+        "Install dependencies and start the development or production server.",
+        "Use Docker Compose when containerized deployment is preferred.",
+        "Understand persistent storage and environment variables at a high level.",
+        "Check health endpoints and logs after startup."
+      ],
+      "related_pages": [
+        "19-Troubleshooting",
+        "01-Quick-Start",
+        "14-Settings-and-Security",
+        "17-Devices-Version-Logs"
+      ]
+    },
+    {
+      "file": "19-Troubleshooting.md",
+      "manual_page": "19-Troubleshooting",
+      "title": "Troubleshooting",
+      "audience": "user",
+      "summary": "Troubleshooting works best when you narrow the problem before changing settings. Start with what you can see in the UI, collect one piece of evidence from logs or status pages, then test the smallest workflow that matches the symptom.",
+      "screenshots": [
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/settings-overview.png"
+      ],
+      "capabilities": [
+        "Narrow a problem to UI, server, runtime, provider, profile, workspace, or channel configuration.",
+        "Use logs, health checks, and status pages to collect evidence.",
+        "Fix common startup, authentication, provider, WebSocket, terminal, and Docker issues."
+      ],
+      "related_pages": [
+        "17-Devices-Version-Logs",
+        "14-Settings-and-Security",
+        "05-Models-and-Providers",
+        "13-Channels-and-Gateways"
+      ]
+    },
+    {
+      "file": "21-Screenshot-Gallery.md",
+      "manual_page": "21-Screenshot-Gallery",
+      "title": "Screenshot Gallery",
+      "audience": "user",
+      "summary": "The Screenshot Gallery provides a complete visual reference for the application's interface.",
+      "screenshots": [
+        "assets/screenshots/startup-login.png",
+        "assets/screenshots/chat-main-overview.png",
+        "assets/screenshots/global-search-modal.png",
+        "assets/screenshots/model-selector.png",
+        "assets/screenshots/files-workspace-drawer.png",
+        "assets/screenshots/terminal-drawer.png",
+        "assets/screenshots/history-sessions.png",
+        "assets/screenshots/group-chat-rooms.png",
+        "assets/screenshots/jobs-manager.png",
+        "assets/screenshots/jobs-create-modal.png",
+        "assets/screenshots/kanban-board.png",
+        "assets/screenshots/kanban-new-task-modal.png",
+        "assets/screenshots/channels-integrations.png",
+        "assets/screenshots/skills-list.png",
+        "assets/screenshots/plugins-inventory.png",
+        "assets/screenshots/mcp-servers.png",
+        "assets/screenshots/mcp-add-server-modal.png",
+        "assets/screenshots/memory-notes.png",
+        "assets/screenshots/models-management.png",
+        "assets/screenshots/models-add-provider-modal.png",
+        "assets/screenshots/logs-viewer.png",
+        "assets/screenshots/usage-analytics.png",
+        "assets/screenshots/performance-dashboard.png",
+        "assets/screenshots/skills-usage.png",
+        "assets/screenshots/coding-agents.png",
+        "assets/screenshots/version-preview.png",
+        "assets/screenshots/profiles-management.png",
+        "assets/screenshots/settings-overview.png",
+        "assets/screenshots/group-chat-create-room-modal.png",
+        "assets/screenshots/profiles-create-modal.png",
+        "assets/screenshots/settings-account-modal.png",
+        "assets/screenshots/devices-management.png",
+        "assets/screenshots/chat-skill-command-picker.png",
+        "assets/screenshots/models-refresh-and-oauth-overview.png",
+        "assets/screenshots/models-oauth-provider-picker.png",
+        "assets/screenshots/models-claude-oauth-modal.png",
+        "assets/screenshots/skills-write-approvals.png",
+        "assets/screenshots/devices-pairing-overview.png",
+        "assets/screenshots/devices-pairing-code-modal.png",
+        "assets/screenshots/devices-requests-drawer.png"
+      ],
+      "capabilities": [
+        "Browse every manual screenshot in one place.",
+        "Map screenshot filenames to product areas.",
+        "Use screenshots as visual references during review or support."
+      ],
+      "related_pages": [
+        "02-Architecture"
+      ]
+    }
+  ],
+  "screenshot_count": 32,
+  "screenshots": [
+    "assets/screenshots/startup-login.png",
+    "assets/screenshots/chat-main-overview.png",
+    "assets/screenshots/global-search-modal.png",
+    "assets/screenshots/model-selector.png",
+    "assets/screenshots/files-workspace-drawer.png",
+    "assets/screenshots/terminal-drawer.png",
+    "assets/screenshots/history-sessions.png",
+    "assets/screenshots/group-chat-rooms.png",
+    "assets/screenshots/jobs-manager.png",
+    "assets/screenshots/jobs-create-modal.png",
+    "assets/screenshots/kanban-board.png",
+    "assets/screenshots/kanban-new-task-modal.png",
+    "assets/screenshots/channels-integrations.png",
+    "assets/screenshots/skills-list.png",
+    "assets/screenshots/plugins-inventory.png",
+    "assets/screenshots/mcp-servers.png",
+    "assets/screenshots/mcp-add-server-modal.png",
+    "assets/screenshots/memory-notes.png",
+    "assets/screenshots/models-management.png",
+    "assets/screenshots/models-add-provider-modal.png",
+    "assets/screenshots/logs-viewer.png",
+    "assets/screenshots/usage-analytics.png",
+    "assets/screenshots/performance-dashboard.png",
+    "assets/screenshots/skills-usage.png",
+    "assets/screenshots/coding-agents.png",
+    "assets/screenshots/version-preview.png",
+    "assets/screenshots/profiles-management.png",
+    "assets/screenshots/settings-overview.png",
+    "assets/screenshots/group-chat-create-room-modal.png",
+    "assets/screenshots/profiles-create-modal.png",
+    "assets/screenshots/settings-account-modal.png",
+    "assets/screenshots/devices-management.png"
+  ],
+  "checked_against_version": "0.6.15",
+  "version_audit": "assets/manual-version-audit-0.6.15.json",
+  "screenshot_privacy": "Legacy bundled demo screenshots were reviewed with OCR and vision; sensitive-looking demo tokens, local paths, account names, and memory bodies were redacted before publication.",
+  "freshness": {
+    "0.6.15_visual_update": "Added documentation screenshots for devices pairing, model OAuth/cache controls, skills write approvals, and chat skill command picker.",
+    "release_text_coverage": "Release Sync Notes maps all localized 0.6.13-0.6.15 changelog items to manual coverage."
+  },
+  "privacy": {
+    "new_0.6.15_screenshots": "Captured from mocked local data; no real tokens, account secrets, emails, or personal paths intentionally present."
+  },
+  "manual_package": "docs/hermes-web-ui-manual",
+  "packaging_note": "Top-level docs package; excluded from npm package files and desktop webui extraResources by current packaging configuration."
+}
