@@ -121,6 +121,7 @@ describe('providers controller create', () => {
         base_url: 'https://api.longcat.chat/openai',
         api_key: 'longcat-key',
         model: 'LongCat-2.0-Preview',
+        api_mode: 'chat_completions',
       }),
     ])
     expect(readFileSync(join(hermesHome, '.env'), 'utf-8')).not.toContain('LONGCAT_API_KEY')
