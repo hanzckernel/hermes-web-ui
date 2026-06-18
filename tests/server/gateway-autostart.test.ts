@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import {
@@ -7,6 +7,7 @@ import {
   gatewayStatusLooksRunning,
   gatewayStateLooksRunningForProfile,
   parseGatewayStatusesFromProfileListOutput,
+  prepareGatewayForProfileDelete,
   recoverWindowsDesktopGatewayOrphans,
   selectProfilesForGatewayAutostart,
   shouldRecoverWindowsDesktopGatewayOrphans,
@@ -201,6 +202,52 @@ describe('gateway autostart status parsing', () => {
       expect(gatewayStateLooksRunningForProfile(dir)).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('prepares a profile delete by marking the gateway desired stopped', async () => {
+    const previousHermesHome = process.env.HERMES_HOME
+    const previousHermesBin = process.env.HERMES_BIN
+    const home = mkdtempSync(join(tmpdir(), 'wui-delete-gateway-'))
+    const profileDir = join(home, 'profiles', 'work')
+    mkdirSync(profileDir, { recursive: true })
+
+    try {
+      process.env.HERMES_HOME = home
+      process.env.HERMES_BIN = '/definitely/missing/hermes'
+
+      await prepareGatewayForProfileDelete('work')
+
+      expect(JSON.parse(readFileSync(join(profileDir, 'gateway_state.json'), 'utf-8'))).toMatchObject({
+        gateway_state: 'stopped',
+        desired_state: 'stopped',
+      })
+    } finally {
+      if (previousHermesHome === undefined) delete process.env.HERMES_HOME
+      else process.env.HERMES_HOME = previousHermesHome
+      if (previousHermesBin === undefined) delete process.env.HERMES_BIN
+      else process.env.HERMES_BIN = previousHermesBin
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('does not fail profile deletion prep when the gateway is already stopped', async () => {
+    const previousHermesHome = process.env.HERMES_HOME
+    const previousHermesBin = process.env.HERMES_BIN
+    const home = mkdtempSync(join(tmpdir(), 'wui-delete-gateway-'))
+    mkdirSync(join(home, 'profiles', 'work'), { recursive: true })
+
+    try {
+      process.env.HERMES_HOME = home
+      process.env.HERMES_BIN = '/definitely/missing/hermes'
+
+      await expect(prepareGatewayForProfileDelete('work')).resolves.toBeUndefined()
+    } finally {
+      if (previousHermesHome === undefined) delete process.env.HERMES_HOME
+      else process.env.HERMES_HOME = previousHermesHome
+      if (previousHermesBin === undefined) delete process.env.HERMES_BIN
+      else process.env.HERMES_BIN = previousHermesBin
+      rmSync(home, { recursive: true, force: true })
     }
   })
 })

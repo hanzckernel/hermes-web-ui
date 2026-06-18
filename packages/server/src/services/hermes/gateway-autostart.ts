@@ -1,11 +1,11 @@
 import { execFile } from 'child_process'
-import { existsSync, readFileSync, readdirSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { promisify } from 'util'
 import { readAppConfig, type GatewayAutoStartConfig } from '../app-config'
 import { logger } from '../logger'
 import { getProfileDir, listProfileNamesFromDisk } from './hermes-profile'
-import { startGatewayRunManaged } from './gateway-runner'
+import { retireManagedGatewayForProfile, startGatewayRunManaged } from './gateway-runner'
 import { parseGatewayStatusesFromProfileList } from './profile-list-parser'
 import { execHermesWithBin } from './hermes-process'
 
@@ -360,6 +360,51 @@ async function stopGatewayForProfile(hermesBin: string, profile: string, profile
     logger.info('[gateway-autostart] gateway stopped profile=%s home=%s', profile, profileDir)
   } catch (err) {
     logger.warn(err, '[gateway-autostart] Hermes CLI gateway stop failed before restart profile=%s home=%s', profile, profileDir)
+  }
+}
+
+function writeGatewayDesiredStopped(profileDir: string): void {
+  if (!existsSync(profileDir)) return
+  const statePath = join(profileDir, 'gateway_state.json')
+  try {
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        gateway_state: 'stopped',
+        desired_state: 'stopped',
+        updated_at: new Date().toISOString(),
+      }, null, 2),
+      'utf-8',
+    )
+  } catch (err) {
+    logger.warn(err, '[gateway-autostart] failed to mark gateway desired stopped before profile delete profileDir=%s', profileDir)
+  }
+}
+
+export async function prepareGatewayForProfileDelete(profile: string): Promise<void> {
+  const hermesBin = resolveHermesBin()
+  const profileDir = getProfileDir(profile)
+
+  writeGatewayDesiredStopped(profileDir)
+
+  try {
+    await retireManagedGatewayForProfile(profileDir, { timeoutMs: 2000 })
+  } catch (err) {
+    logger.warn(err, '[gateway-autostart] failed to retire managed gateway before profile delete profile=%s home=%s', profile, profileDir)
+  }
+
+  try {
+    await execHermesWithBin(hermesBin, ['gateway', 'stop'], {
+      timeout: 10000,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        HERMES_HOME: profileDir,
+      },
+    })
+    logger.info('[gateway-autostart] gateway stopped before profile delete profile=%s home=%s', profile, profileDir)
+  } catch (err) {
+    logger.warn(err, '[gateway-autostart] Hermes gateway stop failed before profile delete profile=%s home=%s', profile, profileDir)
   }
 }
 
