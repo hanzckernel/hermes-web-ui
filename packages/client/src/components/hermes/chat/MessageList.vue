@@ -20,7 +20,7 @@ import { useI18n } from "vue-i18n";
 import { NButton, NInput } from "naive-ui";
 import VirtualMessageList from "./VirtualMessageList.vue";
 import MessageItem from "./MessageItem.vue";
-import { LIVE_CHAT_MAX_LOADED_MESSAGES, useChatStore } from "@/stores/hermes/chat";
+import { LIVE_CHAT_MAX_LOADED_MESSAGES, useChatStore, type Message } from "@/stores/hermes/chat";
 import thinkingImage from "@/assets/thinking.gif";
 import { useToolTraceVisibility } from "@/composables/useToolTraceVisibility";
 
@@ -136,6 +136,34 @@ const displayMessages = computed(() => {
   });
 });
 
+function forkDividerId(sessionId: string): string {
+  return `fork-divider-${sessionId}`;
+}
+
+const displayMessagesWithForkDivider = computed<Message[]>(() => {
+  const messages = displayMessages.value;
+  const lineage = forkLineage.value;
+  const session = chatStore.activeSession;
+  if (!lineage || !session?.forkPointMessageId) return messages;
+
+  const forkPoint = String(session.forkPointMessageId);
+  const index = messages.findIndex((message) => String(message.id) === forkPoint);
+  if (index < 0) return messages;
+
+  const divider: Message = {
+    id: forkDividerId(session.id),
+    role: "system",
+    content: "",
+    timestamp: session.updatedAt || Date.now(),
+    systemType: "fork-divider",
+  };
+  return [
+    ...messages.slice(0, index + 1),
+    divider,
+    ...messages.slice(index + 1),
+  ];
+});
+
 const queuedMessages = computed(() => {
   const sid = chatStore.activeSessionId;
   if (!sid) return [];
@@ -170,10 +198,22 @@ const forkLineage = computed(() => {
     parentSessionId: session.parentSessionId,
     parentTitle: session.parentTitle || session.parentSessionId,
     parentHref: `#/hermes/history/session/${encodeURIComponent(session.parentSessionId)}${session.profile ? `?profile=${encodeURIComponent(session.profile)}` : ""}`,
+    canSwitchParent: chatStore.sessions.some((item) => item.id === session.parentSessionId),
     lastRole: session.parentLastMessageRole || "",
     lastMessage: session.parentLastMessage || "",
   };
 });
+
+async function openForkParent(event?: MouseEvent) {
+  const lineage = forkLineage.value;
+  if (!lineage?.parentSessionId) return;
+  if (lineage.canSwitchParent) {
+    event?.preventDefault();
+    await chatStore.switchSession(lineage.parentSessionId);
+    return;
+  }
+  window.location.hash = lineage.parentHref.replace(/^#/, "");
+}
 
 function handleApproval(choice: "once" | "session" | "always" | "deny") {
   chatStore.respondApproval(choice);
@@ -247,6 +287,13 @@ function applyInitialSessionScroll(sessionId: string) {
     } else {
       listRef.value?.restoreViewportPosition(snapshot);
     }
+    return;
+  }
+
+  const session = chatStore.activeSession;
+  if (session?.parentSessionId && session.forkPointMessageId) {
+    pendingInitialScrollSessionId.value = null;
+    scrollToMessage(forkDividerId(session.id));
     return;
   }
 
@@ -406,7 +453,7 @@ defineExpose({
     <VirtualMessageList
       :key="chatStore.activeSessionId || 'chat-empty'"
       ref="listRef"
-      :messages="displayMessages"
+      :messages="displayMessagesWithForkDivider"
       :virtualized="false"
       :padding="virtualListPadding"
       @scroll="handleListScroll"
@@ -419,19 +466,6 @@ defineExpose({
         </div>
       </template>
       <template #before>
-        <div v-if="forkLineage" class="fork-lineage-card">
-          <a class="fork-lineage-link" :href="forkLineage.parentHref">
-            <span class="fork-lineage-icon" aria-hidden="true">↪</span>
-            <span class="fork-lineage-copy">
-              <span class="fork-lineage-label">{{ t("chat.forkedFrom") }}</span>
-              <span class="fork-lineage-title">{{ forkLineage.parentTitle }}</span>
-            </span>
-          </a>
-          <div v-if="forkLineage.lastMessage" class="fork-lineage-last">
-            <span class="fork-lineage-last-label">{{ t("chat.previousLastMessage") }}{{ forkLineage.lastRole ? ` · ${forkLineage.lastRole}` : "" }}</span>
-            <span class="fork-lineage-last-text">{{ forkLineage.lastMessage }}</span>
-          </div>
-        </div>
         <div v-if="showHistoryArchiveLink" class="history-archive-link-wrap">
           <a class="history-archive-link" :href="historyArchiveHref">
             {{ t("chat.viewOlderInHistory") }}
@@ -445,7 +479,22 @@ defineExpose({
         </div>
       </template>
       <template #item="{ message: msg }">
+        <div v-if="msg.systemType === 'fork-divider' && forkLineage" class="fork-divider" role="separator">
+          <div class="fork-divider-line" aria-hidden="true"></div>
+          <div class="fork-divider-pill">
+            <span class="fork-divider-icon" aria-hidden="true">↪</span>
+            <span class="fork-divider-text">{{ t("chat.forkedFrom") }}</span>
+            <a class="fork-divider-link" :href="forkLineage.parentHref" @click="openForkParent">
+              {{ forkLineage.parentTitle }}
+            </a>
+            <button class="fork-divider-action" type="button" @click="openForkParent($event)">
+              {{ t("chat.viewOriginalSession") }}
+            </button>
+          </div>
+          <div class="fork-divider-line" aria-hidden="true"></div>
+        </div>
         <MessageItem
+          v-else
           :message="msg"
           :highlight="chatStore.focusMessageId === msg.id"
         />
@@ -1251,88 +1300,89 @@ defineExpose({
   background: rgba(var(--accent-primary-rgb), 0.14);
 }
 
-.fork-lineage-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 760px;
-  margin: 0 auto 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.20);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(var(--accent-primary-rgb), 0.10), rgba(var(--accent-primary-rgb), 0.035));
-  color: var(--text-primary);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+ .fork-divider {
+  display: grid;
+  grid-template-columns: minmax(24px, 1fr) auto minmax(24px, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: min(760px, 100%);
+  margin: 12px auto 18px;
+  color: var(--text-secondary);
 }
 
-.fork-lineage-link {
+.fork-divider-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-primary-rgb), 0.26), transparent);
+}
+
+.fork-divider-pill {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  color: inherit;
-  text-decoration: none;
-  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(560px, calc(100vw - 56px));
+  padding: 7px 12px;
+  border: 1px solid rgba(var(--accent-primary-rgb), 0.22);
+  border-radius: 999px;
+  background: var(--bg-card);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
-.fork-lineage-link:hover .fork-lineage-title {
+.fork-divider-icon {
+  color: var(--accent-primary);
+  font-weight: 700;
+}
+
+.fork-divider-text {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fork-divider-link {
+  overflow: hidden;
+  max-width: 220px;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fork-divider-link:hover {
   color: var(--accent-primary);
   text-decoration: underline;
 }
 
-.fork-lineage-icon {
+.fork-divider-action {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  padding: 2px 8px;
+  border: 0;
   border-radius: 999px;
-  background: rgba(var(--accent-primary-rgb), 0.14);
+  background: rgba(var(--accent-primary-rgb), 0.12);
   color: var(--accent-primary);
-  font-size: 17px;
+  cursor: pointer;
+  font: inherit;
   font-weight: 700;
 }
 
-.fork-lineage-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 2px;
+.fork-divider-action:hover {
+  background: rgba(var(--accent-primary-rgb), 0.18);
 }
 
-.fork-lineage-label,
-.fork-lineage-last-label {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
+@media (max-width: 640px) {
+  .fork-divider {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 
-.fork-lineage-title {
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.fork-lineage-last {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding-left: 36px;
-  min-width: 0;
-}
-
-.fork-lineage-last-text {
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  .fork-divider-line {
+    display: none;
+  }
 }
 
 .fade-enter-active,
