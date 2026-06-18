@@ -197,7 +197,7 @@ const copyableContent = computed(() => {
 })
 
 function forkFromCurrentTail() {
-  if (!props.showForkAction || chatStore.isStreaming) return
+  if (!props.showForkAction || chatStore.isStreaming || chatStore.isForkPending) return
   chatStore.sendMessage('/fork')
 }
 

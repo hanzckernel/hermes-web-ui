@@ -139,7 +139,7 @@ const displayMessages = computed(() => {
 const canForkActiveSession = computed(() => {
   const session = chatStore.activeSession;
   const hasConversation = displayMessages.value.some((message) => message.role === "user" || message.role === "assistant");
-  return !!session && session.source !== "coding_agent" && !chatStore.isStreaming && hasConversation;
+  return !!session && session.source !== "coding_agent" && !chatStore.isStreaming && !chatStore.isForkPending && hasConversation;
 });
 
 const lastForkActionMessageId = computed(() => {
