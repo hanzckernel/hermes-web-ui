@@ -136,6 +136,20 @@ const displayMessages = computed(() => {
   });
 });
 
+const canForkActiveSession = computed(() => {
+  const session = chatStore.activeSession;
+  const hasConversation = displayMessages.value.some((message) => message.role === "user" || message.role === "assistant");
+  return !!session && session.source !== "coding_agent" && !chatStore.isStreaming && hasConversation;
+});
+
+const lastForkActionMessageId = computed(() => {
+  for (let i = displayMessages.value.length - 1; i >= 0; i--) {
+    const message = displayMessages.value[i];
+    if (message.role === "user" || message.role === "assistant") return message.id;
+  }
+  return null;
+});
+
 const queuedMessages = computed(() => {
   const sid = chatStore.activeSessionId;
   if (!sid) return [];
@@ -448,6 +462,7 @@ defineExpose({
         <MessageItem
           :message="msg"
           :highlight="chatStore.focusMessageId === msg.id"
+          :show-fork-action="canForkActiveSession && msg.id === lastForkActionMessageId"
         />
       </template>
       <template #after>

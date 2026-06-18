@@ -30,7 +30,7 @@ const JSON_MAX_KEYS_PER_OBJECT = 50;
 const JSON_MAX_ITEMS_PER_ARRAY = 50;
 const JSON_TRUNCATED_KEY = "__truncated__";
 
-const props = defineProps<{ message: Message; highlight?: boolean; headingIdPrefix?: string }>();
+const props = defineProps<{ message: Message; highlight?: boolean; headingIdPrefix?: string; showForkAction?: boolean }>();
 const { t } = useI18n();
 const toast = useMessage();
 
@@ -195,6 +195,11 @@ const copyableContent = computed(() => {
   if (!content.trim()) return null
   return content
 })
+
+function forkFromCurrentTail() {
+  if (!props.showForkAction || chatStore.isStreaming) return
+  chatStore.sendMessage('/fork')
+}
 
 async function copyBubbleContent() {
   const text = copyableContent.value
@@ -1019,6 +1024,20 @@ onBeforeUnmount(() => {
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
             </button>
+            <button
+              v-if="showForkAction"
+              class="fork-bubble-btn"
+              @click="forkFromCurrentTail"
+              :title="t('chat.slashCommands.fork')"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="6" cy="5" r="2.25" />
+                <circle cx="18" cy="5" r="2.25" />
+                <circle cx="12" cy="19" r="2.25" />
+                <path d="M6 7.25v2.25a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4V7.25" />
+                <path d="M12 13.5v3.25" />
+              </svg>
+            </button>
             <span class="message-time">{{ timeStr }}</span>
           </div>
         </div>
@@ -1433,7 +1452,8 @@ onBeforeUnmount(() => {
 }
 
 .copy-bubble-btn,
-.speech-bubble-btn {
+.speech-bubble-btn,
+.fork-bubble-btn {
   display: flex;
   align-items: center;
   justify-content: center;

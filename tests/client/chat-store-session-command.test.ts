@@ -40,6 +40,7 @@ vi.mock('@/api/hermes/chat', () => ({
 
 vi.mock('@/api/client', () => ({
   getActiveProfileName: () => 'default',
+  hasApiKey: () => false,
 }))
 
 vi.mock('@/api/hermes/sessions', () => ({
@@ -76,6 +77,7 @@ describe('chat store session.command fanout', () => {
     chatApi.sessionCommandHandlers = []
     chatApi.peerUserMessageHandlers = []
     chatApi.sessionTitleUpdatedHandlers = []
+    chatApi.startRunViaSocket.mockReturnValue({ abort: vi.fn() })
     setActivePinia(createPinia())
   })
 
@@ -158,6 +160,62 @@ describe('chat store session.command fanout', () => {
 
     expect(store.sessions[0].title).toBe('Generated Title')
     expect(store.activeSession?.title).toBe('Generated Title')
+  })
+
+  it('does not show a thinking/streaming state while submitting terminal fork commands', async () => {
+    const store = useChatStore()
+    const session = makeSession()
+    session.source = 'cli'
+    session.messageCount = 2
+    session.messages = [
+      { id: 'user-1', role: 'user', content: 'Previous question', timestamp: 1 },
+      { id: 'assistant-1', role: 'assistant', content: 'Previous answer', timestamp: 2 },
+    ]
+    store.sessions = [session]
+    store.activeSessionId = 'session-1'
+    store.activeSession = session
+
+    await store.sendMessage('/fork')
+
+    expect(chatApi.startRunViaSocket).toHaveBeenCalledWith(
+      expect.objectContaining({ input: '/fork', session_id: 'session-1', source: 'cli' }),
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+      undefined,
+      expect.any(Object),
+    )
+    expect(store.isStreaming).toBe(false)
+  })
+
+  it('clears stale working state when terminal session commands complete', () => {
+    const store = useChatStore()
+    const session = makeSession()
+    store.sessions = [session]
+    store.activeSessionId = 'session-1'
+    store.activeSession = session
+
+    chatApi.sessionCommandHandlers[0]({
+      event: 'session.command',
+      session_id: 'session-1',
+      command: 'goal',
+      action: 'resume',
+      message: 'Goal resumed',
+      started: true,
+      terminal: false,
+    })
+    expect(store.isStreaming).toBe(true)
+
+    chatApi.sessionCommandHandlers[0]({
+      event: 'session.command',
+      session_id: 'session-1',
+      command: 'goal',
+      action: 'done',
+      message: 'Goal done.',
+      terminal: true,
+    })
+
+    expect(store.isStreaming).toBe(false)
   })
 
   it('adds and switches to a branched child session from session.command branch events', async () => {
