@@ -417,7 +417,6 @@ export default {
     viewOlderInHistory: '更早的訊息請到歷史記錄查看',
     scrollToBottom: '捲動到底部',
     forkedFrom: 'Fork 來源',
-    viewOriginalSession: '查看原會話',
     previousLastMessage: '上一段對話的最後一則訊息',
     outlineTitle: '會話大綱',
     outlineEmpty: '暫無會話內容',

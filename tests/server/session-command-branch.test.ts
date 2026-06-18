@@ -190,6 +190,26 @@ describe('branch session command', () => {
     }))
   })
 
+  it('auto-titles /fork as branch: original title by default', async () => {
+    const { handleSessionCommand, parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
+    const { nsp, socket, namespaceEmit } = makeSocketHarness()
+    const sessionMap = new Map<string, any>([
+      ['session-1', { messages: [], isWorking: false, events: [], queue: [] }],
+    ])
+
+    await handleSessionCommand('session-1', parseSessionCommand('/fork')!, makeCtx(sessionMap, nsp, socket))
+
+    expect(createBranchedSessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'branch: Parent chat',
+      parent_session_id: 'session-1',
+    }))
+    const branchEvent = namespaceEmit.mock.calls.find(call => call[0] === 'session.command')?.[1]
+    expect(branchEvent).toMatchObject({
+      newSessionTitle: 'branch: Parent chat',
+      branchSession: expect.objectContaining({ title: 'branch: Parent chat' }),
+    })
+  })
+
   it('forks an idle local bridge chat by copying persisted messages into a child session', async () => {
     const { handleSessionCommand, parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
     const { nsp, socket, namespaceEmit } = makeSocketHarness()

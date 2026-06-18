@@ -150,6 +150,7 @@ function mapMessageRow(row: Record<string, unknown>): HermesMessageRow {
   }
 }
 
+
 // --- Session CRUD ---
 
 export function createSession(data: {

@@ -482,14 +482,19 @@ defineExpose({
         <div v-if="msg.systemType === 'fork-divider' && forkLineage" class="fork-divider" role="separator">
           <div class="fork-divider-line" aria-hidden="true"></div>
           <div class="fork-divider-pill">
-            <span class="fork-divider-icon" aria-hidden="true">↪</span>
+            <span class="fork-divider-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M6 3v6a4 4 0 0 0 4 4h4.2" />
+                <path d="M18 9l4 4-4 4" />
+                <path d="M6 21V3" />
+                <circle cx="6" cy="5" r="2" />
+                <circle cx="6" cy="19" r="2" />
+              </svg>
+            </span>
             <span class="fork-divider-text">{{ t("chat.forkedFrom") }}</span>
             <a class="fork-divider-link" :href="forkLineage.parentHref" @click="openForkParent">
               {{ forkLineage.parentTitle }}
             </a>
-            <button class="fork-divider-action" type="button" @click="openForkParent($event)">
-              {{ t("chat.viewOriginalSession") }}
-            </button>
           </div>
           <div class="fork-divider-line" aria-hidden="true"></div>
         </div>
@@ -1332,8 +1337,23 @@ defineExpose({
 }
 
 .fork-divider-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   color: var(--accent-primary);
-  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.fork-divider-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .fork-divider-text {
@@ -1357,22 +1377,6 @@ defineExpose({
   text-decoration: underline;
 }
 
-.fork-divider-action {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(var(--accent-primary-rgb), 0.12);
-  color: var(--accent-primary);
-  cursor: pointer;
-  font: inherit;
-  font-weight: 700;
-}
-
-.fork-divider-action:hover {
-  background: rgba(var(--accent-primary-rgb), 0.18);
-}
 
 @media (max-width: 640px) {
   .fork-divider {

@@ -1012,7 +1012,8 @@ function buildBranchTitle(requestedTitle: string, parentTitle: string): string {
   const explicit = requestedTitle.replace(/\s+/g, ' ').trim()
   if (explicit) return explicit.slice(0, 120)
   const base = parentTitle.replace(/\s+/g, ' ').trim() || 'branch'
-  return `${base} fork`.slice(0, 120)
+  const prefix = 'branch: '
+  return `${prefix}${base.slice(0, Math.max(0, 120 - prefix.length))}`
 }
 
 function normalizeBranchSource(source: string | null | undefined): ChatRunSource {
