@@ -8,6 +8,7 @@ import { SessionDeleter } from '../../services/hermes/session-deleter'
 import { AgentBridgeClient } from '../../services/hermes/agent-bridge'
 import {
   getGatewayRuntimeStatusForProfile,
+  prepareGatewayForProfileDelete,
   restartGatewayForProfile as restartGatewayRuntimeForProfile,
 } from '../../services/hermes/gateway-autostart'
 import { logger } from '../../services/logger'
@@ -133,6 +134,12 @@ function deleteForbiddenProfileFromDisk(name: string): boolean {
   } catch {}
   logger.warn('[deleteProfile] removed reserved profile "%s" from disk after Hermes CLI rejected deletion', name)
   return true
+}
+
+function profileDirectoryExists(name: string): boolean {
+  if (!name || name === 'default') return true
+  const base = detectHermesRootHome()
+  return existsSync(join(base, 'profiles', name))
 }
 
 function filterVisibleProfiles(profiles: HermesProfile[]): HermesProfile[] {
@@ -647,10 +654,16 @@ export async function remove(ctx: any) {
     } catch (err) {
       logger.warn(err, '[profiles] failed to destroy bridge sessions for deleted profile "%s"', name)
     }
+
+    await prepareGatewayForProfileDelete(name)
+
     const ok = await hermesCli.deleteProfile(name)
-    if (ok) {
+    if (ok && !profileDirectoryExists(name)) {
       removeProfileMetadata(name)
       ctx.body = { success: true }
+    } else if (ok) {
+      ctx.status = 500
+      ctx.body = { error: 'Failed to delete profile: profile directory still exists' }
     } else if (deleteForbiddenProfileFromDisk(name)) {
       removeProfileMetadata(name)
       ctx.body = { success: true, fallback: 'removed_reserved_profile_from_disk' }

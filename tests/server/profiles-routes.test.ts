@@ -18,6 +18,12 @@ const sessionDeleterMocks = vi.hoisted(() => ({
   switchProfile: vi.fn(),
 }))
 
+const gatewayAutostartMocks = vi.hoisted(() => ({
+  getGatewayRuntimeStatusForProfile: vi.fn(),
+  prepareGatewayForProfileDelete: vi.fn(),
+  restartGatewayForProfile: vi.fn(),
+}))
+
 // Mock hermes-cli
 vi.mock('../../packages/server/src/services/hermes/hermes-cli', () => ({
   listProfiles: vi.fn(),
@@ -55,6 +61,12 @@ vi.mock('../../packages/server/src/services/hermes/session-deleter', () => ({
   },
 }))
 
+vi.mock('../../packages/server/src/services/hermes/gateway-autostart', () => ({
+  getGatewayRuntimeStatusForProfile: gatewayAutostartMocks.getGatewayRuntimeStatusForProfile,
+  prepareGatewayForProfileDelete: gatewayAutostartMocks.prepareGatewayForProfileDelete,
+  restartGatewayForProfile: gatewayAutostartMocks.restartGatewayForProfile,
+}))
+
 import * as hermesCli from '../../packages/server/src/services/hermes/hermes-cli'
 
 describe('Profile Routes', () => {
@@ -65,6 +77,7 @@ describe('Profile Routes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     agentBridgeMocks.destroyProfile.mockResolvedValue({ destroyed: 0 })
+    gatewayAutostartMocks.prepareGatewayForProfileDelete.mockResolvedValue(undefined)
     skillInjectorMocks.injectMissingSkills.mockResolvedValue({ targets: [] })
     skillInjectorMocks.resolveTargetDirForProfile.mockImplementation((name: string) => join('/tmp/hermes-skills', name))
   })
@@ -140,6 +153,47 @@ describe('Profile Routes', () => {
   })
 
   describe('profile deletion fallback', () => {
+    it('prepares the profile gateway for deletion before calling Hermes CLI delete', async () => {
+      const hermesHome = await mkdtemp(join(tmpdir(), 'hermes-profile-delete-'))
+      tempHomes.push(hermesHome)
+      process.env.HERMES_HOME = hermesHome
+      const profileDir = join(hermesHome, 'profiles', 'work')
+      await mkdir(profileDir, { recursive: true })
+      await writeFile(join(profileDir, 'config.yaml'), 'model:\n  default: test\n', 'utf-8')
+
+      gatewayAutostartMocks.prepareGatewayForProfileDelete.mockImplementation(async () => {
+        await rm(profileDir, { recursive: true, force: true })
+      })
+      vi.mocked(hermesCli.deleteProfile).mockResolvedValue(true)
+      const { remove } = await import('../../packages/server/src/controllers/hermes/profiles')
+      const ctx: any = { params: { name: 'work' }, status: 200, body: undefined }
+
+      await remove(ctx)
+
+      expect(gatewayAutostartMocks.prepareGatewayForProfileDelete).toHaveBeenCalledWith('work')
+      expect(hermesCli.deleteProfile).toHaveBeenCalledWith('work')
+      expect(ctx.status).toBe(200)
+      expect(ctx.body).toEqual({ success: true })
+    })
+
+    it('does not return success when Hermes CLI reports delete success but the profile directory remains', async () => {
+      const hermesHome = await mkdtemp(join(tmpdir(), 'hermes-profile-delete-'))
+      tempHomes.push(hermesHome)
+      process.env.HERMES_HOME = hermesHome
+      const profileDir = join(hermesHome, 'profiles', 'work')
+      await mkdir(profileDir, { recursive: true })
+      await writeFile(join(profileDir, 'config.yaml'), 'model:\n  default: test\n', 'utf-8')
+      vi.mocked(hermesCli.deleteProfile).mockResolvedValue(true)
+      const { remove } = await import('../../packages/server/src/controllers/hermes/profiles')
+      const ctx: any = { params: { name: 'work' }, status: 200, body: undefined }
+
+      await remove(ctx)
+
+      expect(ctx.status).toBe(500)
+      expect(ctx.body).toEqual({ error: 'Failed to delete profile: profile directory still exists' })
+      expect(existsSync(profileDir)).toBe(true)
+    })
+
     it('removes a reserved profile directory when Hermes CLI refuses to delete it', async () => {
       const hermesHome = await mkdtemp(join(tmpdir(), 'hermes-profile-delete-'))
       tempHomes.push(hermesHome)
