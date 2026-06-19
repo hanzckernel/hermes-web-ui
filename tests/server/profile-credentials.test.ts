@@ -304,6 +304,30 @@ describe('copyModelProviderAuthForClone', () => {
     expect(copyModelProviderAuthForClone('cloned')).toEqual([])
     expect(existsSync(join(cloneDir, 'auth.json'))).toBe(false)
   })
+
+  it('does not copy auth for keyless providers that are not stored OAuth providers', () => {
+    process.env.HERMES_HOME = tmpDir
+    writeFileSync(join(tmpDir, 'active_profile'), 'default\n')
+    writeFileSync(join(tmpDir, 'auth.json'), JSON.stringify({
+      providers: {
+        'fun-codex': { access_token: 'stale-fun-token' },
+      },
+      credential_pool: {
+        'fun-codex': [{ access_token: 'stale-fun-pool-token' }],
+      },
+    }, null, 2))
+    const cloneDir = join(tmpDir, 'profiles', 'cloned')
+    mkdirSync(cloneDir, { recursive: true })
+    writeFileSync(join(cloneDir, 'config.yaml'), [
+      'model:',
+      '  provider: fun-codex',
+      '  default: gpt-5.5',
+      '',
+    ].join('\n'))
+
+    expect(copyModelProviderAuthForClone('cloned')).toEqual([])
+    expect(existsSync(join(cloneDir, 'auth.json'))).toBe(false)
+  })
 })
 
 describe('EXCLUSIVE_PLATFORMS list', () => {

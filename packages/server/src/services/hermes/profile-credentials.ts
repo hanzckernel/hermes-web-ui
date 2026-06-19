@@ -16,7 +16,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import yaml from 'js-yaml'
 import { detectHermesHome } from './hermes-path'
-import { PROVIDER_ENV_MAP } from '../config-helpers'
 
 function hermesBase(): string {
   return detectHermesHome()
@@ -217,6 +216,14 @@ function authProviderKeysForModelProvider(provider: string): string[] {
   return provider === 'claude-oauth' ? ['claude-oauth', 'anthropic'] : [provider]
 }
 
+const MODEL_AUTH_PROVIDERS = new Set([
+  'openai-codex',
+  'claude-oauth',
+  'xai-oauth',
+  'google-gemini-cli',
+  'nous',
+])
+
 /**
  * Copy the source profile's OAuth auth for the cloned profile's configured model
  * provider only.
@@ -234,8 +241,7 @@ export function copyModelProviderAuthForClone(profileName: string): string[] {
   if (!profileName || profileName === 'default') return []
   const targetDir = profileDir(profileName)
   const provider = configuredModelProvider(join(targetDir, 'config.yaml'))
-  const mapping = PROVIDER_ENV_MAP[provider]
-  if (!provider || !mapping || mapping.api_key_env) return []
+  if (!MODEL_AUTH_PROVIDERS.has(provider)) return []
 
   const sourceDir = profileDir(activeProfileName())
   const sourceAuth = readAuthJson(join(sourceDir, 'auth.json'))
