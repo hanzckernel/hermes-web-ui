@@ -50,6 +50,26 @@ describe('tts provider text helpers', () => {
     expect(cleanTtsText('Hello ```ts\nconst x = 1')).toBe('Hello')
   })
 
+  it('removes markdown fenced code blocks while keeping surrounding prose', () => {
+    expect(cleanTtsText('先说明\n```ts\nconst value = 1\n```\n再继续')).toBe('先说明 再继续')
+  })
+
+  it('keeps markdown table text for TTS', () => {
+    expect(cleanTtsText('结果如下：\n| 名称 | 值 |\n| --- | --- |\n| foo | 1 |\n| bar | 2 |\n请确认。')).toBe('结果如下： | 名称 | 值 | | --- | --- | | foo | 1 | | bar | 2 | 请确认。')
+  })
+
+  it('removes emoji and decorative symbols before sending text to TTS', () => {
+    expect(cleanTtsText('你好 😊🚀，开始 #1️⃣ -> ✅ done ★')).toBe('你好 ，开始 # -> done')
+  })
+
+  it('keeps normal speech punctuation and comparison expressions', () => {
+    expect(cleanTtsText('价格是 $12.5，2 < 3；A+B= C。')).toBe('价格是 $12.5，2 < 3；A+B= C。')
+  })
+
+  it('removes zero-width joiner emoji sequences', () => {
+    expect(cleanTtsText('开发者 👨‍💻 正在处理')).toBe('开发者 正在处理')
+  })
+
   it('returns an empty string for empty input', () => {
     expect(cleanTtsText('')).toBe('')
   })

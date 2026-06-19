@@ -21,3 +21,5 @@ export interface SttTranscribeResult {
   language?: string
   durationMs: number
 }
+
+export class SttNoSpeechDetectedError extends Error {}

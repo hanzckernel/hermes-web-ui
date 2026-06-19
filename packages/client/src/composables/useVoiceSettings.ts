@@ -1,6 +1,7 @@
 import { ref, watch } from 'vue'
+import { DOUBAO_TTS_2_RESOURCE_ID, DOUBAO_TTS_DEFAULT_VOICE } from '@/constants/doubaoTtsVoices'
 
-export type TtsProvider = 'webspeech' | 'openai' | 'custom' | 'edge' | 'mimo'
+export type TtsProvider = 'webspeech' | 'openai' | 'custom' | 'edge' | 'mimo' | 'doubao'
 export type MimoAuthMode = 'api-key' | 'bearer' | 'both'
 
 export interface VoiceSettingsData {
@@ -36,6 +37,13 @@ export interface VoiceSettingsData {
   mimoVoiceCloneFileName: string
   mimoVoiceCloneFormat: 'mp3' | 'wav'
   mimoStylePrompt: string      // 风格指令
+
+  // Doubao TTS
+  doubaoApiKey: string
+  doubaoBaseUrl: string
+  doubaoModel: string
+  doubaoVoice: string
+  doubaoStylePrompt: string
 }
 
 const STORAGE_KEY = 'hermes-tts-settings-v2'
@@ -91,6 +99,12 @@ const DEFAULT: VoiceSettingsData = {
   mimoVoiceCloneFileName: '',
   mimoVoiceCloneFormat: 'wav',
   mimoStylePrompt: '',
+
+  doubaoApiKey: '',
+  doubaoBaseUrl: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+  doubaoModel: DOUBAO_TTS_2_RESOURCE_ID,
+  doubaoVoice: DOUBAO_TTS_DEFAULT_VOICE,
+  doubaoStylePrompt: '',
 }
 
 function sanitize(data: VoiceSettingsData): VoiceSettingsData {
@@ -152,12 +166,20 @@ const mimoVoiceCloneFileName = ref<string>(load().mimoVoiceCloneFileName)
 const mimoVoiceCloneFormat = ref<'mp3' | 'wav'>(load().mimoVoiceCloneFormat)
 const mimoStylePrompt = ref<string>(load().mimoStylePrompt)
 
+// Doubao TTS
+const doubaoApiKey = ref<string>(load().doubaoApiKey)
+const doubaoBaseUrl = ref<string>(load().doubaoBaseUrl)
+const doubaoModel = ref<string>(load().doubaoModel)
+const doubaoVoice = ref<string>(load().doubaoVoice)
+const doubaoStylePrompt = ref<string>(load().doubaoStylePrompt)
+
 // Auto-persist on change
 watch(
   [provider, webspeechVoice, openaiApiKey, openaiBaseUrl, openaiModel, openaiVoice,
    customUrl, customApiKey, edgeUrl, edgeVoice, edgeRate, edgePitchHz,
    mimoApiKey, mimoAuthMode, mimoBaseUrl, mimoModel, mimoVoice, mimoVoiceDesignDesc,
-   mimoVoiceCloneDataUri, mimoVoiceCloneFileName, mimoVoiceCloneFormat, mimoStylePrompt],
+   mimoVoiceCloneDataUri, mimoVoiceCloneFileName, mimoVoiceCloneFormat, mimoStylePrompt,
+   doubaoApiKey, doubaoBaseUrl, doubaoModel, doubaoVoice, doubaoStylePrompt],
   () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -183,6 +205,11 @@ watch(
         mimoVoiceCloneFileName: mimoVoiceCloneFileName.value,
         mimoVoiceCloneFormat: mimoVoiceCloneFormat.value,
         mimoStylePrompt: mimoStylePrompt.value,
+        doubaoApiKey: doubaoApiKey.value,
+        doubaoBaseUrl: doubaoBaseUrl.value,
+        doubaoModel: doubaoModel.value,
+        doubaoVoice: doubaoVoice.value,
+        doubaoStylePrompt: doubaoStylePrompt.value,
       }))
     } catch (err) {
       console.warn('[useVoiceSettings] Failed to persist voice settings:', err)
@@ -214,6 +241,11 @@ export function useVoiceSettings() {
     mimoVoiceCloneFileName,
     mimoVoiceCloneFormat,
     mimoStylePrompt,
+    doubaoApiKey,
+    doubaoBaseUrl,
+    doubaoModel,
+    doubaoVoice,
+    doubaoStylePrompt,
 
     setProvider(v: TtsProvider) { provider.value = v },
     setWebSpeechVoice(v: string) { webspeechVoice.value = v },
@@ -237,6 +269,11 @@ export function useVoiceSettings() {
     setMimoVoiceCloneFileName(v: string) { mimoVoiceCloneFileName.value = v },
     setMimoVoiceCloneFormat(v: 'mp3' | 'wav') { mimoVoiceCloneFormat.value = v },
     setMimoStylePrompt(v: string) { mimoStylePrompt.value = v },
+    setDoubaoApiKey(v: string) { doubaoApiKey.value = v },
+    setDoubaoBaseUrl(v: string) { doubaoBaseUrl.value = v },
+    setDoubaoModel(v: string) { doubaoModel.value = v },
+    setDoubaoVoice(v: string) { doubaoVoice.value = v },
+    setDoubaoStylePrompt(v: string) { doubaoStylePrompt.value = v },
 
     reset() {
       provider.value = DEFAULT.provider
@@ -261,6 +298,11 @@ export function useVoiceSettings() {
       mimoVoiceCloneFileName.value = DEFAULT.mimoVoiceCloneFileName
       mimoVoiceCloneFormat.value = DEFAULT.mimoVoiceCloneFormat
       mimoStylePrompt.value = DEFAULT.mimoStylePrompt
+      doubaoApiKey.value = DEFAULT.doubaoApiKey
+      doubaoBaseUrl.value = DEFAULT.doubaoBaseUrl
+      doubaoModel.value = DEFAULT.doubaoModel
+      doubaoVoice.value = DEFAULT.doubaoVoice
+      doubaoStylePrompt.value = DEFAULT.doubaoStylePrompt
     },
   }
 }

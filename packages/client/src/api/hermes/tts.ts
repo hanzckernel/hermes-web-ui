@@ -5,7 +5,7 @@ export interface TtsOptions {
   pitch?: string  // Edge TTS pitch format: "+NNHz" or "-NNHz"
 }
 
-export type TtsProviderId = 'edge' | 'openai' | 'custom' | 'mimo'
+export type TtsProviderId = 'edge' | 'openai' | 'custom' | 'mimo' | 'doubao'
 
 export interface SynthesizeSpeechRequest {
   provider: TtsProviderId

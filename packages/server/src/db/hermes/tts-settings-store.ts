@@ -1,8 +1,9 @@
 import { getDb } from '../index'
-import { TTS_PROVIDER_SETTINGS_TABLE } from './schemas'
+import { TTS_PROVIDER_SETTINGS_TABLE, TTS_USER_SETTINGS_TABLE } from './schemas'
 import { normalizeSafeTtsBaseUrl } from '../../services/hermes/tts-providers/url-safety'
 
-export type StoredTtsProvider = 'openai' | 'custom' | 'edge' | 'mimo'
+export type StoredTtsProvider = 'openai' | 'custom' | 'edge' | 'mimo' | 'doubao'
+export type ActiveTtsProvider = StoredTtsProvider
 
 const SETTINGS_KEYS = [
   'baseUrl',
@@ -39,13 +40,15 @@ export class TtsSettingsValidationError extends Error {}
 const STORED_MARKER = '[stored]'
 const MAX_TEXT_SETTING_LENGTH = 2000
 const MAX_BASE_URL_PRESETS = 20
-const PROVIDERS: StoredTtsProvider[] = ['custom', 'edge', 'mimo', 'openai']
+const PROVIDERS: StoredTtsProvider[] = ['custom', 'doubao', 'edge', 'mimo', 'openai']
+const ACTIVE_PROVIDERS: ActiveTtsProvider[] = PROVIDERS
 const PROVIDER_SQL_PLACEHOLDERS = PROVIDERS.map(() => '?').join(', ')
 const PROVIDER_LABELS: Record<StoredTtsProvider, string> = {
   openai: 'OpenAI TTS',
   custom: 'Custom TTS',
   edge: 'Edge TTS',
   mimo: 'MiMo TTS',
+  doubao: 'Doubao TTS',
 }
 
 type StoredRow = {
@@ -93,11 +96,52 @@ export function isStoredTtsProvider(provider: string): provider is StoredTtsProv
   return PROVIDERS.includes(provider as StoredTtsProvider)
 }
 
+export function isActiveTtsProvider(provider: string): provider is ActiveTtsProvider {
+  return ACTIVE_PROVIDERS.includes(provider as ActiveTtsProvider)
+}
+
 export function assertStoredTtsProvider(provider: string): StoredTtsProvider {
   if (!isStoredTtsProvider(provider)) {
     throw new TtsSettingsValidationError('unknown TTS provider')
   }
   return provider
+}
+
+export function assertActiveTtsProvider(provider: string): ActiveTtsProvider {
+  if (!isActiveTtsProvider(provider)) {
+    throw new TtsSettingsValidationError('unknown TTS provider')
+  }
+  return provider
+}
+
+export function getActiveTtsProvider(userId: number): ActiveTtsProvider | null {
+  const id = normalizeUserId(userId)
+  const db = getDb()
+  if (!db) return null
+
+  const row = db.prepare(
+    `SELECT active_provider FROM ${TTS_USER_SETTINGS_TABLE} WHERE user_id = ?`
+  ).get(id) as { active_provider?: string } | null
+
+  const activeProvider = row?.active_provider
+  return typeof activeProvider === 'string' && isActiveTtsProvider(activeProvider) ? activeProvider : null
+}
+
+export function saveActiveTtsProvider(userId: number, provider: ActiveTtsProvider): ActiveTtsProvider {
+  const id = normalizeUserId(userId)
+  const activeProvider = assertActiveTtsProvider(provider)
+  const db = requireDb()
+  const now = Date.now()
+
+  db.prepare(
+    `INSERT INTO ${TTS_USER_SETTINGS_TABLE} (user_id, active_provider, created_at, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       active_provider = excluded.active_provider,
+       updated_at = excluded.updated_at`
+  ).run(id, activeProvider, now, now)
+
+  return activeProvider
 }
 
 function assertKnownSecretName(secretName: string): TtsSecretKey {

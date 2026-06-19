@@ -1,10 +1,13 @@
 import type { Context } from 'koa'
+import { mkdir, writeFile } from 'fs/promises'
+import { join } from 'path'
 import {
   assertActiveSttProvider,
   assertStoredSttProvider,
   clearStoredSttSecret,
   getActiveSttProvider,
   getSttProviderSetting,
+  isStoredSttProvider,
   listSttProviderSettings,
   removeSttBaseUrlPreset,
   saveActiveSttProvider,
@@ -12,9 +15,20 @@ import {
   SttSettingsValidationError,
   type StoredSttProvider,
 } from '../../db/hermes/stt-settings-store'
+import { config } from '../../config'
 import { SttProviderConfigError, transcribeWithProvider } from '../../services/hermes/stt-providers'
+import { SttNoSpeechDetectedError } from '../../services/hermes/stt-providers/types'
+import { logger } from '../../services/logger'
+import { getActiveGlobalAgentServer } from '../../services/global-agent/server'
 
 const MAX_STT_UPLOAD_SIZE = 50 * 1024 * 1024
+const MCU_STT_TIMEOUT_MS = 120_000
+const MISSING_STT_PROMPT_TEXT = '当前profile没有配置语音转文字，请配置后再使用哦'
+const MISSING_STT_PROMPT_PCM_URL =
+  'https://ekko-hermes-studio.oss-cn-beijing.aliyuncs.com/current-profile-stt-not-configured-xiaohe.s16le.pcm'
+const STT_TRANSCRIBE_FAILED_PROMPT_TEXT = '当前语音转文字失败了，请配置下语音转文字再使用哦'
+const STT_TRANSCRIBE_FAILED_PROMPT_PCM_URL =
+  'https://ekko-hermes-studio.oss-cn-beijing.aliyuncs.com/stt-transcribe-failed-xiaohe.s16le.pcm'
 
 interface ParsedPart {
   fieldName: string
@@ -39,6 +53,48 @@ function authUserId(ctx: Context): number | null {
     return null
   }
   return userId
+}
+
+function requestedProfile(ctx: Context): string {
+  const queryProfile = typeof ctx.query.profile === 'string' ? ctx.query.profile : ''
+  const headerProfile = ctx.get?.('x-hermes-profile') || ''
+  return (ctx.state.profile?.name || queryProfile || headerProfile || 'default').trim() || 'default'
+}
+
+function bearerToken(ctx: Context): string {
+  const header = ctx.get?.('authorization') || ''
+  const match = header.match(/^Bearer\s+(.+)$/i)
+  return match?.[1]?.trim() || ''
+}
+
+function resolveSttProfileStatus(userId: number, profile: string) {
+  const activeProvider = getActiveSttProvider(userId)
+  if (!activeProvider || activeProvider === 'browser') {
+    return {
+      profile,
+      configured: false,
+      activeProvider: activeProvider || null,
+      reason: activeProvider === 'browser' ? 'browser_stt_not_available_for_mcu' : 'active_stt_provider_missing',
+    }
+  }
+
+  if (!isStoredSttProvider(activeProvider)) {
+    return {
+      profile,
+      configured: false,
+      activeProvider,
+      reason: 'active_stt_provider_unsupported',
+    }
+  }
+
+  const storedSetting = getSttProviderSetting(userId, activeProvider, { includeSecrets: true })
+  const hasSecret = Boolean(storedSetting?.secrets.apiKey)
+  return {
+    profile,
+    configured: hasSecret,
+    activeProvider,
+    reason: hasSecret ? null : 'active_stt_provider_secret_missing',
+  }
 }
 
 function handleSettingsError(ctx: Context, error: unknown): boolean {
@@ -149,6 +205,26 @@ async function readMultipartBody(ctx: Context): Promise<ParsedMultipartBody | { 
   return { fields, files }
 }
 
+async function readRawAudioBody(ctx: Context): Promise<Buffer | { error: string; status: number }> {
+  const chunks: Buffer[] = []
+  let totalSize = 0
+
+  for await (const chunk of ctx.req) {
+    const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    totalSize += bufferChunk.length
+    if (totalSize > MAX_STT_UPLOAD_SIZE) {
+      return { error: `Upload too large (max ${MAX_STT_UPLOAD_SIZE / 1024 / 1024}MB)`, status: 413 }
+    }
+    chunks.push(bufferChunk)
+  }
+
+  const audio = Buffer.concat(chunks)
+  if (audio.length === 0) {
+    return { error: 'audio body is required', status: 400 }
+  }
+  return audio
+}
+
 function findAudioPart(files: ParsedPart[]): ParsedPart | null {
   return files.find(part => part.fieldName === 'audio') || null
 }
@@ -181,6 +257,36 @@ function createRequestAbortController(ctx: Context): AbortController {
   return controller
 }
 
+function safeDebugName(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'unknown'
+}
+
+async function saveMcuSttDebugAudio(input: {
+  userId: number
+  profile: string
+  provider: string
+  contentType: string
+  audio: Buffer
+}): Promise<{ audioPath: string; metadataPath: string }> {
+  const dir = join(config.appHome, 'debug', 'mcu-stt')
+  await mkdir(dir, { recursive: true })
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const baseName = `${stamp}_u${input.userId}_${safeDebugName(input.profile)}_${safeDebugName(input.provider)}`
+  const audioPath = join(dir, `${baseName}.wav`)
+  const metadataPath = join(dir, `${baseName}.json`)
+  await writeFile(audioPath, input.audio)
+  await writeFile(metadataPath, JSON.stringify({
+    createdAt: new Date().toISOString(),
+    userId: input.userId,
+    profile: input.profile,
+    provider: input.provider,
+    contentType: input.contentType,
+    audioBytes: input.audio.length,
+    audioPath,
+  }, null, 2) + '\n', 'utf-8')
+  return { audioPath, metadataPath }
+}
+
 export async function listSettings(ctx: Context) {
   const userId = authUserId(ctx)
   if (!userId) return
@@ -194,6 +300,31 @@ export async function listSettings(ctx: Context) {
     if (handleSettingsError(ctx, error)) return
     throw error
   }
+}
+
+export async function profileStatus(ctx: Context) {
+  const userId = authUserId(ctx)
+  if (!userId) return
+
+  ctx.body = resolveSttProfileStatus(userId, requestedProfile(ctx))
+}
+
+export async function missingProfileAudio(ctx: Context) {
+  const userId = authUserId(ctx)
+  if (!userId) return
+
+  const status = resolveSttProfileStatus(userId, requestedProfile(ctx))
+  if (status.configured) {
+    ctx.status = 204
+    return
+  }
+
+  ctx.status = 302
+  ctx.set('Location', MISSING_STT_PROMPT_PCM_URL)
+  ctx.set('Cache-Control', 'public, max-age=31536000, immutable')
+  ctx.set('X-Hermes-STT-Configured', 'false')
+  ctx.set('X-Hermes-STT-Reason', status.reason || 'stt_not_configured')
+  ctx.body = { url: MISSING_STT_PROMPT_PCM_URL }
 }
 
 export async function saveSettings(ctx: Context) {
@@ -346,8 +477,204 @@ export async function transcribe(ctx: Context) {
       return
     }
 
+    if (error instanceof SttNoSpeechDetectedError) {
+      ctx.status = 400
+      ctx.body = { error: error.message, code: 'no_speech_detected' }
+      return
+    }
+
     ctx.status = 502
     const detail = error instanceof Error ? error.message : ''
     ctx.body = { error: detail ? `STT transcription failed: ${detail}` : 'STT transcription failed' }
   }
+}
+
+export async function mcuVoiceTurn(ctx: Context) {
+  const userId = authUserId(ctx)
+  if (!userId) return
+
+  const profile = requestedProfile(ctx)
+  const status = resolveSttProfileStatus(userId, profile)
+  if (!status.configured || !status.activeProvider || status.activeProvider === 'browser' || !isStoredSttProvider(status.activeProvider)) {
+    ctx.body = {
+      ok: false,
+      profile,
+      reason: status.reason || 'stt_not_configured',
+      audio: {
+        text: MISSING_STT_PROMPT_TEXT,
+        url: MISSING_STT_PROMPT_PCM_URL,
+        mimeType: 'audio/x-pcm',
+        format: 's16le',
+        sampleRate: 16000,
+        channels: 1,
+      },
+    }
+    return
+  }
+
+  const audio = await readRawAudioBody(ctx)
+  if ('error' in audio) {
+    ctx.status = audio.status
+    ctx.body = { error: audio.error }
+    return
+  }
+
+  const storedSetting = getSttProviderSetting(userId, status.activeProvider, { includeSecrets: true })
+  if (!storedSetting?.secrets.apiKey) {
+    ctx.body = {
+      ok: false,
+      profile,
+      reason: 'active_stt_provider_secret_missing',
+      audio: {
+        text: MISSING_STT_PROMPT_TEXT,
+        url: MISSING_STT_PROMPT_PCM_URL,
+        mimeType: 'audio/x-pcm',
+        format: 's16le',
+        sampleRate: 16000,
+        channels: 1,
+      },
+    }
+    return
+  }
+
+  const contentType = ctx.get('content-type') || 'audio/wav'
+  const isWavUpload = contentType.toLowerCase().includes('wav')
+  const forceFfmpeg = status.activeProvider === 'doubao' && !isWavUpload
+  const interactionId = ctx.get('x-hermes-mcu-interaction-id') || `mcu-voice-${Date.now()}`
+  const token = bearerToken(ctx)
+  const clientId = ctx.get('x-hermes-mcu-device-id') || undefined
+  let debugAudioPath = ''
+  let debugMetadataPath = ''
+  try {
+    const saved = await saveMcuSttDebugAudio({
+      userId,
+      profile,
+      provider: status.activeProvider,
+      contentType,
+      audio,
+    })
+    debugAudioPath = saved.audioPath
+    debugMetadataPath = saved.metadataPath
+  } catch (error) {
+    logger.warn({
+      err: error,
+      userId,
+      profile,
+      provider: status.activeProvider,
+      audioBytes: audio.length,
+    }, '[mcu-stt] failed to save debug audio')
+  }
+
+  logger.info({
+    userId,
+    profile,
+    provider: status.activeProvider,
+    contentType,
+    audioBytes: audio.length,
+    forceFfmpeg,
+    debugAudioPath,
+    debugMetadataPath,
+  }, '[mcu-stt] voice turn upload received')
+
+  ctx.body = {
+    ok: true,
+    profile,
+    accepted: true,
+    interactionId,
+  }
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), MCU_STT_TIMEOUT_MS)
+  const provider = status.activeProvider
+  const settings = {
+    ...storedSetting.settings,
+    audioTranscode: forceFfmpeg ? 'ffmpeg' : storedSetting.settings.audioTranscode,
+  }
+  const secrets = storedSetting.secrets
+
+  void (async () => {
+    const globalAgentServer = getActiveGlobalAgentServer()
+    globalAgentServer?.emitMcuEvent({ type: 'interaction.status', interactionId, status: 'transcribing' }, { clientId })
+    try {
+      const result = await transcribeWithProvider({
+        provider,
+        audio,
+        fileName: 'mcu-voice.wav',
+        mimeType: contentType,
+        settings,
+        secrets,
+        signal: controller.signal,
+      })
+
+      logger.info({
+        userId,
+        profile,
+        provider: result.provider,
+        model: result.model,
+        transcriptLength: result.text.length,
+        durationMs: result.durationMs,
+      }, '[mcu-stt] voice turn transcribed')
+
+      const transcript = result.text.trim()
+      if (!transcript) {
+        globalAgentServer?.emitMcuEvent({ type: 'interaction.status', interactionId, status: 'completed', text: '' }, { clientId })
+        return
+      }
+      if (!token) {
+        globalAgentServer?.emitMcuEvent({
+          type: 'interaction.status',
+          interactionId,
+          status: 'failed',
+          text: 'missing Web UI auth token',
+        }, { clientId })
+        return
+      }
+
+      globalAgentServer?.startMcuVoiceChatTurn({
+        userToken: token,
+        profile,
+        interactionId,
+        transcript,
+        clientId,
+      })
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      const text = isAbortError(error)
+        ? 'STT request timed out'
+        : error instanceof SttProviderConfigError
+          ? error.message
+          : error instanceof SttNoSpeechDetectedError
+            ? error.message
+            : detail || 'MCU voice turn failed'
+      logger.warn({
+        userId,
+        profile,
+        provider,
+        audioBytes: audio.length,
+        contentType,
+        debugAudioPath,
+        error: detail,
+      }, '[mcu-stt] voice turn failed')
+      const globalAgentServer = getActiveGlobalAgentServer()
+      globalAgentServer?.emitMcuEvent({
+        type: 'interaction.status',
+        interactionId,
+        status: 'failed',
+        text,
+      }, { clientId })
+      globalAgentServer?.emitMcuEvent({
+        type: 'audio.enqueue',
+        interactionId,
+        segmentId: `${interactionId}-stt-failed`,
+        text: STT_TRANSCRIBE_FAILED_PROMPT_TEXT,
+        url: STT_TRANSCRIBE_FAILED_PROMPT_PCM_URL,
+        mimeType: 'audio/x-pcm',
+        format: 's16le',
+        sampleRate: 16000,
+        channels: 1,
+      }, { clientId })
+    } finally {
+      clearTimeout(timer)
+    }
+  })()
 }

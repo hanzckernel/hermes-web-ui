@@ -38,6 +38,34 @@ describe('edgeTtsProvider', () => {
       voice: 'en-US-JennyNeural',
       rate: '+20%',
       pitch: '-8Hz',
+      outputFormat: undefined,
+    })
+    expect(result).toEqual({
+      audio,
+      contentType: 'audio/mpeg',
+      engine: 'legacy-edge',
+      provider: 'edge',
+    })
+  })
+
+  it('keeps Edge on MP3 output when the caller asks for PCM audio', async () => {
+    const audio = Buffer.from('edge-mp3')
+    textToSpeech.mockResolvedValueOnce({ audio, engine: 'legacy-edge' })
+
+    const result = await edgeTtsProvider.synthesize(
+      { text: 'Hello world' },
+      {
+        format: 'pcm',
+        sampleRate: 16000,
+      },
+    )
+
+    expect(textToSpeech).toHaveBeenCalledWith({
+      text: 'Hello world',
+      voice: undefined,
+      rate: undefined,
+      pitch: undefined,
+      outputFormat: undefined,
     })
     expect(result).toEqual({
       audio,

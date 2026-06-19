@@ -103,6 +103,12 @@ function backendTranscribeOptions(): {
     }
   }
 
+  if (sttSettings.provider.value === 'doubao') {
+    return {
+      provider: 'doubao',
+    }
+  }
+
   return {
     provider: 'openai',
     language: sttSettings.openaiLanguage.value.trim() || undefined,

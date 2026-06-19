@@ -18,7 +18,8 @@ export interface OpenaiTtsOptions {
   voice?: string
   rate?: string   // Edge TTS rate format, e.g. "+20%"
   pitch?: string  // Edge TTS pitch format, e.g. "-8Hz"
-  provider?: 'edge' | 'openai' | 'custom'
+  stylePrompt?: string
+  provider?: 'edge' | 'openai' | 'custom' | 'doubao'
 }
 
 export interface MimoTtsOptions {

@@ -21,6 +21,7 @@ import {
 import { useGlobalSpeech } from "@/composables/useSpeech";
 import { useVoiceSettings } from "@/composables/useVoiceSettings";
 import { speedToEdgeRate, hzToEdgePitch } from "@/utils/ttsHelpers";
+import { formatChatTimestamp } from "@/utils/chat-timestamp";
 
 const TOOL_PAYLOAD_DISPLAY_LIMIT = 1000;
 const JSON_STRING_DISPLAY_LIMIT = 200;
@@ -293,10 +294,7 @@ function formatDuration(ms: number): string {
   return r === 0 ? `${m}m` : `${m}m ${r}s`;
 }
 
-const timeStr = computed(() => {
-  const d = new Date(props.message.timestamp);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-});
+const timeStr = computed(() => formatChatTimestamp(props.message.timestamp));
 
 function isImage(type: string): boolean {
   return type.startsWith("image/");
@@ -568,22 +566,22 @@ const canPlaySpeech = computed(() => {
   // 只有 assistant 消息可以播放
   if (props.message.role !== 'assistant') return false
   if (!copyableContent.value) return false
-  // OpenAI / Custom / Edge / MiMo 不依赖浏览器 Web Speech API
-  if (voiceSettings.provider.value === 'openai' || voiceSettings.provider.value === 'custom' || voiceSettings.provider.value === 'edge' || voiceSettings.provider.value === 'mimo') return true
+  // OpenAI / Custom / Edge / MiMo / Doubao 不依赖浏览器 Web Speech API
+  if (voiceSettings.provider.value === 'openai' || voiceSettings.provider.value === 'custom' || voiceSettings.provider.value === 'edge' || voiceSettings.provider.value === 'mimo' || voiceSettings.provider.value === 'doubao') return true
   return speech.isSupported
 })
 
 const isPlayingThisMessage = computed(() => {
-  // OpenAI / Custom / Edge / MiMo 模式
-  if (voiceSettings.provider.value === 'openai' || voiceSettings.provider.value === 'custom' || voiceSettings.provider.value === 'edge' || voiceSettings.provider.value === 'mimo') {
+  // OpenAI / Custom / Edge / MiMo / Doubao 模式
+  if (voiceSettings.provider.value === 'openai' || voiceSettings.provider.value === 'custom' || voiceSettings.provider.value === 'edge' || voiceSettings.provider.value === 'mimo' || voiceSettings.provider.value === 'doubao') {
     return speech.currentCustomMessageId.value === props.message.id && speech.isCustomPlaying.value
   }
   return speech.currentMessageId.value === props.message.id && speech.isPlaying.value
 })
 
 const isPausedThisMessage = computed(() => {
-  // OpenAI / Custom / Edge / MiMo 模式
-  if (voiceSettings.provider.value === 'openai' || voiceSettings.provider.value === 'custom' || voiceSettings.provider.value === 'edge' || voiceSettings.provider.value === 'mimo') {
+  // OpenAI / Custom / Edge / MiMo / Doubao 模式
+  if (voiceSettings.provider.value === 'openai' || voiceSettings.provider.value === 'custom' || voiceSettings.provider.value === 'edge' || voiceSettings.provider.value === 'mimo' || voiceSettings.provider.value === 'doubao') {
     return speech.currentCustomMessageId.value === props.message.id && speech.isCustomPaused.value
   }
   return speech.currentMessageId.value === props.message.id && speech.isPaused.value
@@ -659,6 +657,17 @@ function handleSpeechToggle() {
     return
   }
 
+  if (voiceSettings.provider.value === 'doubao') {
+    speech.openaiToggle(props.message.id, content, {
+      provider: 'doubao',
+      baseUrl: voiceSettings.doubaoBaseUrl.value,
+      model: voiceSettings.doubaoModel.value,
+      voice: voiceSettings.doubaoVoice.value,
+      stylePrompt: voiceSettings.doubaoStylePrompt.value || undefined,
+    })
+    return
+  }
+
   // Web Speech API 模式
   if (voiceSettings.provider.value === 'webspeech') {
     speech.toggleBrowser(props.message.id, content, {
@@ -721,6 +730,14 @@ onMounted(() => {
           voiceCloneDataUri: voiceSettings.mimoVoiceCloneDataUri.value || undefined,
           voiceCloneFormat: voiceSettings.mimoVoiceCloneFormat.value,
           stylePrompt: voiceSettings.mimoStylePrompt.value || undefined,
+        }).catch(handleAutoplayTtsError)
+      } else if (voiceSettings.provider.value === 'doubao') {
+        void speech.openaiPlay(props.message.id, content, {
+          provider: 'doubao',
+          baseUrl: voiceSettings.doubaoBaseUrl.value,
+          model: voiceSettings.doubaoModel.value,
+          voice: voiceSettings.doubaoVoice.value,
+          stylePrompt: voiceSettings.doubaoStylePrompt.value || undefined,
         }).catch(handleAutoplayTtsError)
       } else if (voiceSettings.provider.value === 'webspeech') {
         const text = speech.extractReadableText(content)

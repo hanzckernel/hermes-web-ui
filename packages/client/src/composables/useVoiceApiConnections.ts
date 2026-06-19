@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import {
   clearTtsSecret,
   fetchTtsSettings,
+  saveActiveTtsProvider,
   saveTtsSettings,
   type StoredTtsProvider,
   type TtsStoredSecretsInput,
@@ -24,19 +25,19 @@ import { VOICE_API_PRESETS } from '@/constants/voiceApiPresets'
 import type { VoiceApiConnection, VoiceApiKind, VoiceApiProvider, VoiceApiSavePayload } from '@/types/voice-api'
 
 function isStoredSttProvider(provider: VoiceApiProvider): provider is StoredSttProvider {
-  return provider === 'openai' || provider === 'custom'
+  return provider === 'openai' || provider === 'custom' || provider === 'doubao'
 }
 
 function isStoredTtsProvider(provider: VoiceApiProvider): provider is StoredTtsProvider {
-  return provider === 'edge' || provider === 'openai' || provider === 'custom' || provider === 'mimo'
+  return provider === 'edge' || provider === 'openai' || provider === 'custom' || provider === 'mimo' || provider === 'doubao'
 }
 
 function isSttProvider(provider: VoiceApiProvider): provider is SttProvider {
-  return provider === 'browser' || provider === 'openai' || provider === 'custom'
+  return provider === 'browser' || provider === 'openai' || provider === 'custom' || provider === 'doubao'
 }
 
 function isTtsProvider(provider: VoiceApiProvider): provider is StoredTtsProvider {
-  return provider === 'edge' || provider === 'openai' || provider === 'custom' || provider === 'mimo'
+  return provider === 'edge' || provider === 'openai' || provider === 'custom' || provider === 'mimo' || provider === 'doubao'
 }
 
 function stringSetting(settings: object, key: string): string {
@@ -93,6 +94,14 @@ export function useVoiceApiConnections() {
       vs.setMimoVoice(connection.voice || stringSetting(settings, 'voice') || vs.mimoVoice.value)
       vs.setMimoStylePrompt(stringSetting(settings, 'stylePrompt'))
       vs.setMimoVoiceDesignDesc(stringSetting(settings, 'voiceDesignDesc'))
+      return
+    }
+
+    if (connection.provider === 'doubao') {
+      vs.setDoubaoBaseUrl(connection.baseUrl || stringSetting(settings, 'baseUrl') || vs.doubaoBaseUrl.value)
+      vs.setDoubaoModel(connection.model || stringSetting(settings, 'model') || vs.doubaoModel.value)
+      vs.setDoubaoVoice(connection.voice || stringSetting(settings, 'voice') || vs.doubaoVoice.value)
+      vs.setDoubaoStylePrompt(stringSetting(settings, 'stylePrompt'))
     }
   }
 
@@ -155,6 +164,9 @@ export function useVoiceApiConnections() {
         fetchTtsSettings(),
         fetchSttSettings(),
       ])
+      if (ttsData.activeProvider && isTtsProvider(ttsData.activeProvider)) {
+        vs.setProvider(ttsData.activeProvider)
+      }
 
       const newConnections: VoiceApiConnection[] = [
         {
@@ -215,6 +227,9 @@ export function useVoiceApiConnections() {
 
     if (kind === 'tts') {
       applyTtsConnectionToLegacyState(connection)
+      if (isTtsProvider(connection.provider)) {
+        await saveActiveTtsProvider(connection.provider)
+      }
     } else {
       applySttConnectionToLegacyState(connection)
       if (isSttProvider(connection.provider)) {
@@ -234,6 +249,7 @@ export function useVoiceApiConnections() {
       const res = await saveTtsSettings(provider, {
         settings: payload.settings as TtsStoredSettings | undefined,
         secrets: payload.secrets as TtsStoredSecretsInput | undefined,
+        activeProvider: provider,
       })
       await refresh()
       await setActiveConnection('tts', `tts-${provider}`)

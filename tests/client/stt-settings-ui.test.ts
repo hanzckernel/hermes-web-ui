@@ -843,6 +843,57 @@ describe('VoiceSettings STT UI', () => {
     expect(wrapper.text()).not.toContain('raw-groq-secret')
   })
 
+  it('adds a Doubao STT preset through the unified add API modal', async () => {
+    mockSaveSttSettings.mockResolvedValue({
+      provider: 'doubao',
+      settings: {
+        baseUrl: 'https://openspeech.bytedance.com/api/v3/auc/bigmodel',
+        model: 'volc.seedasr.auc',
+        audioTranscode: 'ffmpeg',
+      },
+      secrets: { apiKey: '[stored]' },
+      updatedAt: 6,
+    })
+    mockFetchSttSettings
+      .mockResolvedValueOnce({ activeProvider: 'browser', providers: [] })
+      .mockResolvedValue({
+        activeProvider: 'doubao',
+        providers: [{
+          provider: 'doubao',
+          settings: {
+            baseUrl: 'https://openspeech.bytedance.com/api/v3/auc/bigmodel',
+            model: 'volc.seedasr.auc',
+            audioTranscode: 'ffmpeg',
+          },
+          secrets: { apiKey: '[stored]' },
+          updatedAt: 6,
+        }],
+      })
+
+    const wrapper = await mountComponent()
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text().includes('Add STT API'))!.trigger('click')
+    await flushPromises()
+    await wrapper.get('input[placeholder="models.chooseProvider"]').setValue('stt-doubao')
+    await flushPromises()
+    await wrapper.get('input[type="password"]').setValue('raw-doubao-api-key')
+    await wrapper.get('[data-testid="voice-provider-audio-transcode"]').setValue('ffmpeg')
+    await wrapper.findAll('button').find(button => button.text().includes('common.add'))!.trigger('click')
+    await flushPromises()
+
+    expect(mockSaveSttSettings).toHaveBeenCalledWith('doubao', expect.objectContaining({
+      activeProvider: 'doubao',
+      settings: expect.objectContaining({
+        baseUrl: 'https://openspeech.bytedance.com/api/v3/auc/bigmodel',
+        model: 'volc.seedasr.auc',
+        audioTranscode: 'ffmpeg',
+      }),
+      secrets: { apiKey: 'raw-doubao-api-key' },
+    }))
+    expect(wrapper.text()).not.toContain('raw-doubao-api-key')
+  })
+
   it('uses connection-first discovery without typing spam or overwriting manual models', async () => {
     mockProbeVoiceProvider.mockResolvedValue({
       ok: true,

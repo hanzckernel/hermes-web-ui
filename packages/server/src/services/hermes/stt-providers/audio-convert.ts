@@ -64,13 +64,14 @@ export async function isFfmpegAvailable(): Promise<boolean> {
 export async function transcodeToWav(
   input: Buffer,
   mimeType: string,
+  options: { normalizeWav?: boolean } = {},
 ): Promise<{ audio: Buffer; mimeType: string; fileName: string }> {
   if (!(await isFfmpegAvailable())) {
     return { audio: input, mimeType, fileName: '' }
   }
 
   // Already a WAV – no conversion needed.
-  if (mimeType === 'audio/wav' || mimeType === 'audio/x-wav') {
+  if (!options.normalizeWav && (mimeType === 'audio/wav' || mimeType === 'audio/x-wav')) {
     return { audio: input, mimeType, fileName: '' }
   }
 
@@ -94,5 +95,41 @@ export async function transcodeToWav(
     audio: wavBuffer,
     mimeType: 'audio/wav',
     fileName: 'audio.wav',
+  }
+}
+
+export async function transcodeToPcmS16le(
+  input: Buffer,
+  mimeType: string,
+  options: { sampleRate?: number } = {},
+): Promise<{ audio: Buffer; mimeType: string; fileName: string }> {
+  if (!(await isFfmpegAvailable())) {
+    return { audio: input, mimeType, fileName: '' }
+  }
+
+  const sampleRate = Number.isInteger(options.sampleRate) && Number(options.sampleRate) > 0
+    ? Number(options.sampleRate)
+    : 16000
+
+  const args = [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-i', 'pipe:0',
+    '-acodec', 'pcm_s16le',
+    '-ar', String(sampleRate),
+    '-ac', '1',
+    '-f', 's16le',
+    'pipe:1',
+  ]
+
+  const pcmBuffer = await runFfmpeg(args, input, TRANSCODE_TIMEOUT_MS)
+  if (pcmBuffer.length === 0) {
+    throw new Error('ffmpeg produced empty PCM output')
+  }
+
+  return {
+    audio: pcmBuffer,
+    mimeType: 'audio/x-pcm',
+    fileName: 'audio.pcm',
   }
 }

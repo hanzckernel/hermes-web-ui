@@ -11,7 +11,7 @@
 import type { Server, Socket } from 'socket.io'
 import { logger } from '../../logger'
 import { getSystemPrompt } from '../../../lib/llm-prompt'
-import { getSession, getSessionDetail } from '../../../db/hermes/session-store'
+import { clearSessionMessages, getSession, getSessionDetail  } from '../../../db/hermes/session-store'
 import { getActiveProfileName, getProfileDir, listProfileNamesFromDisk } from '../hermes-profile'
 import { AgentBridgeClient } from '../agent-bridge'
 import { getAgentBridgeManager } from '../agent-bridge/manager'
@@ -656,6 +656,79 @@ export class ChatRunSocket {
       const socket = this.socketForQueuedRun(sessionId, state.queue[0])
       if (socket) this.dequeueNextQueuedRun(socket, sessionId)
     }
+  }
+
+  clearSessionHistory(sessionId: string): { deleted: number; hadMemoryState: boolean } {
+    const deleted = clearSessionMessages(sessionId)
+    const state = this.sessionMap.get(sessionId)
+    const hadMemoryState = Boolean(state)
+    const messagePageLimit = state?.messagePageLimit
+    if (state) {
+      state.abortController?.abort()
+      if (state.isWorking && isBridgeRunSource(state.source)) {
+        const profile = state.profile
+        void this.bridge.interrupt(sessionId, 'Session cleared', profile)
+          .catch(err => logger.warn(err, '[chat-run-socket] failed to interrupt bridge run while clearing session %s', sessionId))
+      }
+      state.messages = []
+      state.messageTotal = 0
+      state.messageLoadedCount = 0
+      state.hasMoreBefore = false
+      state.inputTokens = 0
+      state.outputTokens = 0
+      state.contextTokens = 0
+      state.events = []
+      state.queue = []
+      state.bridgePendingAssistantContent = undefined
+      state.bridgePendingReasoningContent = undefined
+      state.bridgePendingToolCallMarkup = undefined
+      state.bridgeOutput = undefined
+      state.bridgePendingTools = undefined
+      state.bridgeCompressionResults = undefined
+      state.responseRun = undefined
+      state.activeRunMarker = undefined
+      state.runId = undefined
+      state.abortController = undefined
+      state.isAborting = false
+      state.isWorking = false
+      state.profile = undefined
+      this.sessionMap.delete(sessionId)
+    }
+    this.nsp.emit('session.command', {
+      event: 'session.command',
+      session_id: sessionId,
+      command: 'clear',
+      ok: true,
+      action: 'clear',
+      clearHistory: true,
+      source: 'mcu',
+      deleted,
+      memory_cleared: hadMemoryState,
+    })
+    this.nsp.emit('resumed', {
+      session_id: sessionId,
+      messages: [],
+      messageTotal: 0,
+      messageLoadedCount: 0,
+      messagePageLimit,
+      hasMoreBefore: false,
+      isWorking: false,
+      isAborting: false,
+      events: [],
+      inputTokens: 0,
+      outputTokens: 0,
+      contextTokens: 0,
+      queueLength: 0,
+      queueMessages: [],
+    })
+    this.nsp.emit('run.queued', {
+      event: 'run.queued',
+      session_id: sessionId,
+      queue_length: 0,
+      queued_messages: [],
+    })
+    logger.info({ sessionId, deleted, hadMemoryState }, '[chat-run-socket] cleared session history and memory state')
+    return { deleted, hadMemoryState }
   }
 
   private socketForQueuedRun(sessionId: string, next?: QueuedRun): Socket | null {

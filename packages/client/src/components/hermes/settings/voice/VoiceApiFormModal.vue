@@ -4,6 +4,7 @@ import { NModal, NForm, NFormItem, NInput, NButton, NSelect, useMessage } from '
 import { useI18n } from 'vue-i18n'
 import { probeVoiceProvider, type VoiceProviderProbeModel } from '@/api/hermes/voice-provider-probe'
 import { VOICE_API_PRESETS } from '@/constants/voiceApiPresets'
+import { DOUBAO_TTS_2_RESOURCE_ID, DOUBAO_TTS_DEFAULT_VOICE, DOUBAO_TTS_VOICE_OPTIONS, doubaoTtsResourceForVoice } from '@/constants/doubaoTtsVoices'
 import type { VoiceApiKind, VoiceApiProviderCompatibility } from '@/types/voice-api'
 
 const props = defineProps<{
@@ -30,6 +31,7 @@ const formData = ref({
   baseUrl: '',
   apiKey: '',
   model: '',
+  voice: '',
   audioTranscode: 'none',
 })
 
@@ -59,6 +61,7 @@ const selectedPreset = computed(() =>
 )
 
 const isCustomProvider = computed(() => selectedPreset.value?.provider === 'custom')
+const isDoubaoTtsPreset = computed(() => props.kind === 'tts' && selectedPreset.value?.provider === 'doubao')
 const canProbeModels = computed(() => compatibility.value === 'openai-compatible')
 const modelOptions = computed(() => {
   const discovered = probeModels.value.map(model => ({
@@ -75,6 +78,17 @@ const sttAudioTranscodeOptions = computed(() => [
   { label: t('settings.voice.sttAudioTranscodeNone'), value: 'none' },
   { label: t('settings.voice.sttAudioTranscodeFfmpeg'), value: 'ffmpeg' },
 ])
+const doubaoVoiceOptions = computed(() => {
+  const current = formData.value.voice.trim()
+  const presetOptions = DOUBAO_TTS_VOICE_OPTIONS.map(option => ({
+    label: option.label,
+    value: option.value,
+  }))
+  if (current && !DOUBAO_TTS_VOICE_OPTIONS.some(option => option.value === current)) {
+    return [{ label: current, value: current }, ...presetOptions]
+  }
+  return presetOptions
+})
 
 const normalizedBaseUrl = computed(() => normalizeBaseUrl(formData.value.baseUrl))
 const baseUrlError = computed(() => {
@@ -105,6 +119,7 @@ const canSave = computed(() => {
     if (validateBaseUrl(formData.value.baseUrl)) return false
   }
   if (selectedPreset.value.capabilities?.models && !formData.value.model.trim()) return false
+  if (isDoubaoTtsPreset.value && !formData.value.voice.trim()) return false
   return true
 })
 const connectHelpText = computed(() => {
@@ -141,7 +156,7 @@ onBeforeUnmount(() => cancelProbe())
 function resetForm() {
   selectedPresetId.value = null
   compatibility.value = 'openai-compatible'
-  formData.value = { baseUrl: '', apiKey: '', model: '', audioTranscode: 'none' }
+  formData.value = { baseUrl: '', apiKey: '', model: '', voice: '', audioTranscode: 'none' }
   modelManuallyEdited.value = false
   modelTouched.value = false
   baseUrlTouched.value = false
@@ -194,9 +209,11 @@ function handlePresetChange(id: string) {
   selectedPresetId.value = id
   const preset = VOICE_API_PRESETS.find(p => p.id === id)
   compatibility.value = preset?.provider === 'custom' ? 'openai-compatible' : (preset?.provider === 'openai' ? 'openai-compatible' : 'manual')
+  const isDoubaoTts = props.kind === 'tts' && preset?.provider === 'doubao'
   formData.value = {
     baseUrl: preset?.baseUrl || '',
-    model: preset?.defaultModel || '',
+    model: isDoubaoTts ? DOUBAO_TTS_2_RESOURCE_ID : (preset?.defaultModel || ''),
+    voice: isDoubaoTts ? DOUBAO_TTS_DEFAULT_VOICE : '',
     apiKey: '',
     audioTranscode: 'none',
   }
@@ -211,6 +228,13 @@ function handleModelUpdate(value: string) {
   formData.value.model = value || ''
   modelManuallyEdited.value = true
   modelTouched.value = true
+}
+
+function handleDoubaoVoiceUpdate(value: string) {
+  formData.value.voice = value || ''
+  formData.value.model = doubaoTtsResourceForVoice(value) || DOUBAO_TTS_2_RESOURCE_ID
+  modelTouched.value = true
+  modelManuallyEdited.value = false
 }
 
 function applyRecommendedModel() {
@@ -318,6 +342,7 @@ async function handleSave() {
       settings: {
         baseUrl: normalizeBaseUrl(formData.value.baseUrl),
         model: formData.value.model.trim(),
+        ...(props.kind === 'tts' && formData.value.voice.trim() ? { voice: formData.value.voice.trim() } : {}),
         ...(props.kind === 'stt' ? { audioTranscode: formData.value.audioTranscode } : {}),
       },
       secrets: {
@@ -438,6 +463,24 @@ async function handleSave() {
           </div>
           <div v-else-if="probeModels.length" class="helper-text">{{ t('settings.voice.modelsDiscovered', { count: probeModels.length }) }}</div>
           <div v-else-if="probeErrorSummary" class="helper-text">{{ t('settings.voice.discoveryFailedManualFallback') }}</div>
+        </section>
+
+        <section v-if="isDoubaoTtsPreset" class="form-section">
+          <div class="section-heading">
+            <span>{{ t('settings.voice.voice') }}</span>
+            <small>{{ t('settings.voice.doubaoVoiceHint') }}</small>
+          </div>
+
+          <NFormItem :label="t('settings.voice.voice')">
+            <NSelect
+              v-model:value="formData.voice"
+              :options="doubaoVoiceOptions"
+              tag
+              filterable
+              data-testid="voice-provider-voice"
+              @update:value="handleDoubaoVoiceUpdate"
+            />
+          </NFormItem>
         </section>
 
         <section v-if="kind === 'stt'" class="form-section">

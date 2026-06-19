@@ -35,23 +35,29 @@ export interface TtsProviderSettingsResponse {
 
 export interface FetchTtsSettingsResponse {
   providers: TtsProviderSettingsResponse[]
+  activeProvider?: StoredTtsProvider | null
+}
+
+function normalizeActiveProvider(value: unknown): StoredTtsProvider | null {
+  return value === 'edge' || value === 'openai' || value === 'custom' || value === 'mimo' || value === 'doubao' ? value : null
 }
 
 function normalizeProviders(body: unknown): FetchTtsSettingsResponse {
   if (body && typeof body === 'object') {
-    const payload = body as { providers?: unknown; settings?: unknown }
+    const payload = body as { providers?: unknown; settings?: unknown; activeProvider?: unknown }
+    const activeProvider = normalizeActiveProvider(payload.activeProvider)
     if (Array.isArray(payload.providers)) {
-      return { providers: payload.providers as TtsProviderSettingsResponse[] }
+      return { providers: payload.providers as TtsProviderSettingsResponse[], activeProvider }
     }
     if (Array.isArray(payload.settings)) {
-      return { providers: payload.settings as TtsProviderSettingsResponse[] }
+      return { providers: payload.settings as TtsProviderSettingsResponse[], activeProvider }
     }
   }
-  return { providers: [] }
+  return { providers: [], activeProvider: null }
 }
 
 export async function fetchTtsSettings(): Promise<FetchTtsSettingsResponse> {
-  const body = await request<{ providers?: TtsProviderSettingsResponse[]; settings?: TtsProviderSettingsResponse[] }>(
+  const body = await request<{ providers?: TtsProviderSettingsResponse[]; settings?: TtsProviderSettingsResponse[]; activeProvider?: StoredTtsProvider | null }>(
     '/api/hermes/tts/settings',
   )
   return normalizeProviders(body)
@@ -59,7 +65,7 @@ export async function fetchTtsSettings(): Promise<FetchTtsSettingsResponse> {
 
 export async function saveTtsSettings(
   provider: StoredTtsProvider,
-  payload: { settings?: TtsStoredSettings; secrets?: TtsStoredSecretsInput },
+  payload: { settings?: TtsStoredSettings; secrets?: TtsStoredSecretsInput; activeProvider?: StoredTtsProvider },
 ): Promise<TtsProviderSettingsResponse> {
   const body = await request<TtsProviderSettingsResponse | { setting: TtsProviderSettingsResponse }>(
     `/api/hermes/tts/settings/${provider}`,
@@ -69,6 +75,17 @@ export async function saveTtsSettings(
     },
   )
   return typeof body === 'object' && body !== null && 'setting' in body ? body.setting : body
+}
+
+export async function saveActiveTtsProvider(provider: StoredTtsProvider): Promise<StoredTtsProvider> {
+  const body = await request<{ activeProvider: StoredTtsProvider }>(
+    '/api/hermes/tts/settings/active',
+    {
+      method: 'PUT',
+      body: JSON.stringify({ provider }),
+    },
+  )
+  return body.activeProvider
 }
 
 export async function clearTtsSecret(

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockIo, mockSocket, sockets, socketHandlers, resetMockSockets } = vi.hoisted(() => {
+const { mockIo, mockSocket, sockets, socketHandlers, mockWebSockets, MockWebSocket, resetMockSockets } = vi.hoisted(() => {
   function createMockSocket(id: string) {
     const handlers = new Map<string, (...args: any[]) => void>()
     const socket: any = {
@@ -11,6 +11,7 @@ const { mockIo, mockSocket, sockets, socketHandlers, resetMockSockets } = vi.hoi
         return socket
       }),
       emit: vi.fn(),
+      removeAllListeners: vi.fn(),
       disconnect: vi.fn(),
     }
     return socket
@@ -27,6 +28,25 @@ const { mockIo, mockSocket, sockets, socketHandlers, resetMockSockets } = vi.hoi
   const resetMockSockets = () => {
     sockets.length = 0
     mockSocket.__handlers.clear()
+    mockWebSockets.length = 0
+  }
+
+  const mockWebSockets: any[] = []
+  class MockWebSocket {
+    static OPEN = 1
+    readyState = MockWebSocket.OPEN
+    __handlers = new Map<string, (...args: any[]) => void>()
+    send = vi.fn()
+    close = vi.fn()
+
+    constructor(public url: string) {
+      mockWebSockets.push(this)
+    }
+
+    on(event: string, handler: (...args: any[]) => void) {
+      this.__handlers.set(event, handler)
+      return this
+    }
   }
 
   return {
@@ -34,12 +54,18 @@ const { mockIo, mockSocket, sockets, socketHandlers, resetMockSockets } = vi.hoi
     sockets,
     mockSocket,
     mockIo,
+    mockWebSockets,
+    MockWebSocket,
     resetMockSockets,
   }
 })
 
 vi.mock('socket.io-client', () => ({
   io: mockIo,
+}))
+
+vi.mock('ws', () => ({
+  default: MockWebSocket,
 }))
 
 describe('outbound relay client', () => {
@@ -85,6 +111,132 @@ describe('outbound relay client', () => {
     expect(mockSocket.emit).toHaveBeenCalledWith('relay.ready', {
       capabilities: ['http.request', 'socket.chat-run'],
       instanceId: 'studio-1',
+    })
+  })
+
+  it('queues missing-STT prompt audio from websocket MCU voice turns', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      ok: false,
+      audio: {
+        text: 'STT is not configured',
+        url: 'https://cdn.example.com/missing-stt.pcm',
+        mimeType: 'audio/x-pcm',
+        sampleRate: 16000,
+        channels: 2,
+        durationMs: 1800,
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    const { startOutboundRelayClient } = await import('../../packages/server/src/services/global-agent/outbound-relay-client')
+
+    startOutboundRelayClient({
+      relayUrl: 'ws://device.local:8787/',
+      relayProtocol: 'websocket',
+      userToken: 'user-jwt',
+      localBaseUrl: 'http://127.0.0.1:8648',
+      fetchImpl: fetchImpl as any,
+    })
+
+    const ws = mockWebSockets[0]
+    expect(ws).toBeInstanceOf(MockWebSocket)
+    ws.__handlers.get('open')?.()
+    ws.__handlers.get('message')?.(JSON.stringify({
+      type: 'voice.recorded',
+      interactionId: 'voice-1',
+      mimeType: 'audio/wav',
+      profile: 'default',
+    }), false)
+    ws.__handlers.get('message')?.(Buffer.from('wav-audio'), true)
+
+    await vi.waitFor(() => {
+      expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"audio.enqueue"'))
+    })
+    const enqueuePayload = JSON.parse(
+      ws.send.mock.calls
+        .map(([payload]: [string]) => payload)
+        .find((payload: string) => payload.includes('"audio.enqueue"')),
+    )
+    expect(enqueuePayload).toMatchObject({
+      type: 'audio.enqueue',
+      interactionId: 'voice-1',
+      segmentId: 'voice-1-prompt',
+      text: 'STT is not configured',
+      url: 'https://cdn.example.com/missing-stt.pcm',
+      mimeType: 'audio/x-pcm',
+      channels: 2,
+      sampleRate: 16000,
+    })
+
+    ws.__handlers.get('message')?.(JSON.stringify({
+      type: 'audio.done',
+      segmentId: 'voice-1-prompt',
+    }), false)
+    await vi.waitFor(() => {
+      expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"status":"completed"'))
+    })
+  })
+
+  it('queues the hosted TTS-failed prompt when websocket MCU speech synthesis fails', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/api/hermes/mcu/voice-turn')) {
+        return new Response(JSON.stringify({ ok: true, transcript: '你好' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ error: 'tts down' }), {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    const { startOutboundRelayClient } = await import('../../packages/server/src/services/global-agent/outbound-relay-client')
+
+    startOutboundRelayClient({
+      relayUrl: 'ws://device.local:8787/',
+      relayProtocol: 'websocket',
+      userToken: 'user-jwt',
+      localBaseUrl: 'http://127.0.0.1:8648',
+      fetchImpl: fetchImpl as any,
+    })
+
+    const ws = mockWebSockets[0]
+    ws.__handlers.get('open')?.()
+    ws.__handlers.get('message')?.(JSON.stringify({
+      type: 'voice.recorded',
+      interactionId: 'voice-tts-fail',
+      mimeType: 'audio/wav',
+      profile: 'default',
+    }), false)
+    ws.__handlers.get('message')?.(Buffer.from('wav-audio'), true)
+
+    await vi.waitFor(() => {
+      expect(mockIo).toHaveBeenCalledWith('http://127.0.0.1:8648/chat-run', expect.any(Object))
+    })
+    const localSocket = sockets.at(-1)
+    localSocket.__handlers.get('connect')?.()
+    localSocket.__handlers.get('message.delta')?.({ delta: '你好' })
+    localSocket.__handlers.get('run.completed')?.({})
+
+    await vi.waitFor(() => {
+      expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('tts-synthesize-failed-xiaohe.s16le.pcm'))
+    })
+    const enqueuePayload = JSON.parse(
+      ws.send.mock.calls
+        .map(([payload]: [string]) => payload)
+        .find((payload: string) => payload.includes('tts-synthesize-failed-xiaohe.s16le.pcm')),
+    )
+    expect(enqueuePayload).toMatchObject({
+      type: 'audio.enqueue',
+      interactionId: 'voice-tts-fail',
+      segmentId: 'voice-tts-fail-tts-1-failed-prompt',
+      text: '当前文字转语音失败了，请配置下文字转语音再使用哦',
+      url: 'https://ekko-hermes-studio.oss-cn-beijing.aliyuncs.com/tts-synthesize-failed-xiaohe.s16le.pcm',
+      mimeType: 'audio/x-pcm',
+      format: 's16le',
+      channels: 1,
+      sampleRate: 16000,
     })
   })
 

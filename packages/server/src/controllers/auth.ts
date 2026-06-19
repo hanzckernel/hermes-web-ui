@@ -24,7 +24,7 @@ import {
 } from '../db/hermes/users-store'
 import { issueUserJwt } from '../middleware/user-auth'
 import { listProfileNamesFromDisk } from '../services/hermes/hermes-profile'
-import { startOutboundRelayClient } from '../services/global-agent/outbound-relay-client'
+import { startOutboundRelayClient, stopOutboundRelayClient } from '../services/global-agent/outbound-relay-client'
 
 /**
  * GET /api/auth/status
@@ -230,11 +230,17 @@ function normalizeRelayUrl(input: string): string | null {
   }
 }
 
+function requestBaseUrl(ctx: Context): string | undefined {
+  const host = ctx.get('host').trim()
+  if (!host) return undefined
+  return `${ctx.protocol || 'http'}://${host}`
+}
+
 /**
  * POST /api/auth/mcu-login
- * Authenticate with the existing username/password login and connect this
- * Hermes Studio instance to the relay URL provided by an MCU/device client.
- * Body: { token, url, id, account, password }.
+ * Authenticate with the existing username/password login for an MCU/device.
+ * When a legacy relay URL is provided, connect this Hermes Studio instance to it.
+ * Body: { token, id, account, password, url? }.
  */
 export async function microcontrollerLogin(ctx: Context) {
   const {
@@ -251,14 +257,14 @@ export async function microcontrollerLogin(ctx: Context) {
     password?: string
   }
 
-  if (!relayToken || !url || !id || !account || !password) {
+  if (!relayToken || !id || !account || !password) {
     ctx.status = 400
-    ctx.body = { error: 'token, url, id, account and password are required' }
+    ctx.body = { error: 'token, id, account and password are required' }
     return
   }
 
-  const relayUrl = normalizeRelayUrl(url)
-  if (!relayUrl) {
+  const relayUrl = typeof url === 'string' && url.trim() ? normalizeRelayUrl(url) : null
+  if (url && !relayUrl) {
     ctx.status = 400
     ctx.body = { error: 'url must be a valid http, https, ws, or wss URL' }
     return
@@ -267,25 +273,32 @@ export async function microcontrollerLogin(ctx: Context) {
   const result = await passwordLogin(ctx, account, password)
   if (!result.ok) return
 
-  const client = startOutboundRelayClient({
-    connectionId: id.trim(),
-    relayUrl,
-    relayToken,
-    instanceId: id.trim(),
-  })
-  if (!client) {
-    ctx.status = 400
-    ctx.body = { error: 'Failed to start relay client' }
-    return
+  const connectionId = id.trim()
+  stopOutboundRelayClient(connectionId)
+  if (relayUrl) {
+    const client = startOutboundRelayClient({
+      connectionId,
+      relayUrl,
+      relayToken,
+      userToken: result.token,
+      instanceId: connectionId,
+      localBaseUrl: requestBaseUrl(ctx),
+      relayProtocol: relayUrl.startsWith('ws://') || relayUrl.startsWith('wss://') ? 'websocket' : 'socket.io',
+    })
+    if (!client) {
+      ctx.status = 400
+      ctx.body = { error: 'Failed to start relay client' }
+      return
+    }
   }
 
   ctx.body = {
     token: result.token,
     profiles: accessibleProfileNames(result.user),
     relay: {
-      connected: true,
-      id: id.trim(),
-      url: relayUrl,
+      connected: Boolean(relayUrl),
+      id: connectionId,
+      ...(relayUrl ? { url: relayUrl } : {}),
     },
   }
 }

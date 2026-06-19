@@ -5,6 +5,7 @@ import { logger } from './logger'
 import { deviceIdFromPublicKey, getPublicSystemInfo, type PublicSystemInfo } from './system-info'
 
 const DISCOVERY_VERSION = 1
+export const HERMES_DISCOVERY_PORT = 48640
 const DISCOVERY_PORT_OFFSET = 40_000
 const DEFAULT_HTTP_PORTS = [8648, 8748]
 const DEFAULT_SCAN_TIMEOUT_MS = 1000
@@ -56,7 +57,7 @@ type ScanOptions = {
   includeSelf?: boolean
 }
 
-let responderSocket: DiscoverySocket | null = null
+let responderSockets: DiscoverySocket[] = []
 let cache: LanDiscoveryState = {
   scanning: false,
   last_scanned_at: null,
@@ -85,6 +86,18 @@ export function discoveryPortForHttpPort(httpPort: number): number {
   const port = DISCOVERY_PORT_OFFSET + httpPort
   if (port > 65535) throw new Error(`HTTP port ${httpPort} cannot be mapped to a UDP discovery port`)
   return port
+}
+
+function discoveryPortsForHttpPorts(httpPorts: number[]): number[] {
+  const ports = new Set<number>([HERMES_DISCOVERY_PORT])
+  for (const httpPort of httpPorts) {
+    try {
+      ports.add(discoveryPortForHttpPort(httpPort))
+    } catch {
+      // Fixed discovery port still covers endpoints with unmappable HTTP ports.
+    }
+  }
+  return [...ports]
 }
 
 export function getLanEndpointKind(httpPort: number): LanEndpointKind {
@@ -209,54 +222,53 @@ async function buildAnnouncement(
 
 export function startLanDiscoveryResponder(options: StartResponderOptions = {}): DiscoverySocket | null {
   if (!isLanDiscoveryEnabled()) return null
-  if (responderSocket) return responderSocket
+  if (responderSockets.length > 0) return responderSockets[0]
 
   const httpPort = options.httpPort || config.port
-  let discoveryPort: number
-  try {
-    discoveryPort = discoveryPortForHttpPort(httpPort)
-  } catch (err) {
-    logger.warn(err, '[lan-discovery] disabled responder for unmappable HTTP port %d', httpPort)
-    return null
-  }
   const getSystemInfo = options.getSystemInfo || getPublicSystemInfo
-  const socket = dgram.createSocket('udp4')
+  const discoveryPorts = discoveryPortsForHttpPorts([httpPort])
 
-  socket.on('message', (message, rinfo) => {
-    if (!isPrivateOrLoopbackIPv4(rinfo.address)) return
-    const request = parseJson(message) as DiscoveryRequest | null
-    if (!request || request.type !== 'hermes.discover' || request.version !== DISCOVERY_VERSION) return
+  for (const discoveryPort of discoveryPorts) {
+    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
 
-    void buildAnnouncement(request, rinfo.address, httpPort, getSystemInfo)
-      .then(announcement => {
-        const response = Buffer.from(JSON.stringify(announcement))
-        socket.send(response, rinfo.port, rinfo.address)
-      })
-      .catch(err => logger.warn(err, '[lan-discovery] failed to build discovery response'))
-  })
+    socket.on('message', (message, rinfo) => {
+      if (!isPrivateOrLoopbackIPv4(rinfo.address)) return
+      const request = parseJson(message) as DiscoveryRequest | null
+      if (!request || request.type !== 'hermes.discover' || request.version !== DISCOVERY_VERSION) return
 
-  socket.on('error', err => {
-    logger.warn(err, '[lan-discovery] UDP responder error')
-  })
+      void buildAnnouncement(request, rinfo.address, httpPort, getSystemInfo)
+        .then(announcement => {
+          const response = Buffer.from(JSON.stringify(announcement))
+          socket.send(response, rinfo.port, rinfo.address)
+        })
+        .catch(err => logger.warn(err, '[lan-discovery] failed to build discovery response'))
+    })
 
-  socket.bind(discoveryPort, '0.0.0.0', () => {
-    socket.setBroadcast(true)
-    socket.unref()
-    logger.info('[lan-discovery] responder listening on udp://0.0.0.0:%d for http port %d', discoveryPort, httpPort)
-  })
+    socket.on('error', err => {
+      logger.warn(err, '[lan-discovery] UDP responder error on port %d', discoveryPort)
+    })
 
-  responderSocket = socket
-  return socket
+    socket.bind(discoveryPort, '0.0.0.0', () => {
+      socket.setBroadcast(true)
+      socket.unref()
+      logger.info('[lan-discovery] responder listening on udp://0.0.0.0:%d for http port %d', discoveryPort, httpPort)
+    })
+
+    responderSockets.push(socket)
+  }
+
+  return responderSockets[0] || null
 }
 
 export function stopLanDiscoveryResponder(): void {
-  if (!responderSocket) return
-  try {
-    responderSocket.close()
-  } catch {
-    // Ignore close races during shutdown/tests.
+  for (const socket of responderSockets) {
+    try {
+      socket.close()
+    } catch {
+      // Ignore close races during shutdown/tests.
+    }
   }
-  responderSocket = null
+  responderSockets = []
 }
 
 function normalizeDevice(data: any, sourceAddress: string, responseMs: number, seenAt: string): LanDeviceInfo | null {
@@ -341,13 +353,7 @@ export async function scanLanDevices(options: ScanOptions = {}): Promise<LanDisc
         version: DISCOVERY_VERSION,
         request_id: requestId,
       }))
-      for (const httpPort of httpPorts) {
-        let discoveryPort: number
-        try {
-          discoveryPort = discoveryPortForHttpPort(httpPort)
-        } catch {
-          continue
-        }
+      for (const discoveryPort of discoveryPortsForHttpPorts(httpPorts)) {
         for (const target of targetAddresses) {
           socket.send(packet, discoveryPort, target)
         }

@@ -484,8 +484,7 @@
                   "account",
                   "id",
                   "password",
-                  "token",
-                  "url"
+                  "token"
                 ]
               }
             }
@@ -6689,6 +6688,68 @@
         ]
       }
     },
+    "/api/hermes/mcu/audio/{file}": {
+      "get": {
+        "tags": [
+          "TTS"
+        ],
+        "summary": "Get :file",
+        "description": "GET /api/hermes/mcu/audio/:file",
+        "operationId": "mcuAudio",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/hermes/mcu/voice-turn": {
+      "post": {
+        "tags": [
+          "STT"
+        ],
+        "summary": "Create voice-turn",
+        "description": "POST /api/hermes/mcu/voice-turn",
+        "operationId": "mcuVoiceTurn",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
     "/api/hermes/media/apikey-image-generate": {
       "post": {
         "tags": [
@@ -9499,6 +9560,58 @@
             }
           }
         ]
+      }
+    },
+    "/api/hermes/stt/profile-status": {
+      "get": {
+        "tags": [
+          "STT"
+        ],
+        "summary": "Get profile-status",
+        "description": "GET /api/hermes/stt/profile-status",
+        "operationId": "profileStatus",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/hermes/stt/profile-status/missing-audio": {
+      "get": {
+        "tags": [
+          "STT"
+        ],
+        "summary": "Get missing-audio",
+        "description": "GET /api/hermes/stt/profile-status/missing-audio",
+        "operationId": "missingProfileAudio",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
       }
     },
     "/api/hermes/stt/settings": {

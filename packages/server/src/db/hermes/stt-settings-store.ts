@@ -2,7 +2,7 @@ import { getDb } from '../index'
 import { STT_PROVIDER_SETTINGS_TABLE, STT_USER_SETTINGS_TABLE } from './schemas'
 import { normalizeSafeTtsBaseUrl } from '../../services/hermes/tts-providers/url-safety'
 
-export type StoredSttProvider = 'openai' | 'custom'
+export type StoredSttProvider = 'openai' | 'custom' | 'doubao'
 export type ActiveSttProvider = 'browser' | StoredSttProvider
 
 const SETTINGS_KEYS = ['baseUrl', 'baseUrlPresets', 'model', 'language', 'prompt', 'audioTranscode'] as const
@@ -28,12 +28,13 @@ export class SttSettingsValidationError extends Error {}
 const STORED_MARKER = '[stored]'
 const MAX_PROMPT_LENGTH = 1000
 const MAX_BASE_URL_PRESETS = 20
-const PROVIDERS: StoredSttProvider[] = ['openai', 'custom']
+const PROVIDERS: StoredSttProvider[] = ['openai', 'custom', 'doubao']
 const ACTIVE_PROVIDERS: ActiveSttProvider[] = ['browser', ...PROVIDERS]
 const PROVIDER_SQL_PLACEHOLDERS = PROVIDERS.map(() => '?').join(', ')
 const PROVIDER_LABELS: Record<StoredSttProvider, string> = {
   openai: 'OpenAI STT',
   custom: 'Custom STT',
+  doubao: 'Doubao STT',
 }
 type StoredRow = {
   user_id: number

@@ -418,6 +418,7 @@ function startDaemon(port) {
     serverEnv.ComSpec = serverEnv.ComSpec?.trim() || windowsShell
   }
   const child = spawn(process.execPath, [serverEntry], {
+    cwd: pkgDir,
     detached: true,
     stdio: ['ignore', logStream, logStream],
     env: serverEnv,
@@ -723,6 +724,7 @@ Options:
         serverEnv.ComSpec = serverEnv.ComSpec?.trim() || windowsShell
       }
       const child = spawn(process.execPath, [serverEntry], {
+        cwd: pkgDir,
         stdio: 'inherit',
         env: serverEnv,
         windowsHide: true,

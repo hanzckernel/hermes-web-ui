@@ -404,6 +404,7 @@ export async function startWebUiServer(port = DEFAULT_PORT): Promise<string> {
   }
 
   serverProc = spawn(process.execPath, [entry], {
+    cwd: webuiDir(),
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

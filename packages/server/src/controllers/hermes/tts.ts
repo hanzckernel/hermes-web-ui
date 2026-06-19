@@ -1,14 +1,21 @@
 import type { Context } from 'koa'
+import { createReadStream } from 'fs'
+import { stat } from 'fs/promises'
+import { join } from 'path'
+import { config } from '../../config'
 import { textToSpeech, openaiCompatibleTts, speedToEdgeRate } from '../../services/hermes/tts'
 import { getTtsProvider } from '../../services/hermes/tts-providers'
 import { assertSafeResolvedTtsBaseUrl } from '../../services/hermes/tts-providers/url-safety'
 import {
+  assertActiveTtsProvider,
   assertStoredTtsProvider,
   clearStoredTtsSecret,
+  getActiveTtsProvider,
   getTtsProviderSetting,
   isStoredTtsProvider,
   listTtsProviderSettings,
   removeTtsBaseUrlPreset,
+  saveActiveTtsProvider,
   saveTtsProviderSetting,
   TtsSettingsValidationError,
 } from '../../db/hermes/tts-settings-store'
@@ -45,23 +52,41 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function mergeStoredTtsOptions(ctx: Context, providerName: string, options: Record<string, unknown>): Record<string, unknown> {
+  const nonEmptyRequestOptions = Object.fromEntries(
+    Object.entries(options).filter(([, value]) => value !== '' && value !== undefined && value !== null),
+  )
+  const requestOptionsWithoutApiKey = Object.fromEntries(
+    Object.entries(nonEmptyRequestOptions).filter(([key]) => key !== 'apiKey'),
+  )
+
   const userId = currentUserId(ctx)
   if (!userId || !isStoredTtsProvider(providerName)) {
-    return options
+    return nonEmptyRequestOptions
   }
 
   const stored = getTtsProviderSetting(userId, providerName, { includeSecrets: true })
-  if (!stored) return options
+  if (!stored) return nonEmptyRequestOptions
 
-  const requestOptions = Object.fromEntries(
-    Object.entries(options).filter(([, value]) => value !== '' && value !== undefined && value !== null),
-  )
+  const storedSecrets = stored.secrets.apiKey
+    ? stored.secrets
+    : {
+      ...stored.secrets,
+      ...(typeof nonEmptyRequestOptions.apiKey === 'string' ? { apiKey: nonEmptyRequestOptions.apiKey } : {}),
+    }
 
   return {
     ...stored.settings,
-    ...stored.secrets,
-    ...requestOptions,
+    ...storedSecrets,
+    ...requestOptionsWithoutApiKey,
   }
+}
+
+function resolveActiveTtsProvider(userId: number | null, settings = userId ? listTtsProviderSettings(userId) : []) {
+  if (!userId) return 'edge'
+  const active = getActiveTtsProvider(userId)
+  if (active) return active
+  const configured = settings.filter(setting => setting.provider !== 'edge')
+  return configured.length === 1 ? configured[0].provider : 'edge'
 }
 
 export async function listSettings(ctx: Context) {
@@ -69,8 +94,10 @@ export async function listSettings(ctx: Context) {
   if (!userId) return
 
   try {
+    const settings = listTtsProviderSettings(userId)
     ctx.body = {
-      settings: listTtsProviderSettings(userId),
+      settings,
+      activeProvider: resolveActiveTtsProvider(userId, settings),
     }
   } catch (error) {
     if (handleSettingsError(ctx, error)) return
@@ -83,14 +110,34 @@ export async function saveSettings(ctx: Context) {
   if (!userId) return
 
   const provider = ctx.params.provider || ''
-  const body = ctx.request.body as { settings?: unknown; secrets?: unknown } | undefined
+  const body = ctx.request.body as { settings?: unknown; secrets?: unknown; activeProvider?: unknown } | undefined
 
   try {
-    const setting = saveTtsProviderSetting(userId, assertStoredTtsProvider(provider), {
+    const storedProvider = assertStoredTtsProvider(provider)
+    const setting = saveTtsProviderSetting(userId, storedProvider, {
       settings: body?.settings,
       secrets: body?.secrets,
     })
-    ctx.body = { setting }
+    const activeProvider = body?.activeProvider === undefined
+      ? saveActiveTtsProvider(userId, storedProvider)
+      : saveActiveTtsProvider(userId, assertActiveTtsProvider(String(body.activeProvider)))
+
+    ctx.body = { setting, activeProvider }
+  } catch (error) {
+    if (handleSettingsError(ctx, error)) return
+    throw error
+  }
+}
+
+export async function saveActiveProvider(ctx: Context) {
+  const userId = authUserId(ctx)
+  if (!userId) return
+
+  const body = ctx.request.body as { provider?: unknown } | undefined
+
+  try {
+    const activeProvider = saveActiveTtsProvider(userId, assertActiveTtsProvider(String(body?.provider || '')))
+    ctx.body = { activeProvider }
   } catch (error) {
     if (handleSettingsError(ctx, error)) return
     throw error
@@ -375,9 +422,11 @@ export async function synthesize(ctx: Context) {
   }
 
   const requestOptions = asRecord(body.options)
-  const options = mergeStoredTtsOptions(ctx, body.provider || '', requestOptions)
+  const userId = currentUserId(ctx)
+  const providerName = body.provider || resolveActiveTtsProvider(userId)
+  const options = mergeStoredTtsOptions(ctx, providerName, requestOptions)
 
-  const provider = getTtsProvider(body.provider || '')
+  const provider = getTtsProvider(providerName)
   if (!provider) {
     ctx.status = 400
     ctx.body = { error: 'unknown TTS provider' }
@@ -514,4 +563,30 @@ export async function openaiProxy(ctx: Context) {
   ctx.set('Content-Length', String(audio.length))
   ctx.set('X-TTS-Engine', engine)
   ctx.body = audio
+}
+
+export async function mcuAudio(ctx: Context) {
+  const file = String(ctx.params.file || '').trim()
+  if (!/^[a-f0-9-]+\.pcm$/i.test(file)) {
+    ctx.status = 404
+    ctx.body = { error: 'audio not found' }
+    return
+  }
+
+  const audioPath = join(config.appHome, 'mcu-audio', file)
+  try {
+    const info = await stat(audioPath)
+    if (!info.isFile()) {
+      ctx.status = 404
+      ctx.body = { error: 'audio not found' }
+      return
+    }
+    ctx.set('Content-Type', 'audio/x-pcm')
+    ctx.set('Content-Length', String(info.size))
+    ctx.set('Cache-Control', 'no-store')
+    ctx.body = createReadStream(audioPath)
+  } catch {
+    ctx.status = 404
+    ctx.body = { error: 'audio not found' }
+  }
 }

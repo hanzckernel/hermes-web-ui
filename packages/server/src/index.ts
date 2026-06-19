@@ -27,7 +27,6 @@ import { refreshConfiguredProviderModelCatalogsInBackground } from './services/h
 import { scanLanDevices, startLanDiscoveryResponder } from './services/lan-discovery'
 import { getLanPeerSocketManager, getLanPeerSocketPath } from './services/lan-peer-socket'
 import { startGlobalAgentServer } from './services/global-agent/server'
-import { startOutboundRelayClient } from './services/global-agent/outbound-relay-client'
 import { logger } from './services/logger'
 import { createStaticCompressionMiddleware } from './middleware/static-compression'
 import { requireUserJwt, resolveUserProfile } from './middleware/user-auth'
@@ -59,8 +58,6 @@ let servers: any[] = []
 let chatRunServer: any = null
 let agentBridgeManager: any = null
 let desktopShutdownHandler: ShutdownHandler | null = null
-
-const LOCAL_GLOBAL_AGENT_CONNECTION_ID = 'local-global-agent'
 
 interface ListenResult {
   primary: any
@@ -341,15 +338,8 @@ export async function bootstrap() {
   chatRunServer.init()
 
   const loopbackBaseUrl = getLoopbackBaseUrl(server)
-  const globalAgentServer = startGlobalAgentServer(groupChatServer.getIO())
-  startOutboundRelayClient({
-    connectionId: LOCAL_GLOBAL_AGENT_CONNECTION_ID,
-    relayUrl: `${loopbackBaseUrl}${globalAgentServer.getNamespace()}`,
-    relayToken: globalAgentServer.getAuthToken(),
-    instanceId: LOCAL_GLOBAL_AGENT_CONNECTION_ID,
-    localBaseUrl: loopbackBaseUrl,
-  })
-  console.log('[bootstrap] local global agent connected')
+  startGlobalAgentServer(groupChatServer.getIO(), { localBaseUrl: loopbackBaseUrl })
+  console.log('[bootstrap] global agent server ready')
 
   // Session deleter — periodically drain pending session deletes
   const { SessionDeleter } = await import('./services/hermes/session-deleter')

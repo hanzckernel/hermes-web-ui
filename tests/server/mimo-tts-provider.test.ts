@@ -121,6 +121,32 @@ describe('mimoTtsProvider', () => {
     expect(getHeader(init?.headers, 'Authorization')).toBeUndefined()
   })
 
+  it('returns PCM content type when MiMo is asked for PCM audio', async () => {
+    const audioData = Buffer.from('mimo-pcm').toString('base64')
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      choices: [{ message: { audio: { data: audioData } } }],
+    }))
+
+    const result = await mimoTtsProvider.synthesize(
+      { text: 'Hello' },
+      {
+        baseUrl: 'https://mimo.example.com',
+        apiKey: 'secret',
+        model: 'mimo-v2.5-tts',
+        voice: 'verse',
+        format: 'pcm',
+      },
+    )
+
+    expect(getJsonBody().audio).toEqual({ format: 'pcm', voice: 'verse' })
+    expect(result).toEqual({
+      audio: Buffer.from(audioData, 'base64'),
+      contentType: 'audio/x-pcm',
+      engine: 'mimo',
+      provider: 'mimo',
+    })
+  })
+
   it('both mode sends both auth headers', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({
       choices: [{ message: { audio: { data: Buffer.from('ok').toString('base64') } } }],

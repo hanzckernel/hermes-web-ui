@@ -1,4 +1,4 @@
-export type TtsProviderId = 'edge' | 'openai' | 'custom' | 'mimo'
+export type TtsProviderId = 'edge' | 'openai' | 'custom' | 'mimo' | 'doubao'
 
 export interface TtsSynthesisRequest {
   text: string
@@ -25,6 +25,9 @@ export interface OpenaiTtsProviderOptions {
   voice?: string
   rate?: string
   pitch?: string
+  format?: string
+  sampleRate?: number
+  sample_rate?: number
 }
 
 export type MimoAuthMode = 'api-key' | 'bearer' | 'both'
@@ -41,7 +44,20 @@ export interface MimoTtsProviderOptions {
   voiceCloneDataUri?: string
   voiceCloneFormat?: 'mp3' | 'wav'
   stylePrompt?: string
+  format?: string
+}
+
+export interface DoubaoTtsProviderOptions {
+  baseUrl?: string
+  apiKey: string
+  model?: string
+  voice?: string
+  stylePrompt?: string
+  format?: string
+  sampleRate?: number
+  sample_rate?: number
 }
 
 export type OpenaiTtsProvider = TtsProvider<OpenaiTtsProviderOptions>
 export type MimoTtsProvider = TtsProvider<MimoTtsProviderOptions>
+export type DoubaoTtsProvider = TtsProvider<DoubaoTtsProviderOptions>

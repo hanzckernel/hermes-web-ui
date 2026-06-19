@@ -1,6 +1,6 @@
 import { request } from '../client'
 
-export type SttProvider = 'browser' | 'openai' | 'custom'
+export type SttProvider = 'browser' | 'openai' | 'custom' | 'doubao'
 export type StoredSttProvider = Exclude<SttProvider, 'browser'>
 
 export interface SttStoredSettings {
@@ -34,7 +34,7 @@ export interface FetchSttSettingsResponse {
 }
 
 function normalizeActiveProvider(value: unknown): SttProvider | null {
-  return value === 'browser' || value === 'openai' || value === 'custom' ? value : null
+  return value === 'browser' || value === 'openai' || value === 'custom' || value === 'doubao' ? value : null
 }
 
 function normalizeProviders(body: unknown): FetchSttSettingsResponse {

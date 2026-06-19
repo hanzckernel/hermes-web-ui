@@ -567,6 +567,27 @@ describe('VoiceDialogueControls', () => {
     expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('hello hermes')
   })
 
+  it('uses Doubao as a server-backed STT provider without client-side credentials', async () => {
+    const audio = new Blob(['captured audio'], { type: 'audio/webm' })
+    micStopMock.mockResolvedValueOnce(audio)
+
+    const { useSttSettings } = await import('../../packages/client/src/composables/useSttSettings')
+    useSttSettings().setProvider('doubao')
+
+    const { wrapper } = mountChatInput()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="voice-record-toggle"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="voice-record-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(transcribeSpeechMock).toHaveBeenCalledWith({
+      audio,
+      provider: 'doubao',
+    })
+  })
+
   it('uses browser speech recognition when the browser provider is selected and stages the transcript', async () => {
     browserStopMock.mockResolvedValueOnce('browser hello')
 

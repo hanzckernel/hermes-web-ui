@@ -121,7 +121,7 @@ function ttsOptionsFor(connection: VoiceApiConnection): Record<string, unknown> 
 
 function openaiOptionsFor(connection: VoiceApiConnection): OpenaiTtsOptions {
   const options = ttsOptionsFor(connection)
-  const provider = connection.provider === 'edge' || connection.provider === 'openai' || connection.provider === 'custom'
+  const provider = connection.provider === 'edge' || connection.provider === 'openai' || connection.provider === 'custom' || connection.provider === 'doubao'
     ? connection.provider
     : undefined
   return {
@@ -130,6 +130,7 @@ function openaiOptionsFor(connection: VoiceApiConnection): OpenaiTtsOptions {
     voice: typeof options.voice === 'string' ? options.voice : undefined,
     rate: typeof options.rate === 'string' ? options.rate : undefined,
     pitch: typeof options.pitch === 'string' ? options.pitch : undefined,
+    stylePrompt: typeof options.stylePrompt === 'string' ? options.stylePrompt : undefined,
     provider,
   }
 }
@@ -165,7 +166,7 @@ async function handleTtsTest(connection: VoiceApiConnection) {
   try {
     if (connection.provider === 'mimo') {
       await speech.mimoPlay(connection.id, text, mimoOptionsFor(connection))
-    } else if (connection.provider === 'edge' || connection.provider === 'openai' || connection.provider === 'custom') {
+    } else if (connection.provider === 'edge' || connection.provider === 'openai' || connection.provider === 'custom' || connection.provider === 'doubao') {
       await speech.openaiPlay(connection.id, text, openaiOptionsFor(connection))
     }
     setCardTestState(connection.id, 'success', t('settings.voice.testSuccess'))

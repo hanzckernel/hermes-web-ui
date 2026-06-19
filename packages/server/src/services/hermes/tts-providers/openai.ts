@@ -50,6 +50,7 @@ function createOpenaiCompatibleTtsProvider(id: 'openai' | 'custom', engine = id)
           input: text,
           ...(opts.rate ? { rate: opts.rate } : {}),
           ...(opts.pitch ? { pitch: opts.pitch } : {}),
+          ...(opts.format ? { response_format: opts.format } : {}),
         }),
         signal: req.signal,
       })

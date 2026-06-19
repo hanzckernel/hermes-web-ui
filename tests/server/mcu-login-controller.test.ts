@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const startOutboundRelayClientMock = vi.hoisted(() => vi.fn())
+const { startOutboundRelayClientMock, stopOutboundRelayClientMock } = vi.hoisted(() => ({
+  startOutboundRelayClientMock: vi.fn(),
+  stopOutboundRelayClientMock: vi.fn(),
+}))
 
 vi.mock('../../packages/server/src/services/global-agent/outbound-relay-client', () => ({
   startOutboundRelayClient: startOutboundRelayClientMock,
+  stopOutboundRelayClient: stopOutboundRelayClientMock,
 }))
 
 describe('MCU login controller', () => {
@@ -46,11 +50,10 @@ describe('MCU login controller', () => {
     } as any
   }
 
-  it('requires all MCU login fields', async () => {
+  it('requires MCU login identity and credential fields', async () => {
     const { ctrl } = await loadModules()
     const ctx = makeCtx({
       token: 'relay-token',
-      url: 'https://relay.example.com/global-agent',
       id: 'mcu-1',
       account: 'admin',
     })
@@ -58,7 +61,7 @@ describe('MCU login controller', () => {
     await ctrl.microcontrollerLogin(ctx)
 
     expect(ctx.status).toBe(400)
-    expect(ctx.body).toEqual({ error: 'token, url, id, account and password are required' })
+    expect(ctx.body).toEqual({ error: 'token, id, account and password are required' })
     expect(startOutboundRelayClientMock).not.toHaveBeenCalled()
   })
 
@@ -80,7 +83,40 @@ describe('MCU login controller', () => {
     expect(startOutboundRelayClientMock).not.toHaveBeenCalled()
   })
 
-  it('returns a user token and starts the outbound relay client', async () => {
+  it('returns a user token without starting outbound relay when url is omitted', async () => {
+    const { ctrl, users, auth } = await loadModules()
+    users.createUser({
+      username: 'ops',
+      password: 'secret123',
+      role: 'admin',
+      profiles: ['default', 'research'],
+      defaultProfile: 'research',
+    })
+    const ctx = makeCtx({
+      token: 'relay-token',
+      id: 'mcu-1',
+      account: 'ops',
+      password: 'secret123',
+    })
+
+    await ctrl.microcontrollerLogin(ctx)
+
+    expect(ctx.status).toBe(200)
+    expect(ctx.body.relay).toEqual({
+      connected: false,
+      id: 'mcu-1',
+    })
+    expect(ctx.body.profiles).toEqual(['research', 'default'])
+    expect(await auth.authenticateUserToken(ctx.body.token)).toEqual(expect.objectContaining({
+      username: 'ops',
+      role: 'admin',
+      profiles: ['research', 'default'],
+    }))
+    expect(stopOutboundRelayClientMock).toHaveBeenCalledWith('mcu-1')
+    expect(startOutboundRelayClientMock).not.toHaveBeenCalled()
+  })
+
+  it('returns a user token and starts the outbound relay client when url is provided', async () => {
     startOutboundRelayClientMock.mockReturnValue({ start: vi.fn() })
     const { ctrl, users, auth } = await loadModules()
     users.createUser({
@@ -112,11 +148,14 @@ describe('MCU login controller', () => {
       role: 'admin',
       profiles: ['research', 'default'],
     }))
+    expect(stopOutboundRelayClientMock).toHaveBeenCalledWith('mcu-1')
     expect(startOutboundRelayClientMock).toHaveBeenCalledWith({
       connectionId: 'mcu-1',
       relayUrl: 'https://relay.example.com/global-agent',
       relayToken: 'relay-token',
+      userToken: ctx.body.token,
       instanceId: 'mcu-1',
+      relayProtocol: 'socket.io',
     })
   })
 })

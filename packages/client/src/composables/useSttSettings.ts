@@ -45,7 +45,7 @@ const DEFAULT: SttSettingsData = {
 }
 
 function sanitize(data: Partial<SttSettingsData>): SttSettingsData {
-  const provider = data.provider === 'browser' || data.provider === 'openai' || data.provider === 'custom'
+  const provider = data.provider === 'browser' || data.provider === 'openai' || data.provider === 'custom' || data.provider === 'doubao'
     ? data.provider
     : DEFAULT.provider
 
@@ -206,6 +206,7 @@ function applyServerRow(row: SttProviderSettingsResponse) {
     customHasApiKey.value = Boolean(row.secrets.apiKey)
     customApiKey.value = ''
   }
+
 }
 
 function applyServerSttSettings(response: FetchSttSettingsResponse | SttProviderSettingsResponse[], authoritative = false) {

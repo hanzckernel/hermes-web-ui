@@ -48,11 +48,13 @@ describe('getTtsProvider', () => {
     const { edgeTtsProvider } = await import('../../packages/server/src/services/hermes/tts-providers/edge')
     const { customTtsProvider, openaiTtsProvider } = await import('../../packages/server/src/services/hermes/tts-providers/openai')
     const { mimoTtsProvider } = await import('../../packages/server/src/services/hermes/tts-providers/mimo')
+    const { doubaoTtsProvider } = await import('../../packages/server/src/services/hermes/tts-providers/doubao')
 
     expect(getTtsProvider('edge')).toBe(edgeTtsProvider)
     expect(getTtsProvider('openai')).toBe(openaiTtsProvider)
     expect(getTtsProvider('custom')).toBe(customTtsProvider)
     expect(getTtsProvider('mimo')).toBe(mimoTtsProvider)
+    expect(getTtsProvider('doubao')).toBe(doubaoTtsProvider)
     expect(getTtsProvider('unknown')).toBeUndefined()
   })
 })
@@ -79,6 +81,74 @@ describe('tts synthesize controller', () => {
     expect(getTtsProvider).toHaveBeenCalledWith('nope')
     expect(ctx.status).toBe(400)
     expect(ctx.body).toEqual({ error: 'unknown TTS provider' })
+  })
+
+  it('uses the active TTS provider when request provider is omitted', async () => {
+    const audio = Buffer.from('active-audio')
+    const provider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audio,
+        contentType: 'audio/mpeg',
+        engine: 'doubao',
+        provider: 'doubao',
+      }),
+    }
+    const getTtsProvider = vi.fn(() => provider)
+    const getActiveTtsProvider = vi.fn(() => 'doubao')
+    vi.doMock('../../packages/server/src/services/hermes/tts-providers', () => ({
+      getTtsProvider,
+    }))
+    vi.doMock('../../packages/server/src/db/hermes/tts-settings-store', async (importOriginal) => ({
+      ...await importOriginal<typeof import('../../packages/server/src/db/hermes/tts-settings-store')>(),
+      getActiveTtsProvider,
+    }))
+
+    const ctrl = await import('../../packages/server/src/controllers/hermes/tts')
+    const { ctx } = createMockCtx({ text: 'hello' })
+    ctx.state = { user: { id: 7 } }
+
+    await ctrl.synthesize(ctx)
+
+    expect(getActiveTtsProvider).toHaveBeenCalledWith(7)
+    expect(getTtsProvider).toHaveBeenCalledWith('doubao')
+    expect(provider.synthesize).toHaveBeenCalledWith(
+      { text: 'hello', signal: expect.any(AbortSignal) },
+      {},
+    )
+  })
+
+  it('falls back to Edge TTS when request and active providers are missing', async () => {
+    const audio = Buffer.from('edge-audio')
+    const provider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audio,
+        contentType: 'audio/mpeg',
+        engine: 'edge',
+        provider: 'edge',
+      }),
+    }
+    const getTtsProvider = vi.fn(() => provider)
+    const getActiveTtsProvider = vi.fn(() => null)
+    vi.doMock('../../packages/server/src/services/hermes/tts-providers', () => ({
+      getTtsProvider,
+    }))
+    vi.doMock('../../packages/server/src/db/hermes/tts-settings-store', async (importOriginal) => ({
+      ...await importOriginal<typeof import('../../packages/server/src/db/hermes/tts-settings-store')>(),
+      getActiveTtsProvider,
+    }))
+
+    const ctrl = await import('../../packages/server/src/controllers/hermes/tts')
+    const { ctx } = createMockCtx({ text: 'hello' })
+    ctx.state = { user: { id: 7 } }
+
+    await ctrl.synthesize(ctx)
+
+    expect(getActiveTtsProvider).toHaveBeenCalledWith(7)
+    expect(getTtsProvider).toHaveBeenCalledWith('edge')
+    expect(provider.synthesize).toHaveBeenCalledWith(
+      { text: 'hello', signal: expect.any(AbortSignal) },
+      {},
+    )
   })
 
   it('returns 400 for missing or blank text', async () => {
@@ -158,6 +228,159 @@ describe('tts synthesize controller', () => {
       'X-TTS-Provider': 'mimo',
     })
     expect(ctx.body).toBe(audio)
+  })
+
+  it('keeps request API keys when no stored TTS setting exists', async () => {
+    const audio = Buffer.from('openai-audio')
+    const provider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audio,
+        contentType: 'audio/mpeg',
+        engine: 'openai',
+        provider: 'openai',
+      }),
+    }
+    const getTtsProvider = vi.fn(() => provider)
+    const getTtsProviderSetting = vi.fn(() => null)
+    vi.doMock('../../packages/server/src/services/hermes/tts-providers', () => ({
+      getTtsProvider,
+    }))
+    vi.doMock('../../packages/server/src/db/hermes/tts-settings-store', async (importOriginal) => ({
+      ...await importOriginal<typeof import('../../packages/server/src/db/hermes/tts-settings-store')>(),
+      getTtsProviderSetting,
+    }))
+
+    const ctrl = await import('../../packages/server/src/controllers/hermes/tts')
+    const { ctx } = createMockCtx({
+      provider: 'openai',
+      text: 'Hello world',
+      options: {
+        baseUrl: 'https://api.openai.com/v1/audio/speech',
+        apiKey: 'request-secret',
+        model: 'tts-1',
+        voice: 'alloy',
+      },
+    })
+    ctx.state = { user: { id: 7 } }
+
+    await ctrl.synthesize(ctx)
+
+    expect(getTtsProviderSetting).toHaveBeenCalledWith(7, 'openai', { includeSecrets: true })
+    expect(provider.synthesize).toHaveBeenCalledWith(
+      { text: 'Hello world', signal: expect.any(AbortSignal) },
+      {
+        baseUrl: 'https://api.openai.com/v1/audio/speech',
+        apiKey: 'request-secret',
+        model: 'tts-1',
+        voice: 'alloy',
+      },
+    )
+  })
+
+  it('uses request API keys only when the stored TTS setting has no secret', async () => {
+    const audio = Buffer.from('openai-audio')
+    const provider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audio,
+        contentType: 'audio/mpeg',
+        engine: 'openai',
+        provider: 'openai',
+      }),
+    }
+    const getTtsProvider = vi.fn(() => provider)
+    const getTtsProviderSetting = vi.fn(() => ({
+      provider: 'openai',
+      label: 'OpenAI TTS',
+      settings: {
+        baseUrl: 'https://stored.example.test/v1/audio/speech',
+        model: 'stored-model',
+      },
+      secrets: {},
+    }))
+    vi.doMock('../../packages/server/src/services/hermes/tts-providers', () => ({
+      getTtsProvider,
+    }))
+    vi.doMock('../../packages/server/src/db/hermes/tts-settings-store', async (importOriginal) => ({
+      ...await importOriginal<typeof import('../../packages/server/src/db/hermes/tts-settings-store')>(),
+      getTtsProviderSetting,
+    }))
+
+    const ctrl = await import('../../packages/server/src/controllers/hermes/tts')
+    const { ctx } = createMockCtx({
+      provider: 'openai',
+      text: 'Hello world',
+      options: {
+        apiKey: 'request-secret',
+        voice: 'alloy',
+      },
+    })
+    ctx.state = { user: { id: 7 } }
+
+    await ctrl.synthesize(ctx)
+
+    expect(provider.synthesize).toHaveBeenCalledWith(
+      { text: 'Hello world', signal: expect.any(AbortSignal) },
+      {
+        baseUrl: 'https://stored.example.test/v1/audio/speech',
+        model: 'stored-model',
+        apiKey: 'request-secret',
+        voice: 'alloy',
+      },
+    )
+  })
+
+  it('does not let request API keys replace a stored TTS secret', async () => {
+    const audio = Buffer.from('openai-audio')
+    const provider = {
+      synthesize: vi.fn().mockResolvedValue({
+        audio,
+        contentType: 'audio/mpeg',
+        engine: 'openai',
+        provider: 'openai',
+      }),
+    }
+    const getTtsProvider = vi.fn(() => provider)
+    const getTtsProviderSetting = vi.fn(() => ({
+      provider: 'openai',
+      label: 'OpenAI TTS',
+      settings: {
+        baseUrl: 'https://stored.example.test/v1/audio/speech',
+        model: 'stored-model',
+      },
+      secrets: {
+        apiKey: 'stored-secret',
+      },
+    }))
+    vi.doMock('../../packages/server/src/services/hermes/tts-providers', () => ({
+      getTtsProvider,
+    }))
+    vi.doMock('../../packages/server/src/db/hermes/tts-settings-store', async (importOriginal) => ({
+      ...await importOriginal<typeof import('../../packages/server/src/db/hermes/tts-settings-store')>(),
+      getTtsProviderSetting,
+    }))
+
+    const ctrl = await import('../../packages/server/src/controllers/hermes/tts')
+    const { ctx } = createMockCtx({
+      provider: 'openai',
+      text: 'Hello world',
+      options: {
+        apiKey: 'request-secret',
+        voice: 'alloy',
+      },
+    })
+    ctx.state = { user: { id: 7 } }
+
+    await ctrl.synthesize(ctx)
+
+    expect(provider.synthesize).toHaveBeenCalledWith(
+      { text: 'Hello world', signal: expect.any(AbortSignal) },
+      {
+        baseUrl: 'https://stored.example.test/v1/audio/speech',
+        model: 'stored-model',
+        apiKey: 'stored-secret',
+        voice: 'alloy',
+      },
+    )
   })
 
   it('aborts the provider signal on client disconnect, but not on normal request close', async () => {
@@ -375,16 +598,20 @@ describe('tts routes', () => {
     const synthesize = vi.fn(async (ctx: any) => { ctx.body = { route: 'synthesize' } })
     const listSettings = vi.fn(async (ctx: any) => { ctx.body = { route: 'listSettings' } })
     const saveSettings = vi.fn(async (ctx: any) => { ctx.body = { route: 'saveSettings' } })
+    const saveActiveProvider = vi.fn(async (ctx: any) => { ctx.body = { route: 'saveActiveProvider' } })
     const deleteBaseUrlPreset = vi.fn(async (ctx: any) => { ctx.body = { route: 'deleteBaseUrlPreset' } })
     const deleteSecret = vi.fn(async (ctx: any) => { ctx.body = { route: 'deleteSecret' } })
     const probeProvider = vi.fn(async (ctx: any) => { ctx.body = { route: 'probeProvider' } })
+    const mcuAudio = vi.fn(async (ctx: any) => { ctx.body = { route: 'mcuAudio' } })
 
     vi.doMock('../../packages/server/src/controllers/hermes/tts', () => ({
       generate,
       openaiProxy,
+      mcuAudio,
       synthesize,
       listSettings,
       saveSettings,
+      saveActiveProvider,
       deleteBaseUrlPreset,
       deleteSecret,
       probeProvider,
@@ -397,10 +624,12 @@ describe('tts routes', () => {
     expect(paths).toEqual(expect.arrayContaining([
       '/api/hermes/tts',
       '/api/tts/proxy/audio/speech',
+      '/api/hermes/mcu/audio/:file',
     ]))
     expect(paths).not.toContain('/api/hermes/tts/synthesize')
     expect(protectedPaths).toEqual(expect.arrayContaining([
       '/api/hermes/tts/settings',
+      '/api/hermes/tts/settings/active',
       '/api/hermes/tts/settings/:provider',
       '/api/hermes/tts/settings/:provider/base-url-preset',
       '/api/hermes/tts/settings/:provider/secret/:secretName',

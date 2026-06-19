@@ -1,4 +1,5 @@
 import type { VoiceApiPreset } from '@/types/voice-api'
+import { DOUBAO_TTS_2_RESOURCE_ID } from './doubaoTtsVoices'
 
 export const VOICE_API_PRESETS: VoiceApiPreset[] = [
   // TTS Presets
@@ -50,6 +51,21 @@ export const VOICE_API_PRESETS: VoiceApiPreset[] = [
     },
   },
   {
+    id: 'tts-doubao',
+    kind: 'tts',
+    provider: 'doubao',
+    label: 'Volcengine Doubao TTS',
+    labelKey: 'settings.voice.presetDoubaoTtsLabel',
+    baseUrl: 'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
+    defaultModel: DOUBAO_TTS_2_RESOURCE_ID,
+    isSecretRequired: true,
+    capabilities: {
+      models: true,
+      voices: true,
+      stylePrompt: true,
+    },
+  },
+  {
     id: 'tts-custom',
     kind: 'tts',
     provider: 'custom',
@@ -95,6 +111,19 @@ export const VOICE_API_PRESETS: VoiceApiPreset[] = [
     labelKey: 'settings.voice.presetGroqSttLabel',
     baseUrl: 'https://api.groq.com/openai/v1',
     defaultModel: 'whisper-large-v3',
+    isSecretRequired: true,
+    capabilities: {
+      models: true,
+    },
+  },
+  {
+    id: 'stt-doubao',
+    kind: 'stt',
+    provider: 'doubao',
+    label: 'Volcengine Doubao STT',
+    labelKey: 'settings.voice.presetDoubaoSttLabel',
+    baseUrl: 'https://openspeech.bytedance.com/api/v3/auc/bigmodel',
+    defaultModel: 'volc.seedasr.auc',
     isSecretRequired: true,
     capabilities: {
       models: true,

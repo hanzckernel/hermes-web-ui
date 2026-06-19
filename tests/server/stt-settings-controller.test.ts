@@ -250,6 +250,9 @@ describe('stt routes', () => {
     const saveSettings = vi.fn(async (ctx: any) => { ctx.body = { route: 'saveSettings' } })
     const deleteSecret = vi.fn(async (ctx: any) => { ctx.body = { route: 'deleteSecret' } })
     const deleteBaseUrlPreset = vi.fn(async (ctx: any) => { ctx.body = { route: 'deleteBaseUrlPreset' } })
+    const profileStatus = vi.fn(async (ctx: any) => { ctx.body = { route: 'profileStatus' } })
+    const missingProfileAudio = vi.fn(async (ctx: any) => { ctx.body = { route: 'missingProfileAudio' } })
+    const mcuVoiceTurn = vi.fn(async (ctx: any) => { ctx.body = { route: 'mcuVoiceTurn' } })
     const transcribe = vi.fn(async (ctx: any) => { ctx.body = { route: 'transcribe' } })
 
     vi.doMock('../../packages/server/src/controllers/hermes/stt', () => ({
@@ -258,6 +261,9 @@ describe('stt routes', () => {
       saveSettings,
       deleteSecret,
       deleteBaseUrlPreset,
+      profileStatus,
+      missingProfileAudio,
+      mcuVoiceTurn,
       transcribe,
     }))
 
@@ -266,6 +272,9 @@ describe('stt routes', () => {
 
     expect(protectedPaths).toEqual(expect.arrayContaining([
       '/api/hermes/stt/settings',
+      '/api/hermes/stt/profile-status',
+      '/api/hermes/stt/profile-status/missing-audio',
+      '/api/hermes/mcu/voice-turn',
       '/api/hermes/stt/settings/active',
       '/api/hermes/stt/settings/:provider',
       '/api/hermes/stt/settings/:provider/base-url-preset',

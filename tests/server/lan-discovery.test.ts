@@ -2,6 +2,7 @@ import { readFileSync } from 'fs'
 import { createHash, generateKeyPairSync } from 'crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  HERMES_DISCOVERY_PORT,
   discoveryPortForHttpPort,
   getDiscoveryHttpPorts,
   getLanEndpointKind,
@@ -42,17 +43,19 @@ describe('LAN discovery', () => {
   })
 
   it('maps HTTP ports to UDP discovery ports', () => {
+    expect(HERMES_DISCOVERY_PORT).toBe(48640)
     expect(discoveryPortForHttpPort(8648)).toBe(48648)
     expect(discoveryPortForHttpPort(8748)).toBe(48748)
   })
 
-  it('does not start a discovery responder for HTTP ports without a UDP mapping', () => {
+  it('starts a fixed-port discovery responder for HTTP ports without a UDP mapping', async () => {
     const socket = startLanDiscoveryResponder({
       httpPort: 54321,
       getSystemInfo: async () => fakeInfo,
     })
 
-    expect(socket).toBeNull()
+    expect(socket).not.toBeNull()
+    if (socket) await new Promise<void>(resolve => socket.once('listening', () => resolve()))
   })
 
   it('classifies well-known LAN endpoints', () => {
@@ -92,8 +95,8 @@ describe('LAN discovery', () => {
     })
 
     expect(result.scanning).toBe(false)
-    expect(result.devices).toHaveLength(1)
-    expect(result.devices[0]).toMatchObject({
+    const device = result.devices.find(item => item.device_id === fakeDeviceId && item.http_port === httpPort)
+    expect(device).toMatchObject({
       id: fakeDeviceId,
       device_id: fakeDeviceId,
       ip: '127.0.0.1',
@@ -129,8 +132,8 @@ describe('LAN discovery', () => {
       includeSelf: true,
     })
 
-    expect(result.devices).toHaveLength(1)
-    expect(result.devices[0].url).toBe(`http://127.0.0.1:${httpPort}`)
+    const device = result.devices.find(item => item.device_id === fakeDeviceId && item.http_port === httpPort)
+    expect(device?.url).toBe(`http://127.0.0.1:${httpPort}`)
   })
 
   it('excludes the local machine from scan results by default', async () => {
