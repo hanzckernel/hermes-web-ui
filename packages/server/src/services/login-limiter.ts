@@ -193,6 +193,12 @@ function checkAnyIpLock(ip: string): CheckResult | null {
     checkIpLock(ip, state.pairingIpMap)
 }
 
+function clearIpEntry(map: Record<string, IpEntry>, ip: string): boolean {
+  if (!map[ip]) return false
+  delete map[ip]
+  return true
+}
+
 function recordIpFailure(map: Record<string, IpEntry>, ip: string): IpEntry {
   const t = now()
   let entry = map[ip]
@@ -218,8 +224,9 @@ export function checkPassword(ip: string): CheckResult {
   const global = checkGlobalLimits()
   if (global) return global
 
-  // Check all lock maps so an IP blocked for abuse cannot pivot to another public endpoint.
-  const ipLock = checkAnyIpLock(ip)
+  // Password login is the recovery path for stale browser/API tokens. A token or
+  // pairing lock must not strand a user who can still prove the password.
+  const ipLock = checkIpLock(ip, state.passwordIpMap)
   if (ipLock) return ipLock
 
   state.globalMinuteCount++
@@ -315,11 +322,14 @@ export function recordPairingFailure(ip: string): void {
 }
 
 export function recordPasswordSuccess(ip: string): void {
-  if (state.passwordIpMap[ip]) {
-    delete state.passwordIpMap[ip]
+  const passwordCleared = clearIpEntry(state.passwordIpMap, ip)
+  const tokenCleared = clearIpEntry(state.tokenIpMap, ip)
+  const pairingCleared = clearIpEntry(state.pairingIpMap, ip)
+
+  if (passwordCleared || tokenCleared || pairingCleared) {
     state.globalTotalFailures = 0
     dirty = true
-    schedulePersist()
+    persistStateSync()
   }
 }
 
