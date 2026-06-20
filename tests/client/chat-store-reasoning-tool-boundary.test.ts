@@ -290,6 +290,63 @@ describe('chat store reasoning/tool boundaries', () => {
     ])
   })
 
+  it('marks unsupported Hermes slash commands as commands instead of normal user prompts', async () => {
+    const store = useChatStore()
+    const session = makeSession()
+    session.source = 'cli'
+    store.sessions = [session]
+    store.activeSessionId = 'session-1'
+    store.activeSession = session
+
+    await store.sendMessage('/model openai/gpt-5')
+
+    expect(chatApi.startRunViaSocket).toHaveBeenCalledTimes(1)
+    expect(chatApi.startRunViaSocket.mock.calls[0][0]).toEqual(expect.objectContaining({
+      input: '/model openai/gpt-5',
+      session_id: 'session-1',
+      source: 'cli',
+    }))
+    expect(store.messages).toEqual([
+      expect.objectContaining({
+        role: 'command',
+        content: '/model openai/gpt-5',
+        queued: false,
+        systemType: 'command',
+      }),
+    ])
+  })
+
+  it('does not queue unsupported Hermes slash commands behind active bridge runs', async () => {
+    const store = useChatStore()
+    const session = makeSession()
+    session.source = 'cli'
+    store.sessions = [session]
+    store.activeSessionId = 'session-1'
+    store.activeSession = session
+
+    await store.sendMessage('first input')
+    const onEvent = chatApi.startRunViaSocket.mock.calls[0][1] as (event: RunEvent) => void
+    onEvent({ event: 'run.started', session_id: 'session-1' })
+
+    await store.sendMessage('/yolo')
+
+    expect(chatApi.startRunViaSocket).toHaveBeenCalledTimes(2)
+    expect(store.queuedUserMessages.get('session-1')).toBeUndefined()
+    expect(store.messages).toEqual([
+      expect.objectContaining({
+        role: 'user',
+        content: 'first input',
+        queued: false,
+      }),
+      expect.objectContaining({
+        role: 'command',
+        content: '/yolo',
+        queued: false,
+        systemType: 'command',
+      }),
+    ])
+  })
+
   it('starts global coding-agent runs without provider credentials', async () => {
     const store = useChatStore()
     const session = makeSession()

@@ -237,7 +237,7 @@ describe('plan session command', () => {
   })
 
   it('keeps the client known-command registry accepted by the server parser', async () => {
-    const { BRIDGE_SESSION_COMMAND_NAMES, isKnownBridgeSessionCommand } = await import('../../packages/client/src/utils/hermes/bridge-session-commands')
+    const { BRIDGE_SESSION_COMMAND_NAMES, UNSUPPORTED_HERMES_SLASH_COMMAND_NAMES, isKnownBridgeSessionCommand } = await import('../../packages/client/src/utils/hermes/bridge-session-commands')
     const { parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
 
     for (const commandName of BRIDGE_SESSION_COMMAND_NAMES) {
@@ -251,10 +251,74 @@ describe('plan session command', () => {
       }
     }
 
+    for (const commandName of UNSUPPORTED_HERMES_SLASH_COMMAND_NAMES) {
+      expect(isKnownBridgeSessionCommand(`/${commandName}`)).toBe(true)
+      expect(parseSessionCommand(`/${commandName}`)).toEqual(expect.objectContaining({
+        name: 'unsupported',
+        rawName: commandName,
+      }))
+    }
+
     expect(isKnownBridgeSessionCommand('/reload_skills')).toBe(true)
     expect(parseSessionCommand('/reload_skills')).toEqual(expect.objectContaining({
       name: 'reload-skills',
       rawName: 'reload_skills',
+    }))
+    expect(isKnownBridgeSessionCommand('/reload_mcp')).toBe(true)
+    expect(parseSessionCommand('/reload_mcp')).toEqual(expect.objectContaining({
+      name: 'reload-mcp',
+      rawName: 'reload_mcp',
+    }))
+    expect(isKnownBridgeSessionCommand('/branch alternative')).toBe(true)
+    expect(parseSessionCommand('/branch alternative')).toEqual(expect.objectContaining({
+      name: 'branch',
+      rawName: 'branch',
+      args: 'alternative',
+    }))
+  })
+
+  it('classifies unsupported Hermes slash commands separately from unknown passthrough', async () => {
+    const { isKnownBridgeSessionCommand } = await import('../../packages/client/src/utils/hermes/bridge-session-commands')
+    const { isSessionCommand, parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
+
+    for (const command of ['/model openai/gpt-5', '/yolo', '/update', '/debug', '/billing', '/reset']) {
+      expect(isKnownBridgeSessionCommand(command)).toBe(true)
+      expect(parseSessionCommand(command)).toEqual(expect.objectContaining({ name: 'unsupported' }))
+      expect(isSessionCommand(command)).toBe(true)
+    }
+  })
+
+  it('emits unsupported for known Hermes slash commands without invoking bridge commands', async () => {
+    const state = { messages: [], isWorking: false, events: [], queue: [] }
+    const { bridge, namespaceEmit, nsp, runQueuedItem, sessionMap, socket } = makeContext(state)
+    const { handleSessionCommand, parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
+    const command = parseSessionCommand('/model openai/gpt-5')!
+
+    await handleSessionCommand('session-1', command, {
+      nsp: nsp as any,
+      socket: socket as any,
+      sessionMap,
+      bridge: bridge as any,
+      profile: 'default',
+      runQueuedItem,
+    })
+
+    expect(bridge.command).not.toHaveBeenCalled()
+    expect(runQueuedItem).not.toHaveBeenCalled()
+    expect(addMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'command',
+      content: '/model openai/gpt-5',
+    }))
+    expect(addMessageMock).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'command',
+      content: expect.stringContaining('/model is a Hermes slash command'),
+    }))
+    expect(namespaceEmit).toHaveBeenCalledWith('session.command', expect.objectContaining({
+      ok: false,
+      action: 'unsupported',
+      command: 'model',
+      unsupportedCommand: 'model',
+      message: expect.stringContaining('/model is a Hermes slash command'),
     }))
   })
 

@@ -26,6 +26,7 @@ type CommandName =
   | 'destroy'
   | 'reload-mcp'
   | 'reload-skills'
+  | 'unsupported'
 
 interface ParsedSessionCommand {
   name: CommandName
@@ -77,12 +78,102 @@ const COMMAND_ALIASES: Record<string, CommandName> = {
   clear: 'clear',
   title: 'title',
   compress: 'compress',
+  branch: 'branch',
   fork: 'branch',
   steer: 'steer',
   destroy: 'destroy',
   'reload-mcp': 'reload-mcp',
+  reload_mcp: 'reload-mcp',
   'reload-skills': 'reload-skills',
   reload_skills: 'reload-skills',
+}
+
+const UNSUPPORTED_HERMES_COMMANDS = new Set([
+  'start',
+  'new',
+  'topic',
+  'redraw',
+  'history',
+  'save',
+  'retry',
+  'undo',
+  'handoff',
+  'rollback',
+  'snapshot',
+  'stop',
+  'approve',
+  'deny',
+  'background',
+  'agents',
+  'whoami',
+  'profile',
+  'sethome',
+  'resume',
+  'sessions',
+  'config',
+  'model',
+  'codex-runtime',
+  'gquota',
+  'personality',
+  'statusbar',
+  'verbose',
+  'footer',
+  'yolo',
+  'reasoning',
+  'fast',
+  'skin',
+  'indicator',
+  'voice',
+  'busy',
+  'tools',
+  'toolsets',
+  'skills',
+  'memory',
+  'bundles',
+  'cron',
+  'suggestions',
+  'blueprint',
+  'curator',
+  'kanban',
+  'reload',
+  'browser',
+  'plugins',
+  'commands',
+  'help',
+  'restart',
+  'credits',
+  'billing',
+  'insights',
+  'platforms',
+  'platform',
+  'copy',
+  'paste',
+  'image',
+  'update',
+  'version',
+  'debug',
+  'quit',
+])
+
+const UNSUPPORTED_HERMES_COMMAND_ALIASES: Record<string, string> = {
+  reset: 'new',
+  snap: 'snapshot',
+  bg: 'background',
+  btw: 'background',
+  tasks: 'agents',
+  'set-home': 'sethome',
+  codex_runtime: 'codex-runtime',
+  sb: 'statusbar',
+  suggest: 'suggestions',
+  bp: 'blueprint',
+  gateway: 'platforms',
+  v: 'version',
+  exit: 'quit',
+}
+
+function unsupportedHermesCommandName(rawName: string): string | null {
+  const canonical = UNSUPPORTED_HERMES_COMMAND_ALIASES[rawName] || rawName
+  return UNSUPPORTED_HERMES_COMMANDS.has(canonical) ? canonical : null
 }
 
 export function parseSessionCommand(input: string | ContentBlock[]): ParsedSessionCommand | null {
@@ -93,8 +184,11 @@ export function parseSessionCommand(input: string | ContentBlock[]): ParsedSessi
   if (!match) return null
   const rawName = match[1].toLowerCase()
   const name = COMMAND_ALIASES[rawName]
-  if (!name) return null
-  return { name, rawName, args: match[2]?.trim() || '' }
+  if (name) return { name, rawName, args: match[2]?.trim() || '' }
+  if (unsupportedHermesCommandName(rawName)) {
+    return { name: 'unsupported', rawName, args: match[2]?.trim() || '' }
+  }
+  return null
 }
 
 export function isSessionCommand(input: string | ContentBlock[]): boolean {
@@ -110,7 +204,7 @@ export async function handleSessionCommand(
   ctx.socket.join(`session:${sessionId}`)
   ensureCommandSession(sessionId, command, ctx)
   const isKnownCommand = Boolean(COMMAND_ALIASES[command.rawName])
-  if (command.name !== 'plan' && command.name !== 'skill' && command.name !== 'branch' && isKnownCommand) {
+  if (command.name !== 'plan' && command.name !== 'skill' && command.name !== 'branch' && (isKnownCommand || command.name === 'unsupported')) {
     persistCommandMessage(sessionId, state, `/${command.rawName}${command.args ? ` ${command.args}` : ''}`)
   }
 
@@ -124,6 +218,18 @@ export async function handleSessionCommand(
       ok: true,
       ...payload,
     })
+  }
+
+  if (command.name === 'unsupported') {
+    const canonical = unsupportedHermesCommandName(command.rawName) || command.rawName
+    emitCommand({
+      ok: false,
+      action: 'unsupported',
+      terminal: !state.isWorking,
+      unsupportedCommand: canonical,
+      message: `/${command.rawName} is a Hermes slash command, but it is not supported in Web UI chat yet. Use the matching Web UI control or Hermes CLI/TUI for now.`,
+    })
+    return
   }
 
   if (command.name === 'skill') {

@@ -120,11 +120,11 @@ describe('branch session command', () => {
     })
   })
 
-  it('parses /fork as the only user-facing fork command', async () => {
+  it('parses /fork and /branch as user-facing branch commands', async () => {
     const { parseSessionCommand } = await import('../../packages/server/src/services/hermes/run-chat/session-command')
 
     expect(parseSessionCommand('/fork')).toMatchObject({ name: 'branch', rawName: 'fork', args: '' })
-    expect(parseSessionCommand('/branch alternate path')).toBeNull()
+    expect(parseSessionCommand('/branch alternate path')).toMatchObject({ name: 'branch', rawName: 'branch', args: 'alternate path' })
   })
 
   it('rejects /fork while the bridge session is running', async () => {

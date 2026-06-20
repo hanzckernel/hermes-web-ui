@@ -16,6 +16,74 @@ export type BridgeSessionCommandName =
   | 'reload-mcp'
   | 'reload-skills'
 
+export type UnsupportedHermesSlashCommandName =
+  | 'start'
+  | 'new'
+  | 'topic'
+  | 'redraw'
+  | 'history'
+  | 'save'
+  | 'retry'
+  | 'undo'
+  | 'handoff'
+  | 'rollback'
+  | 'snapshot'
+  | 'stop'
+  | 'approve'
+  | 'deny'
+  | 'background'
+  | 'agents'
+  | 'whoami'
+  | 'profile'
+  | 'sethome'
+  | 'resume'
+  | 'sessions'
+  | 'config'
+  | 'model'
+  | 'codex-runtime'
+  | 'gquota'
+  | 'personality'
+  | 'statusbar'
+  | 'verbose'
+  | 'footer'
+  | 'yolo'
+  | 'reasoning'
+  | 'fast'
+  | 'skin'
+  | 'indicator'
+  | 'voice'
+  | 'busy'
+  | 'tools'
+  | 'toolsets'
+  | 'skills'
+  | 'memory'
+  | 'bundles'
+  | 'cron'
+  | 'suggestions'
+  | 'blueprint'
+  | 'curator'
+  | 'kanban'
+  | 'reload'
+  | 'browser'
+  | 'plugins'
+  | 'commands'
+  | 'help'
+  | 'restart'
+  | 'credits'
+  | 'billing'
+  | 'insights'
+  | 'platforms'
+  | 'platform'
+  | 'copy'
+  | 'paste'
+  | 'image'
+  | 'update'
+  | 'version'
+  | 'debug'
+  | 'quit'
+
+export type KnownBridgeSlashCommandName = BridgeSessionCommandName | UnsupportedHermesSlashCommandName
+
 export interface BridgeSessionCommandDefinition {
   key: string
   name: BridgeSessionCommandName
@@ -55,26 +123,122 @@ export const BRIDGE_SESSION_COMMAND_NAMES = Array.from(
   new Set(BRIDGE_SESSION_COMMAND_DEFINITIONS.map(command => command.name)),
 )
 
+export const UNSUPPORTED_HERMES_SLASH_COMMAND_NAMES: UnsupportedHermesSlashCommandName[] = [
+  'start',
+  'new',
+  'topic',
+  'redraw',
+  'history',
+  'save',
+  'retry',
+  'undo',
+  'handoff',
+  'rollback',
+  'snapshot',
+  'stop',
+  'approve',
+  'deny',
+  'background',
+  'agents',
+  'whoami',
+  'profile',
+  'sethome',
+  'resume',
+  'sessions',
+  'config',
+  'model',
+  'codex-runtime',
+  'gquota',
+  'personality',
+  'statusbar',
+  'verbose',
+  'footer',
+  'yolo',
+  'reasoning',
+  'fast',
+  'skin',
+  'indicator',
+  'voice',
+  'busy',
+  'tools',
+  'toolsets',
+  'skills',
+  'memory',
+  'bundles',
+  'cron',
+  'suggestions',
+  'blueprint',
+  'curator',
+  'kanban',
+  'reload',
+  'browser',
+  'plugins',
+  'commands',
+  'help',
+  'restart',
+  'credits',
+  'billing',
+  'insights',
+  'platforms',
+  'platform',
+  'copy',
+  'paste',
+  'image',
+  'update',
+  'version',
+  'debug',
+  'quit',
+]
+
 const BRIDGE_SESSION_COMMAND_ALIASES = new Map<string, BridgeSessionCommandName>([
+  ['branch', 'fork'],
+  ['reload_mcp', 'reload-mcp'],
   ['reload_skills', 'reload-skills'],
 ])
 
-export function normalizeBridgeSessionCommandName(name: string): BridgeSessionCommandName | null {
+const UNSUPPORTED_HERMES_SLASH_COMMAND_ALIASES = new Map<string, UnsupportedHermesSlashCommandName>([
+  ['reset', 'new'],
+  ['snap', 'snapshot'],
+  ['bg', 'background'],
+  ['btw', 'background'],
+  ['tasks', 'agents'],
+  ['set-home', 'sethome'],
+  ['codex_runtime', 'codex-runtime'],
+  ['sb', 'statusbar'],
+  ['suggest', 'suggestions'],
+  ['bp', 'blueprint'],
+  ['gateway', 'platforms'],
+  ['v', 'version'],
+  ['exit', 'quit'],
+])
+
+export function normalizeBridgeSessionCommandName(name: string): KnownBridgeSlashCommandName | null {
   const normalized = name.trim().toLowerCase()
   if (!normalized) return null
-  const alias = BRIDGE_SESSION_COMMAND_ALIASES.get(normalized)
-  if (alias) return alias
-  return (BRIDGE_SESSION_COMMAND_NAMES as string[]).includes(normalized)
-    ? normalized as BridgeSessionCommandName
+  const bridgeAlias = BRIDGE_SESSION_COMMAND_ALIASES.get(normalized)
+  if (bridgeAlias) return bridgeAlias
+  if ((BRIDGE_SESSION_COMMAND_NAMES as string[]).includes(normalized)) {
+    return normalized as BridgeSessionCommandName
+  }
+
+  const unsupportedAlias = UNSUPPORTED_HERMES_SLASH_COMMAND_ALIASES.get(normalized)
+  if (unsupportedAlias) return unsupportedAlias
+  return (UNSUPPORTED_HERMES_SLASH_COMMAND_NAMES as string[]).includes(normalized)
+    ? normalized as UnsupportedHermesSlashCommandName
     : null
 }
 
-export function readBridgeSessionCommandName(input: string): BridgeSessionCommandName | null {
+export function readBridgeSessionCommandName(input: string): KnownBridgeSlashCommandName | null {
   const trimmed = input.trim()
   if (!trimmed.startsWith('/')) return null
   const match = trimmed.match(/^\/([a-zA-Z][\w-]*)(?:\s|$)/)
   if (!match) return null
   return normalizeBridgeSessionCommandName(match[1])
+}
+
+export function isSupportedBridgeSessionCommand(input: string): boolean {
+  const name = readBridgeSessionCommandName(input)
+  return name !== null && (BRIDGE_SESSION_COMMAND_NAMES as string[]).includes(name)
 }
 
 export function isKnownBridgeSessionCommand(input: string): boolean {

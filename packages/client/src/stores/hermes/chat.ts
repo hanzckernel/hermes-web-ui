@@ -12,7 +12,7 @@ import { useSettingsStore } from './settings'
 import { primeCompletionSound, playCompletionSound } from '@/utils/completion-sound'
 import { showCompletionNotification } from '@/utils/completion-notification'
 import { detectThinkingBoundary } from '@/utils/thinking-parser'
-import { isKnownBridgeSessionCommand } from '@/utils/hermes/bridge-session-commands'
+import { isKnownBridgeSessionCommand, readBridgeSessionCommandName } from '@/utils/hermes/bridge-session-commands'
 import { responseErrorMessage } from '@/utils/http-error'
 
 // Re-export ContentBlock for convenience
@@ -1915,12 +1915,13 @@ export const useChatStore = defineStore('chat', () => {
       ? activeSession.value.messageCount == null || activeSession.value.messageCount === 0
       : false
     const isCodingAgentSession = isCodingAgentLikeSession(activeSession.value)
+    const bridgeSlashCommandName = !isCodingAgentSession ? readBridgeSessionCommandName(trimmedContent) : null
     const isBridgeSlashCommand = !isCodingAgentSession && isKnownBridgeSessionCommand(trimmedContent)
-    const isBridgeCompressCommand = isBridgeSlashCommand && /^\/compress(?:\s|$)/i.test(trimmedContent)
-    const isBridgePlanCommand = isBridgeSlashCommand && /^\/plan(?:\s|$)/i.test(trimmedContent)
-    const isBridgeSkillCommand = isBridgeSlashCommand && /^\/skill(?:\s|$)/i.test(trimmedContent)
-    const isBridgeGoalCommand = isBridgeSlashCommand && /^\/goal(?:\s|$)/i.test(trimmedContent)
-    const isBridgeForkCommand = isBridgeSlashCommand && /^\/fork(?:\s|$)/i.test(trimmedContent)
+    const isBridgeCompressCommand = bridgeSlashCommandName === 'compress'
+    const isBridgePlanCommand = bridgeSlashCommandName === 'plan'
+    const isBridgeSkillCommand = bridgeSlashCommandName === 'skill'
+    const isBridgeGoalCommand = bridgeSlashCommandName === 'goal'
+    const isBridgeForkCommand = bridgeSlashCommandName === 'fork'
     const shouldOptimisticallyShowRunStatus = !isCodingAgentSession && !isBridgeForkCommand
     const wasLiveBeforeSend = isSessionLive(sid)
     if (isBridgeForkCommand) {
