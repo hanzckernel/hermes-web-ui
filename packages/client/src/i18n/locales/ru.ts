@@ -1850,6 +1850,12 @@ export default {
   },
 
   changelog: {
+    new_0_6_19_1: 'Этот релиз включает 16 PR после 0.6.18 и улучшает видимые в UI сценарии устройств, voice, Coding Agent и настроек',
+    new_0_6_19_2: 'Coding Agent sessions могут переключать model, а новые sessions теперь корректно следуют global default model',
+    new_0_6_19_3: 'MCU взаимодействия стабильнее: debounce Wi-Fi/boot при запуске, audio только на целевое устройство и улучшенный аппаратный double-click для очистки и interrupt',
+    new_0_6_19_4: 'TTS настройки теперь сохраняются по profile, а speed, pitch и voice tests читают один источник конфигурации',
+    new_0_6_19_5: 'Переключение модели в Coding Agent больше не влияет на существующие sessions, а custom provider keys передаются корректно',
+    new_0_6_19_6: 'Skills runtime filters, сортировка cron jobs, ограничение высоты skill details, Windows updater recovery, backup fallbacks и сжатые logo assets завершают обновление',
     new_0_6_18_2: 'Hermes Studio MCP разделен на toolsets api, devices и use с новыми действиями для session, model, chat-run и ops',
     new_0_6_18_3: 'История чатов и групповых чатов надежнее благодаря отдельной UI history, безопасной обработке null messages, сохранению assistant replies после run failures и согласованному reasoning replay',
     new_0_6_18_4: 'Обратная связь MCU стала понятнее: tool calls показываются поверх speech, audio больше не помечает задачи DONE слишком рано, active-device login стабильнее, а длинный ONLINE/IP текст прокручивается',

@@ -2104,6 +2104,12 @@ export default {
 
   // 更新日志
   changelog: {
+    new_0_6_19_1: '本次版本包含 0.6.18 之后合并的 16 个 PR，重点改进前端可见的设备、语音、Coding Agent 和设置体验',
+    new_0_6_19_2: 'Coding Agent 支持在会话中切换模型，新建会话也会正确跟随全局默认模型',
+    new_0_6_19_3: 'MCU 交互更稳定：修复开机 Wi-Fi/boot 状态闪动、音频只发送到目标设备，并优化实体按键双击清空与打断体验',
+    new_0_6_19_4: 'TTS 配置改为按 profile 保存，音速、音调和测试语音会读取同一套配置来源',
+    new_0_6_19_5: 'Coding Agent 的模型切换不会影响既有会话，并修复自定义 provider key 透传',
+    new_0_6_19_6: '补齐 skills runtime 过滤、定时任务排序、技能详情高度限制、Windows 更新恢复、配置备份兜底和 logo 资源压缩',
     new_0_6_18_2: 'Hermes Studio MCP 拆分为 api、devices 和 use 工具集，新增 session、model、chat-run 与 ops 相关操作',
     new_0_6_18_3: '聊天和群聊历史更可靠：UI 历史与模型上下文分离，空消息处理更安全，run failed 不再覆盖已有助手回复，reasoning 回放也更一致',
     new_0_6_18_4: 'MCU 设备反馈更清楚：工具调用会优先显示在语音之上，音频不会过早标记任务完成，活跃设备登录更稳定，ONLINE/IP 长文本支持滚动',

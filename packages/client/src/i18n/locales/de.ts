@@ -1837,6 +1837,12 @@ jobTriggered: 'Job ausgelost',
 
   // Anderungsprotokoll
   changelog: {
+    new_0_6_19_1: 'Diese Version umfasst 16 PRs seit 0.6.18 und verbessert sichtbar Device-, Voice-, Coding-Agent- und Settings-Erlebnisse',
+    new_0_6_19_2: 'Coding-Agent Sessions koennen Modelle wechseln, und neue Sessions folgen nun korrekt dem globalen Default-Modell',
+    new_0_6_19_3: 'MCU Interaktionen sind stabiler mit Wi-Fi/boot Debounce beim Start, Audio nur fuer das Zielgeraet und besserem Hardware-Doppelklick zum Leeren und Unterbrechen',
+    new_0_6_19_4: 'TTS Einstellungen werden jetzt pro profile gespeichert; Speed, Pitch und Voice Tests lesen dieselbe Konfigurationsquelle',
+    new_0_6_19_5: 'Coding-Agent Modellwechsel beeinflussen bestehende Sessions nicht mehr, und custom provider keys werden korrekt weitergegeben',
+    new_0_6_19_6: 'Skills runtime Filter, Cron-Job Sortierung, begrenzte Skill-Detail-Hoehe, Windows Updater Recovery, Backup Fallbacks und komprimierte Logo Assets runden das Update ab',
     new_0_6_18_2: 'Hermes Studio MCP ist in fokussierte api-, devices- und use-Toolsets aufgeteilt, mit neuen Session-, Modell-, Chat-Run- und Ops-Aktionen',
     new_0_6_18_3: 'Chat- und Gruppenchat-Historien sind zuverlaessiger durch getrennte UI-Historie, sichere Null-Message-Behandlung, erhaltene Assistant-Antworten nach run failures und abgestimmtes Reasoning-Replay',
     new_0_6_18_4: 'MCU-Device-Feedback ist klarer: Tool Calls bleiben vor Sprache sichtbar, Audio markiert Aufgaben nicht mehr zu frueh als fertig, Active-Device-Login ist stabiler und lange ONLINE/IP-Texte scrollen',

@@ -1836,6 +1836,12 @@ export default {
 
   // 변경 이력
   changelog: {
+    new_0_6_19_1: '이번 릴리스는 0.6.18 이후 병합된 16개 PR을 포함하며 UI에서 보이는 디바이스, 음성, Coding Agent, 설정 경험을 개선합니다',
+    new_0_6_19_2: 'Coding Agent session에서 model을 전환할 수 있으며 새 session은 global default model을 올바르게 따릅니다',
+    new_0_6_19_3: 'MCU 상호작용은 시작 시 Wi-Fi/boot debounce, 대상 디바이스로만 audio 전송, hardware double-click clear 및 interrupt 개선으로 더 안정적입니다',
+    new_0_6_19_4: 'TTS 설정은 이제 profile별로 저장되며 speed, pitch, voice test가 같은 설정 소스를 읽습니다',
+    new_0_6_19_5: 'Coding Agent의 model switch는 기존 session에 영향을 주지 않으며 custom provider key가 올바르게 전달됩니다',
+    new_0_6_19_6: 'Skills runtime filter, cron job sort, skill detail height limit, Windows updater recovery, backup fallback, logo asset compression도 포함됩니다',
     new_0_6_18_2: 'Hermes Studio MCP가 api, devices, use toolset으로 나뉘고 session, model, chat-run, ops 작업이 추가되었습니다',
     new_0_6_18_3: '채팅과 그룹 채팅 기록은 UI 기록 분리, 안전한 null message 처리, run failure 후 assistant reply 보존, 정렬된 reasoning replay로 더 안정적입니다',
     new_0_6_18_4: 'MCU 디바이스 피드백이 더 명확해져 tool call이 speech보다 우선 표시되고, audio가 작업을 너무 일찍 DONE으로 표시하지 않으며, active device login이 안정화되고 긴 ONLINE/IP 텍스트가 스크롤됩니다',
