@@ -17,10 +17,31 @@ const chatStore = useChatStore()
 const message = useMessage()
 const dialog = useDialog()
 
-const isCustom = computed(() => !props.provider.builtin && props.provider.provider.startsWith('custom:'))
+const isCustomProviderKey = computed(() => props.provider.provider.startsWith('custom:'))
+const isCustom = computed(() => !props.provider.builtin && isCustomProviderKey.value)
+const isConfigBackedProvider = computed(() => isCustomProviderKey.value || (!props.provider.builtin && !!props.provider.provider_source))
 const isCopilot = computed(() => props.provider.provider === 'copilot')
 const displayName = computed(() => props.provider.label)
 const deleting = ref(false)
+const destructiveActionLabel = computed(() => {
+  if (isConfigBackedProvider.value) return t('common.delete')
+  if (isCopilot.value) return t('models.disableProvider')
+  return t('models.clearProviderCredentials')
+})
+const destructiveActionTitle = computed(() => {
+  if (isConfigBackedProvider.value) return t('models.deleteProvider')
+  if (isCopilot.value) return t('models.disableProvider')
+  return t('models.clearProviderCredentials')
+})
+
+function destructiveConfirmContent(copilotMsg: string) {
+  if (isConfigBackedProvider.value) return t('models.deleteConfirm', { name: displayName.value })
+  if (isCopilot.value) {
+    const base = t('models.disableProviderConfirm', { name: displayName.value })
+    return copilotMsg ? `${base}\n\n${copilotMsg}` : base
+  }
+  return t('models.clearCredentialsConfirm', { name: displayName.value })
+}
 
 const showAliasListModal = ref(false)
 const showAliasModal = ref(false)
@@ -119,11 +140,9 @@ async function handleDelete() {
     } catch { /* ignore — fall back to generic confirm copy */ }
   }
   dialog.warning({
-    title: t('models.deleteProvider'),
-    content: isCopilot.value && copilotMsg
-      ? `${t('models.deleteConfirm', { name: displayName.value })}\n\n${copilotMsg}`
-      : t('models.deleteConfirm', { name: displayName.value }),
-    positiveText: t('common.delete'),
+    title: destructiveActionTitle.value,
+    content: destructiveConfirmContent(copilotMsg),
+    positiveText: destructiveActionLabel.value,
     negativeText: t('common.cancel'),
     onPositiveClick: async () => {
       deleting.value = true
@@ -150,7 +169,11 @@ async function handleDelete() {
             await appStore.switchModel(first.models[0], first.provider)
           }
         }
-        message.success(t('models.providerDeleted'))
+        message.success(isConfigBackedProvider.value
+          ? t('models.providerDeleted')
+          : isCopilot.value
+            ? t('models.providerDisabled')
+            : t('models.providerCredentialsCleared'))
       } catch (e: any) {
         message.error(e.message)
       } finally {
@@ -211,7 +234,7 @@ async function handleDelete() {
     <div class="card-actions">
       <NButton size="tiny" quaternary @click="showAliasListModal = true">{{ t('models.aliasManage') }}</NButton>
       <NButton size="tiny" quaternary @click="openVisibilityModal">{{ t('models.manageVisibleModels') }}</NButton>
-      <NButton size="tiny" quaternary type="error" :loading="deleting" @click="handleDelete">{{ t('common.delete') }}</NButton>
+      <NButton size="tiny" quaternary type="error" :loading="deleting" @click="handleDelete">{{ destructiveActionLabel }}</NButton>
     </div>
 
     <NModal
