@@ -110,6 +110,21 @@ describe('ChatInput draft persistence', () => {
     expect((remountedA.get('textarea').element as HTMLTextAreaElement).value).toBe('draft for session a')
   })
 
+  it('includes cache-read tokens in the context usage meter fallback', async () => {
+    const wrapper = mountForSession('session-cache-read', {
+      inputTokens: 3600,
+      cacheReadTokens: 76400,
+      outputTokens: 1200,
+      contextTokens: 6,
+    })
+    await flushPromises()
+    await nextTick()
+
+    const contextInfo = wrapper.get('.context-info')
+    expect(contextInfo.text()).toContain('81.2k /')
+    expect(contextInfo.text()).toContain('chat.contextRemaining 174.8k')
+  })
+
   it('hides context usage for coding-agent sessions', async () => {
     const wrapper = mountForSession('session-codex', {
       source: 'coding_agent',

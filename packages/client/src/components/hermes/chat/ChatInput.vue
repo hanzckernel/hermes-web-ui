@@ -563,11 +563,13 @@ watch(
 
 const totalTokens = computed(() => {
   if (isCodingAgentSession.value) return 0
-  const context = chatStore.activeSession?.contextTokens
-  if (typeof context === 'number' && Number.isFinite(context) && context > 0) return context
   const input = chatStore.activeSession?.inputTokens ?? 0
+  const cacheRead = chatStore.activeSession?.cacheReadTokens ?? 0
   const output = chatStore.activeSession?.outputTokens ?? 0
-  return input + output
+  const usageTotal = input + cacheRead + output
+  const context = chatStore.activeSession?.contextTokens
+  if (typeof context === 'number' && Number.isFinite(context) && context > 0) return Math.max(context, usageTotal)
+  return usageTotal
 })
 const showContextUsage = computed(() => totalTokens.value > 0)
 

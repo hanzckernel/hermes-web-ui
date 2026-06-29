@@ -113,6 +113,8 @@ export interface Session {
   isLoadingOlderMessages?: boolean
   inputTokens?: number
   outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
   contextTokens?: number
   endedAt?: number | null
   parentSessionId?: string | null
@@ -543,6 +545,8 @@ function mapHermesSession(s: SessionSummary): Session {
     hasMoreBefore: false,
     inputTokens: s.input_tokens,
     outputTokens: s.output_tokens,
+    cacheReadTokens: s.cache_read_tokens,
+    cacheWriteTokens: s.cache_write_tokens,
     endedAt: s.ended_at != null ? Math.round(s.ended_at * 1000) : null,
     parentSessionId: s.parent_session_id || null,
     forkPointMessageId: (s as any).fork_point_message_id != null ? String((s as any).fork_point_message_id) : null,
@@ -926,6 +930,8 @@ export const useChatStore = defineStore('chat', () => {
           existing.messageCount = fresh.messageCount
           existing.inputTokens = fresh.inputTokens
           existing.outputTokens = fresh.outputTokens
+          if (fresh.cacheReadTokens != null) existing.cacheReadTokens = fresh.cacheReadTokens
+          if (fresh.cacheWriteTokens != null) existing.cacheWriteTokens = fresh.cacheWriteTokens
           existing.workspace = fresh.workspace
           // messageTotal: keep the larger of server count vs what we've loaded,
           // so we don't shrink below already-rendered messages mid-session.
@@ -980,6 +986,10 @@ export const useChatStore = defineStore('chat', () => {
       target.messageCount = detail.total
       target.hasMoreBefore = detail.hasMore
       if (detail.session.title) target.title = detail.session.title
+      target.inputTokens = detail.session.input_tokens
+      target.outputTokens = detail.session.output_tokens
+      if (detail.session.cache_read_tokens != null) target.cacheReadTokens = detail.session.cache_read_tokens
+      if (detail.session.cache_write_tokens != null) target.cacheWriteTokens = detail.session.cache_write_tokens
       target.parentSessionId = detail.session.parent_session_id || target.parentSessionId || null
       target.forkPointMessageId = (detail.session as any).fork_point_message_id != null ? String((detail.session as any).fork_point_message_id) : target.forkPointMessageId || null
       target.parentTitle = detail.session.parent_title || target.parentTitle || null
