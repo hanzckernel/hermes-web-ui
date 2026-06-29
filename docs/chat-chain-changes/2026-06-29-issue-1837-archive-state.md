@@ -1,6 +1,6 @@
 ---
 date: 2026-06-29
-pr: pending
+pr: 1838
 feature: History archive state merge
 impact: History rows sourced from Hermes state.db now preserve Web UI local archive state so imported CLI/API sessions can be unarchived.
 ---
