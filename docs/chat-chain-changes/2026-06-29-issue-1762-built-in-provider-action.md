@@ -1,6 +1,6 @@
 ---
 date: 2026-06-29
-pr: pending
+pr: 1840
 feature: Models built-in provider destructive action wording
 impact: Built-in providers no longer present their credential-clearing/disable action as a removable provider delete.
 ---
