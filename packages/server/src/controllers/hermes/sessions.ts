@@ -18,7 +18,7 @@ import { deleteUsage, getUsage, getUsageBatch } from '../../db/hermes/usage-stor
 import type { UsageStatsModelRow, UsageStatsDailyRow } from '../../db/hermes/usage-store'
 import { getModelContextLength } from '../../services/hermes/model-context'
 import { getActiveProfileName, listProfileNamesFromDisk } from '../../services/hermes/hermes-profile'
-import { isPathWithin } from '../../services/hermes/hermes-path'
+import { isNearestExistingRealPathWithin, isPathWithin, isRealPathWithin } from '../../services/hermes/hermes-path'
 import { getGroupChatServer } from '../../routes/hermes/group-chat'
 import { logger } from '../../services/logger'
 import type { ConversationSummary } from '../../services/hermes/conversations'
@@ -1013,6 +1013,21 @@ async function listWindowsWorkspaceDrives() {
   return drives
 }
 
+async function isSafeWorkspaceFolderEntry(entry: any, fullPath: string, basePath: string, statFn: any): Promise<boolean> {
+  if (entry.name.startsWith('.')) return false
+  if (!entry.isDirectory() && !(typeof entry.isSymbolicLink === 'function' && entry.isSymbolicLink())) {
+    return false
+  }
+
+  try {
+    const info = await statFn(fullPath)
+    if (!info.isDirectory()) return false
+    return await isRealPathWithin(fullPath, basePath)
+  } catch {
+    return false
+  }
+}
+
 /**
  * List folders for the workspace folder picker.
  * GET /api/hermes/workspace/folders?path=<path>
@@ -1024,7 +1039,7 @@ async function listWindowsWorkspaceDrives() {
  */
 export async function listWorkspaceFolders(ctx: any) {
   const { resolve, join, win32 } = await import('path')
-  const { readdir } = await import('fs/promises')
+  const { readdir, stat } = await import('fs/promises')
   const { existsSync } = await import('fs')
   const { homedir } = await import('os')
 
@@ -1049,18 +1064,24 @@ export async function listWorkspaceFolders(ctx: any) {
       return
     }
 
+    if (!await isRealPathWithin(resolved.fullPath, resolved.base)) {
+      ctx.status = 403
+      ctx.body = { error: 'Access denied' }
+      return
+    }
+
     try {
       const entries = await readdir(resolved.fullPath, { withFileTypes: true })
-      const folders = entries
-        .filter(e => e.isDirectory() && !e.name.startsWith('.'))
-        .map(e => {
-          const fullPath = win32.join(resolved.fullPath, e.name)
-          return {
-            name: e.name,
-            path: fullPath,
-            fullPath,
-          }
-        })
+      const folders = (await Promise.all(entries.map(async (entry) => {
+        const fullPath = win32.join(resolved.fullPath, entry.name)
+        if (!await isSafeWorkspaceFolderEntry(entry, fullPath, resolved.base, stat)) return null
+        return {
+          name: entry.name,
+          path: fullPath,
+          fullPath,
+        }
+      })))
+        .filter((entry): entry is { name: string; path: string; fullPath: string } => !!entry)
         .sort((a, b) => a.name.localeCompare(b.name))
 
       ctx.body = { base: resolved.base, current: resolved.fullPath, folders }
@@ -1087,15 +1108,24 @@ export async function listWorkspaceFolders(ctx: any) {
     return
   }
 
+  if (!await isRealPathWithin(fullPath, WORKSPACE_BASE)) {
+    ctx.status = 403
+    ctx.body = { error: 'Access denied' }
+    return
+  }
+
   try {
     const entries = await readdir(fullPath, { withFileTypes: true })
-    const folders = entries
-      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
-      .map(e => ({
-        name: e.name,
-        path: subPath ? `${subPath}/${e.name}` : e.name,
-        fullPath: join(fullPath, e.name),
-      }))
+    const folders = (await Promise.all(entries.map(async (entry) => {
+      const entryFullPath = join(fullPath, entry.name)
+      if (!await isSafeWorkspaceFolderEntry(entry, entryFullPath, WORKSPACE_BASE, stat)) return null
+      return {
+        name: entry.name,
+        path: subPath ? `${subPath}/${entry.name}` : entry.name,
+        fullPath: entryFullPath,
+      }
+    })))
+      .filter((entry): entry is { name: string; path: string; fullPath: string } => !!entry)
       .sort((a, b) => a.name.localeCompare(b.name))
 
     ctx.body = { base: WORKSPACE_BASE, current: subPath, folders }
@@ -1156,6 +1186,11 @@ export async function createWorkspaceFolder(ctx: any) {
     ctx.body = { error: 'Access denied' }
     return
   }
+  if (!await isNearestExistingRealPathWithin(targetPath, resolvedParent.base)) {
+    ctx.status = 403
+    ctx.body = { error: 'Access denied' }
+    return
+  }
 
   try {
     await mkdir(targetPath)
@@ -1192,6 +1227,12 @@ export async function renameWorkspaceFolder(ctx: any) {
     ctx.body = { error: 'Access denied' }
     return
   }
+  if (!await isNearestExistingRealPathWithin(resolvedCurrent.fullPath, resolvedCurrent.base) ||
+    !await isNearestExistingRealPathWithin(targetPath, resolvedCurrent.base)) {
+    ctx.status = 403
+    ctx.body = { error: 'Access denied' }
+    return
+  }
 
   try {
     const info = await stat(resolvedCurrent.fullPath)
@@ -1223,6 +1264,11 @@ export async function deleteWorkspaceFolder(ctx: any) {
   if (resolvedCurrent.fullPath === resolvedCurrent.base) {
     ctx.status = 400
     ctx.body = { error: 'Cannot delete workspace root' }
+    return
+  }
+  if (!await isNearestExistingRealPathWithin(resolvedCurrent.fullPath, resolvedCurrent.base)) {
+    ctx.status = 403
+    ctx.body = { error: 'Access denied' }
     return
   }
 

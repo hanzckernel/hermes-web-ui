@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, symlink } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 const listConversationSummariesFromDbMock = vi.fn()
 const getConversationDetailFromDbMock = vi.fn()
@@ -233,6 +236,8 @@ describe('session conversations controller', () => {
     }))
     vi.doMock('fs/promises', () => ({
       readdir: readdirMock,
+      stat: vi.fn(async () => ({ isDirectory: () => true })),
+      realpath: vi.fn(async (path: string) => path),
     }))
 
     try {
@@ -261,6 +266,105 @@ describe('session conversations controller', () => {
       else process.env.WORKSPACE_BASE = originalWorkspaceBase
       vi.doUnmock('fs')
       vi.doUnmock('fs/promises')
+    }
+  })
+
+  it('lists symlinked workspace folders that resolve within WORKSPACE_BASE and blocks escaped links', async () => {
+    const originalWorkspaceBase = process.env.WORKSPACE_BASE
+    const workspaceBase = await mkdtemp(join(tmpdir(), 'hermes-workspace-picker-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'hermes-workspace-picker-outside-'))
+
+    try {
+      const safeTarget = join(workspaceBase, 'workspace-target')
+      const safeChild = join(safeTarget, 'nested-child')
+      const safeLink = join(workspaceBase, 'linked-workspace')
+      const outsideTarget = join(outsideRoot, 'external-target')
+      const outsideLink = join(workspaceBase, 'linked-external')
+
+      await mkdir(safeChild, { recursive: true })
+      await mkdir(outsideTarget, { recursive: true })
+      await symlink(safeTarget, safeLink)
+      await symlink(outsideTarget, outsideLink)
+      process.env.WORKSPACE_BASE = workspaceBase
+
+      const mod = await import('../../packages/server/src/controllers/hermes/sessions')
+      const rootCtx: any = { query: {}, body: null }
+      await mod.listWorkspaceFolders(rootCtx)
+
+      expect(rootCtx.status).toBeUndefined()
+      expect(rootCtx.body).toEqual({
+        base: workspaceBase,
+        current: '',
+        folders: [
+          { name: 'linked-workspace', path: 'linked-workspace', fullPath: safeLink },
+          { name: 'workspace-target', path: 'workspace-target', fullPath: safeTarget },
+        ],
+      })
+
+      const nestedCtx: any = { query: { path: 'linked-workspace' }, body: null }
+      await mod.listWorkspaceFolders(nestedCtx)
+
+      expect(nestedCtx.status).toBeUndefined()
+      expect(nestedCtx.body).toEqual({
+        base: workspaceBase,
+        current: 'linked-workspace',
+        folders: [
+          { name: 'nested-child', path: 'linked-workspace/nested-child', fullPath: join(safeLink, 'nested-child') },
+        ],
+      })
+
+      const escapedCtx: any = { query: { path: 'linked-external' }, body: null }
+      await mod.listWorkspaceFolders(escapedCtx)
+
+      expect(escapedCtx.status).toBe(403)
+      expect(escapedCtx.body).toEqual({ error: 'Access denied' })
+    } finally {
+      if (originalWorkspaceBase === undefined) delete process.env.WORKSPACE_BASE
+      else process.env.WORKSPACE_BASE = originalWorkspaceBase
+      await rm(workspaceBase, { recursive: true, force: true })
+      await rm(outsideRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('blocks workspace folder mutations through symlinked ancestors that escape WORKSPACE_BASE', async () => {
+    const originalWorkspaceBase = process.env.WORKSPACE_BASE
+    const workspaceBase = await mkdtemp(join(tmpdir(), 'hermes-workspace-mutation-'))
+    const outsideRoot = await mkdtemp(join(tmpdir(), 'hermes-workspace-mutation-outside-'))
+
+    try {
+      const outsideTarget = join(outsideRoot, 'external-target')
+      const escapeLink = join(workspaceBase, 'escape-link')
+
+      await mkdir(outsideTarget, { recursive: true })
+      await symlink(outsideTarget, escapeLink)
+      process.env.WORKSPACE_BASE = workspaceBase
+
+      const mod = await import('../../packages/server/src/controllers/hermes/sessions')
+
+      const createCtx: any = { request: { body: { parentPath: 'escape-link', name: 'created' } }, body: null }
+      await mod.createWorkspaceFolder(createCtx)
+      expect(createCtx.status).toBe(403)
+      expect(createCtx.body).toEqual({ error: 'Access denied' })
+
+      const renameCtx: any = { request: { body: { path: 'escape-link', name: 'renamed-link' } }, body: null }
+      await mod.renameWorkspaceFolder(renameCtx)
+      expect(renameCtx.status).toBe(403)
+      expect(renameCtx.body).toEqual({ error: 'Access denied' })
+
+      const deleteCtx: any = { request: { body: { path: 'escape-link' } }, body: null }
+      await mod.deleteWorkspaceFolder(deleteCtx)
+      expect(deleteCtx.status).toBe(403)
+      expect(deleteCtx.body).toEqual({ error: 'Access denied' })
+
+      const { access } = await import('fs/promises')
+      await expect(access(escapeLink)).resolves.toBeUndefined()
+      await expect(access(join(outsideTarget, 'created'))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(access(join(workspaceBase, 'renamed-link'))).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      if (originalWorkspaceBase === undefined) delete process.env.WORKSPACE_BASE
+      else process.env.WORKSPACE_BASE = originalWorkspaceBase
+      await rm(workspaceBase, { recursive: true, force: true })
+      await rm(outsideRoot, { recursive: true, force: true })
     }
   })
 
