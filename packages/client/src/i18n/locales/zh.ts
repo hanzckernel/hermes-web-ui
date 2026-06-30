@@ -80,6 +80,7 @@ export default {
     cancel: '取消',
     delete: '删除',
     retry: '重试',
+    reset: '重置',
     edit: '编辑',
     save: '保存',
     saved: '已保存',
@@ -425,6 +426,7 @@ export default {
     outlineEmpty: '暂无会话内容',
     outlineUserQuestion: '用户问题',
     inputPlaceholder: '输入消息... (Enter 发送，Shift+Enter 换行)',
+    inputHeightResizeHint: '拖拽调整聊天输入框高度，双击恢复自动高度。',
     slashCommandArgs: {
       message: '<消息>',
       title: '<标题>',
@@ -1501,6 +1503,8 @@ export default {
       themeLight: '浅色',
       themeDark: '暗色',
       themeSystem: '跟随系统',
+      chatInputHeight: '聊天输入框高度',
+      chatInputHeightHint: '桌面端聊天输入框默认高度（像素）。移动端保持自动高度。'
     },
     agent: {
       maxTurns: '最大轮次',

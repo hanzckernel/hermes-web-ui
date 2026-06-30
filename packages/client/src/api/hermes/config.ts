@@ -5,6 +5,7 @@ export interface DisplayConfig {
   personality?: string
   resume_display?: string
   busy_input_mode?: string
+  chat_input_height?: number | null
   bell_on_complete?: boolean
   notify_on_complete?: boolean
   show_reasoning?: boolean

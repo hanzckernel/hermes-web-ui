@@ -3,13 +3,16 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NButton, NSwitch, NTooltip } from 'naive-ui'
 import { useGroupChatStore } from '@/stores/hermes/group-chat'
+import { useSettingsStore } from '@/stores/hermes/settings'
 import { useToolTraceVisibility } from '@/composables/useToolTraceVisibility'
 import { buildMentionOptions, type MentionOption } from './mention-options'
 import type { Attachment } from '@/stores/hermes/chat'
+import { clampChatInputHeight, isMobileChatInputViewport } from '@/utils/chat-input-height'
 
 const { t } = useI18n()
 const emit = defineEmits<{ send: [content: string, attachments?: Attachment[]] }>()
 const store = useGroupChatStore()
+const settingsStore = useSettingsStore()
 const { toolTraceVisible, toggleToolTraceVisible } = useToolTraceVisibility()
 
 const inputText = ref('')
@@ -21,6 +24,11 @@ const isDragging = ref(false)
 const dragCounter = ref(0)
 const isComposing = ref(false)
 const autoPlaySpeech = ref(false)
+const isMobileViewport = ref(typeof window !== 'undefined' ? isMobileChatInputViewport(window.innerWidth) : false)
+const manualTextareaResize = ref(false)
+const configuredTextareaHeight = computed(() =>
+    isMobileViewport.value ? null : clampChatInputHeight(settingsStore.display.chat_input_height),
+)
 
 onMounted(() => {
     const saved = localStorage.getItem('autoPlaySpeech')
@@ -28,6 +36,11 @@ onMounted(() => {
         autoPlaySpeech.value = saved === 'true'
         store.setAutoPlaySpeech(autoPlaySpeech.value)
     }
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    nextTick(() => {
+        applyConfiguredTextareaHeight()
+    })
 })
 
 watch(autoPlaySpeech, (value) => {
@@ -35,20 +48,57 @@ watch(autoPlaySpeech, (value) => {
     store.setAutoPlaySpeech(value)
 })
 
+watch(configuredTextareaHeight, () => {
+    applyConfiguredTextareaHeight()
+})
+
 // 自定义高度拖拽
 const textareaHeight = ref<number | null>(null)
+
+function syncViewport() {
+  if (typeof window === 'undefined') return
+  isMobileViewport.value = isMobileChatInputViewport(window.innerWidth)
+}
+
+function resetTextareaHeight() {
+    manualTextareaResize.value = false
+    applyConfiguredTextareaHeight()
+}
+
+function autoSizeTextarea(el: HTMLTextAreaElement | undefined = textareaRef.value) {
+    if (!el || textareaHeight.value !== null) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 100) + 'px'
+}
+
+function applyConfiguredTextareaHeight() {
+    if (manualTextareaResize.value) return
+
+    textareaHeight.value = configuredTextareaHeight.value
+
+    const textarea = textareaRef.value
+    if (!textarea) return
+
+    if (textareaHeight.value === null) {
+        autoSizeTextarea(textarea)
+        return
+    }
+
+    textarea.style.height = `${textareaHeight.value}px`
+}
 
 function startResize(e: MouseEvent) {
   e.preventDefault()
   const el = textareaRef.value
   if (!el) return
+  manualTextareaResize.value = true
   const startHeight = el.clientHeight
   const startY = e.clientY
 
   function onMouseMove(e: MouseEvent) {
     const deltaY = e.clientY - startY
     const newHeight = startHeight - deltaY
-    textareaHeight.value = Math.max(20, Math.min(400, Math.round(newHeight)))
+    textareaHeight.value = clampChatInputHeight(newHeight) ?? textareaHeight.value
   }
 
   function onMouseUp() {
@@ -173,10 +223,7 @@ function selectMention(name: string) {
             const newPos = before.length + name.length + 2
             el.setSelectionRange(newPos, newPos)
             el.focus()
-            if (textareaHeight.value === null) {
-                el.style.height = 'auto'
-                el.style.height = Math.min(el.scrollHeight, 100) + 'px'
-            }
+            autoSizeTextarea(el)
         }
     })
 }
@@ -236,8 +283,7 @@ function handleInput(e: Event) {
     // 用户手动拖拽自定义高度时，不覆盖
     if (textareaHeight.value !== null) return
     const el = e.target as HTMLTextAreaElement
-    el.style.height = 'auto'
-    el.style.height = Math.min(el.scrollHeight, 100) + 'px'
+    autoSizeTextarea(el)
 }
 
 function handleMentionClick(option: MentionOption) {
@@ -264,6 +310,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     document.removeEventListener('mousedown', onDocumentMousedown)
+    window.removeEventListener('resize', syncViewport)
 })
 
 function handleCompositionStart() {
@@ -423,7 +470,7 @@ function isImage(type: string): boolean {
             @drop="handleDrop"
         >
             <input ref="fileInputRef" type="file" multiple class="file-input-hidden" @change="handleFileChange" />
-            <div class="resize-handle" @mousedown="startResize"></div>
+            <div class="resize-handle" :title="t('chat.inputHeightResizeHint')" @mousedown="startResize" @dblclick="resetTextareaHeight"></div>
             <textarea
                 ref="textareaRef"
                 v-model="inputText"

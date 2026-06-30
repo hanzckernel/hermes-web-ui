@@ -82,6 +82,7 @@ export default {
     edit: 'Edit',
     save: 'Save',
     retry: 'Retry',
+    reset: 'Reset',
     saved: 'Saved',
     update: 'Update',
     create: 'Create',
@@ -425,6 +426,7 @@ export default {
     outlineEmpty: 'No conversation content',
     outlineUserQuestion: 'User question',
     inputPlaceholder: 'Type a message... (Enter to send, Shift+Enter for new line)',
+    inputHeightResizeHint: 'Drag to resize the chat input. Double-click to reset.',
     slashCommandArgs: {
       message: '<message>',
       title: '<title>',
@@ -1509,6 +1511,8 @@ export default {
       themeLight: 'Light',
       themeDark: 'Dark',
       themeSystem: 'System',
+      chatInputHeight: 'Chat input height',
+      chatInputHeightHint: 'Default desktop chat input height in pixels. Mobile keeps auto height.'
     },
     agent: {
       maxTurns: 'Max Turns',

@@ -5,6 +5,7 @@ import { createTestingPinia } from '@pinia/testing'
 import { nextTick } from 'vue'
 import GroupChatInput from '@/components/hermes/group-chat/GroupChatInput.vue'
 import { useGroupChatStore } from '@/stores/hermes/group-chat'
+import { useSettingsStore } from '@/stores/hermes/settings'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
@@ -23,10 +24,13 @@ vi.mock('@/composables/useToolTraceVisibility', () => ({
 describe('GroupChatInput mentions', () => {
   beforeEach(() => {
     localStorage.clear()
+    window.innerWidth = 1024
   })
 
   it('updates mention suggestions after the textarea has a custom height', async () => {
     const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
+    const settingsStore = useSettingsStore()
+    settingsStore.display = {}
     const store = useGroupChatStore()
     store.agents = [{ id: 'agent-1', agentId: 'agent-1', profile: 'worker', name: 'Worker', roomId: 'room-1', description: '', invited: 1 }]
     store.emitTyping = vi.fn()
@@ -47,5 +51,34 @@ describe('GroupChatInput mentions', () => {
     await nextTick()
     expect(wrapper.find('.mention-dropdown').exists()).toBe(true)
     expect(wrapper.find('.mention-dropdown').text()).toContain('@Worker')
+  })
+
+  it('applies the configured desktop input height', async () => {
+    const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
+    const settingsStore = useSettingsStore()
+    settingsStore.display = { chat_input_height: 168 }
+
+    const wrapper = mount(GroupChatInput, {
+      global: { plugins: [pinia], stubs: { Transition: false } },
+    })
+
+    await nextTick()
+
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).style.height).toBe('168px')
+  })
+
+  it('preserves mobile auto height when a desktop preference is configured', async () => {
+    window.innerWidth = 640
+    const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
+    const settingsStore = useSettingsStore()
+    settingsStore.display = { chat_input_height: 168 }
+
+    const wrapper = mount(GroupChatInput, {
+      global: { plugins: [pinia], stubs: { Transition: false } },
+    })
+
+    await nextTick()
+
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).style.height).not.toBe('168px')
   })
 })

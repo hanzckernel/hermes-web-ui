@@ -78,6 +78,7 @@ export default {
     cancel: 'Отмена',
     delete: 'Удалить',
     retry: 'Повторить',
+    reset: 'Сбросить',
     edit: 'Редактировать',
     save: 'Сохранить',
     saved: 'Сохранено',
@@ -349,6 +350,7 @@ export default {
     outlineEmpty: 'Нет содержимого беседы',
     outlineUserQuestion: 'Вопрос пользователя',
     inputPlaceholder: 'Введите сообщение... (Enter — отправить, Shift+Enter — новая строка)',
+    inputHeightResizeHint: 'Перетащите, чтобы изменить высоту поля ввода, и дважды щелкните для сброса.',
     slashCommandArgs: {
       message: '<сообщение>',
       title: '<заголовок>',
@@ -1363,6 +1365,8 @@ export default {
       themeLight: 'Светлая',
       themeDark: 'Тёмная',
       themeSystem: 'Системная',
+      chatInputHeight: 'Высота поля ввода чата',
+      chatInputHeightHint: 'Высота поля ввода чата на рабочем столе в пикселях. На мобильных остается авто.'
     },
     agent: {
       maxTurns: 'Максимум ходов',

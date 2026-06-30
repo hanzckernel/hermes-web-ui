@@ -79,6 +79,7 @@ export default {
     loading: '読み込み中...',
     cancel: 'キャンセル',
     retry: '再試行',
+    reset: 'リセット',
     delete: '削除',
     edit: '編集',
     save: '保存',
@@ -422,6 +423,7 @@ export default {
     outlineEmpty: '会話内容はありません',
     outlineUserQuestion: 'ユーザーの質問',
     inputPlaceholder: 'メッセージを入力... (Enter で送信、Shift+Enter で改行)',
+    inputHeightResizeHint: 'ドラッグして入力欄の高さを変更。ダブルクリックでリセット。',
     slashCommandArgs: {
       message: '<メッセージ>',
       title: '<タイトル>',
@@ -1236,6 +1238,8 @@ export default {
       themeLight: 'ライト',
       themeDark: 'ダーク',
       themeSystem: 'システム',
+      chatInputHeight: 'チャット入力欄の高さ',
+      chatInputHeightHint: 'デスクトップでの既定の入力欄高さ（px）。モバイルでは自動高さを維持します。'
     },
     agent: {
       maxTurns: '最大ターン数',

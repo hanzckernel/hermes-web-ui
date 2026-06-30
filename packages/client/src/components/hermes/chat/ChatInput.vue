@@ -3,6 +3,7 @@ import type { Attachment } from '@/stores/hermes/chat'
 import { useChatStore } from '@/stores/hermes/chat'
 import { useAppStore } from '@/stores/hermes/app'
 import { useProfilesStore } from '@/stores/hermes/profiles'
+import { useSettingsStore } from '@/stores/hermes/settings'
 import { fetchContextLength } from '@/api/hermes/sessions'
 import { setModelContext } from '@/api/hermes/model-context'
 import { fetchSkills, type SkillCategory, type SkillInfo } from '@/api/hermes/skills'
@@ -19,10 +20,12 @@ import type { StoredSttProvider } from '@/api/hermes/stt-settings'
 import { useSttSettings } from '@/composables/useSttSettings'
 import { useBrowserSpeechRecognition } from '@/composables/useBrowserSpeechRecognition'
 import { BRIDGE_SESSION_COMMAND_DEFINITIONS } from '@/utils/hermes/bridge-session-commands'
+import { clampChatInputHeight, isMobileChatInputViewport } from '@/utils/chat-input-height'
 
 const chatStore = useChatStore()
 const appStore = useAppStore()
 const profilesStore = useProfilesStore()
+const settingsStore = useSettingsStore()
 const { t } = useI18n()
 const message = useMessage()
 const { toolTraceVisible, toggleToolTraceVisible } = useToolTraceVisibility()
@@ -60,6 +63,8 @@ const attachments = ref<Attachment[]>([])
 const isDragging = ref(false)
 const dragCounter = ref(0)
 const isComposing = ref(false)
+const isMobileViewport = ref(typeof window !== 'undefined' ? isMobileChatInputViewport(window.innerWidth) : false)
+const manualTextareaResize = ref(false)
 const speech = useGlobalSpeech()
 const micRecorder = useMicRecorder({
   messages: {
@@ -76,6 +81,9 @@ const browserRecognition = useBrowserSpeechRecognition({
   },
 })
 const activeVoiceCaptureMode = ref<'browser' | 'backend' | null>(null)
+const configuredTextareaHeight = computed(() =>
+  isMobileViewport.value ? null : clampChatInputHeight(settingsStore.display.chat_input_height),
+)
 
 type SlashCommandOption = {
   name: string
@@ -144,11 +152,7 @@ function insertVoiceTranscriptIntoInput(text: string) {
 
     textarea.focus()
     textarea.setSelectionRange(nextCursorPosition, nextCursorPosition)
-
-    if (textareaHeight.value === null) {
-      textarea.style.height = 'auto'
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 100)}px`
-    }
+    autoSizeTextarea(textarea)
   })
 }
 
@@ -286,10 +290,43 @@ async function loadSkills() {
 // 自定义高度拖拽
 const textareaHeight = ref<number | null>(null) // null = auto
 
+function syncViewport() {
+  if (typeof window === 'undefined') return
+  isMobileViewport.value = isMobileChatInputViewport(window.innerWidth)
+}
+
+function resetTextareaHeight() {
+  manualTextareaResize.value = false
+  applyConfiguredTextareaHeight()
+}
+
+function autoSizeTextarea(el: HTMLTextAreaElement | undefined = textareaRef.value) {
+  if (!el || textareaHeight.value !== null) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 100)}px`
+}
+
+function applyConfiguredTextareaHeight() {
+  if (manualTextareaResize.value) return
+
+  textareaHeight.value = configuredTextareaHeight.value
+
+  const textarea = textareaRef.value
+  if (!textarea) return
+
+  if (textareaHeight.value === null) {
+    autoSizeTextarea(textarea)
+    return
+  }
+
+  textarea.style.height = `${textareaHeight.value}px`
+}
+
 function startResize(e: MouseEvent) {
   e.preventDefault()
   const el = textareaRef.value
   if (!el) return
+  manualTextareaResize.value = true
   // 如果当前是 auto，用实际 clientHeight 作为起始值
   const startHeight = el.clientHeight
   const startY = e.clientY
@@ -298,7 +335,7 @@ function startResize(e: MouseEvent) {
     const deltaY = e.clientY - startY
     // 往上拖 (deltaY < 0) → 高度增加
     const newHeight = startHeight - deltaY
-    textareaHeight.value = Math.max(20, Math.min(400, Math.round(newHeight)))
+    textareaHeight.value = clampChatInputHeight(newHeight) ?? textareaHeight.value
   }
 
   function onMouseUp() {
@@ -360,6 +397,11 @@ onMounted(() => {
     // 同步到 chat store
     chatStore.setAutoPlaySpeech(autoPlaySpeech.value)
   }
+  syncViewport()
+  window.addEventListener('resize', syncViewport)
+  nextTick(() => {
+    applyConfiguredTextareaHeight()
+  })
 })
 
 // 监听变化并保存
@@ -375,6 +417,13 @@ watch(inputText, (value) => {
 
 watch(() => chatStore.activeSession?.id, () => {
   loadDraftForActiveSession()
+  nextTick(() => {
+    applyConfiguredTextareaHeight()
+  })
+})
+
+watch(configuredTextareaHeight, () => {
+  applyConfiguredTextareaHeight()
 })
 
 watch(
@@ -825,8 +874,7 @@ function handleInput(e: Event) {
   if (!isComposing.value) updateSlashState()
   // 用户手动拖拽自定义高度时，不覆盖
   if (textareaHeight.value !== null) return
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 100) + 'px'
+  autoSizeTextarea(el)
 }
 
 function handleCommandHover(index: number) {
@@ -847,6 +895,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('mousedown', onDocumentMousedown)
+  window.removeEventListener('resize', syncViewport)
 })
 
 function removeAttachment(id: string) {
@@ -1011,7 +1060,12 @@ function isImage(type: string): boolean {
         class="file-input-hidden"
         @change="handleFileChange"
       />
-      <div class="resize-handle" @mousedown="startResize"></div>
+      <div
+        class="resize-handle"
+        :title="t('chat.inputHeightResizeHint')"
+        @mousedown="startResize"
+        @dblclick="resetTextareaHeight"
+      ></div>
       <textarea
         ref="textareaRef"
         v-model="inputText"

@@ -79,6 +79,7 @@ export default {
     loading: 'Cargando...',
     cancel: 'Cancelar',
     retry: 'Reintentar',
+    reset: 'Restablecer',
     delete: 'Eliminar',
     edit: 'Editar',
     save: 'Guardar',
@@ -422,6 +423,7 @@ export default {
     outlineEmpty: 'Sin contenido de conversación',
     outlineUserQuestion: 'Pregunta del usuario',
     inputPlaceholder: 'Escribe un mensaje... (Enter para enviar, Shift+Enter para nueva linea)',
+    inputHeightResizeHint: 'Arrastra para cambiar la altura del cuadro de chat y haz doble clic para restablecerla.',
     slashCommandArgs: {
       message: '<mensaje>',
       title: '<titulo>',
@@ -1236,6 +1238,8 @@ jobTriggered: 'Job ejecutado',
       themeLight: 'Claro',
       themeDark: 'Oscuro',
       themeSystem: 'Sistema',
+      chatInputHeight: 'Altura de entrada del chat',
+      chatInputHeightHint: 'Altura predeterminada de la entrada del chat en escritorio, en píxeles. En móvil se mantiene automática.'
     },
     agent: {
       maxTurns: 'Turnos maximos',

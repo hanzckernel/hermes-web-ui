@@ -79,6 +79,7 @@ export default {
     loading: 'Chargement...',
     cancel: 'Annuler',
     retry: 'Réessayer',
+    reset: 'Réinitialiser',
     delete: 'Supprimer',
     edit: 'Modifier',
     save: 'Enregistrer',
@@ -422,6 +423,7 @@ export default {
     outlineEmpty: 'Aucun contenu de conversation',
     outlineUserQuestion: 'Question utilisateur',
     inputPlaceholder: 'Tapez un message... (Entree pour envoyer, Shift+Entree pour un saut de ligne)',
+    inputHeightResizeHint: 'Faites glisser pour changer la hauteur du champ de chat, double-cliquez pour reinitialiser.',
     slashCommandArgs: {
       message: '<message>',
       title: '<titre>',
@@ -1236,6 +1238,8 @@ jobTriggered: 'Job declenche',
       themeLight: 'Clair',
       themeDark: 'Sombre',
       themeSystem: 'Systeme',
+      chatInputHeight: 'Hauteur de saisie du chat',
+      chatInputHeightHint: 'Hauteur par défaut de la zone de saisie sur ordinateur, en pixels. Le mobile reste automatique.'
     },
     agent: {
       maxTurns: 'Tours maximum',

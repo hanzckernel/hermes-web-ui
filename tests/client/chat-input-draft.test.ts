@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createTestingPinia } from '@pinia/testing'
 import { nextTick } from 'vue'
 import { useChatStore } from '@/stores/hermes/chat'
+import { useSettingsStore } from '@/stores/hermes/settings'
 import ChatInput from '@/components/hermes/chat/ChatInput.vue'
 
 const fetchSkillsMock = vi.hoisted(() => vi.fn())
@@ -56,20 +57,27 @@ vi.mock('@/composables/useToolTraceVisibility', () => ({
   useToolTraceVisibility: () => ({ toolTraceVisible: { value: true }, toggleToolTraceVisible: vi.fn() }),
 }))
 
-function mountForSession(sessionId: string, sessionOverrides: Partial<ReturnType<typeof useChatStore>['sessions'][number]> = {}) {
+function mountForSession(
+  sessionId: string,
+  sessionOverrides: Partial<ReturnType<typeof useChatStore>['sessions'][number]> = {},
+  displayOverrides: Record<string, any> = {},
+) {
   const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
   const chatStore = useChatStore()
+  const settingsStore = useSettingsStore()
   chatStore.sessions = [
     { id: sessionId, title: sessionId, source: 'cli', messages: [], createdAt: Date.now(), updatedAt: Date.now(), ...sessionOverrides },
   ]
   chatStore.activeSessionId = sessionId
   chatStore.activeSession = chatStore.sessions[0]
+  settingsStore.display = displayOverrides
   return mount(ChatInput, { global: { plugins: [pinia] } })
 }
 
 describe('ChatInput draft persistence', () => {
   beforeEach(() => {
     localStorage.clear()
+    window.innerWidth = 1024
     fetchSkillsMock.mockReset()
     fetchSkillsMock.mockResolvedValue({ categories: [], archived: [] })
   })
@@ -108,6 +116,23 @@ describe('ChatInput draft persistence', () => {
     const remountedA = mountForSession('session-a')
     await nextTick()
     expect((remountedA.get('textarea').element as HTMLTextAreaElement).value).toBe('draft for session a')
+  })
+
+  it('applies the configured desktop input height from display settings', async () => {
+    const wrapper = mountForSession('session-a', {}, { chat_input_height: 180 })
+    await flushPromises()
+    await nextTick()
+
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).style.height).toBe('180px')
+  })
+
+  it('keeps mobile chat input behavior even when a desktop height is configured', async () => {
+    window.innerWidth = 640
+    const wrapper = mountForSession('session-mobile', {}, { chat_input_height: 180 })
+    await flushPromises()
+    await nextTick()
+
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).style.height).not.toBe('180px')
   })
 
   it('hides context usage for coding-agent sessions', async () => {
