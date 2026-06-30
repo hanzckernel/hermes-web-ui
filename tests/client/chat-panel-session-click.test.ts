@@ -30,4 +30,11 @@ describe('ChatPanel session clicks', () => {
     expect(source).toContain('profile === activeProfileName')
     expect(source).toContain('selectedGroup?.models.includes(selectedModel)')
   })
+
+  it('uses a create action in the new chat drawer instead of duplicating the new chat trigger label', () => {
+    const source = readFileSync('packages/client/src/components/hermes/chat/ChatPanel.vue', 'utf8')
+
+    expect(source).toContain('{{ t("common.create") }}')
+    expect(source).not.toContain('{{ t("chat.newChat") }}\n            </NButton>')
+  })
 })
