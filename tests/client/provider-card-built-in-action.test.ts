@@ -64,8 +64,10 @@ const messages: Record<string, string> = {
   'models.customType': 'Custom',
   'models.builtIn': 'Built-in',
   'models.currentDefault': 'Current default',
+  'models.defaultModel': 'Default Model',
   'models.setDefaultProvider': 'Set default provider',
   'models.setDefault': 'Set default',
+  'models.selectModel': 'Select a model...',
   'models.provider': 'Provider',
   'models.baseUrl': 'Base URL',
   'models.models': 'Models',
@@ -113,6 +115,24 @@ vi.mock('naive-ui', () => ({
     name: 'NInput',
     setup() {
       return () => h('input')
+    },
+  }),
+  NSelect: defineComponent({
+    name: 'NSelect',
+    props: {
+      value: { type: [String, Number], default: null },
+      options: { type: Array, default: () => [] },
+      placeholder: { type: String, default: '' },
+    },
+    emits: ['update:value'],
+    setup(props, { emit }) {
+      return () => h('select', {
+        value: props.value || '',
+        onChange: (event: Event) => emit('update:value', (event.target as HTMLSelectElement).value),
+      }, [
+        h('option', { value: '' }, props.placeholder),
+        ...(props.options as Array<{ label: string; value: string }>).map(option => h('option', { value: option.value }, option.label)),
+      ])
     },
   }),
   NModal: defineComponent({
@@ -285,7 +305,7 @@ describe('ProviderCard built-in destructive action labels', () => {
     expect(messageMock.success).toHaveBeenCalledWith('Default provider updated')
   })
 
-  it('exposes an explicit set-default-model action for non-default models', async () => {
+  it('exposes a searchable default-model selector without per-model action buttons', async () => {
     modelsStoreMock.defaultProvider = 'deepseek'
     modelsStoreMock.defaultModel = 'deepseek-chat'
     const wrapper = mountCard(provider({
@@ -294,9 +314,31 @@ describe('ProviderCard built-in destructive action labels', () => {
       models: ['deepseek-chat', 'deepseek-reasoner'],
     }))
 
-    await wrapper.findAll('button').find(button => button.text() === 'Set default')!.trigger('click')
+    expect(wrapper.text()).toContain('Default Model')
+    expect(wrapper.findAll('button').some(button => button.text() === 'Set default')).toBe(false)
+
+    await wrapper.find('select').setValue('deepseek-reasoner')
 
     expect(modelsStoreMock.setDefaultModel).toHaveBeenCalledWith('deepseek-reasoner', 'deepseek')
     expect(messageMock.success).toHaveBeenCalledWith('Default model updated')
+  })
+
+  it('keeps many models in a compact chip preview with one selector', () => {
+    modelsStoreMock.defaultProvider = 'openai'
+    modelsStoreMock.defaultModel = 'model-099'
+    const manyModels = Array.from({ length: 100 }, (_, index) => `model-${String(index + 1).padStart(3, '0')}`)
+    const wrapper = mountCard(provider({
+      provider: 'openai',
+      label: 'OpenAI',
+      models: manyModels,
+    }))
+
+    expect(wrapper.findAll('.model-row')).toHaveLength(0)
+    expect(wrapper.findAll('.model-tag-button')).toHaveLength(20)
+    expect(wrapper.findAll('.model-tag-button')[0].text()).toContain('model-099')
+    expect(wrapper.findAll('.model-tag-button')[0].text()).toContain('Default')
+    expect(wrapper.text()).toContain('+80 more')
+    expect(wrapper.findAll('select')).toHaveLength(1)
+    expect(wrapper.findAll('button').some(button => button.text() === 'Set default')).toBe(false)
   })
 })

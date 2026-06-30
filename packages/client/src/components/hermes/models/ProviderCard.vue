@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NButton, NCheckbox, NCheckboxGroup, NModal, NInput, useMessage, useDialog } from 'naive-ui'
+import { NButton, NCheckbox, NCheckboxGroup, NModal, NInput, NSelect, useMessage, useDialog } from 'naive-ui'
 import type { AvailableModelGroup } from '@/api/hermes/system'
 import { useModelsStore } from '@/stores/hermes/models'
 import { useAppStore } from '@/stores/hermes/app'
@@ -61,6 +61,20 @@ const visibilityRule = computed(() => appStore.getProviderVisibility(props.provi
 const isFiltered = computed(() => visibilityRule.value.mode === 'include')
 const visibleCountLabel = computed(() => `${props.provider.models.length}/${allModels.value.length}`)
 const isDefaultProvider = computed(() => modelsStore.defaultProvider === props.provider.provider)
+const defaultModelOptions = computed(() => props.provider.models.map(model => ({
+  label: modelDisplayName(model),
+  value: model,
+})))
+const defaultModelSelectValue = computed(() => isDefaultProvider.value ? modelsStore.defaultModel || null : null)
+const previewModels = computed(() => {
+  const firstModels = props.provider.models.slice(0, 20)
+  const currentDefault = modelsStore.defaultModel
+  if (isDefaultProvider.value && currentDefault && props.provider.models.includes(currentDefault) && !firstModels.includes(currentDefault)) {
+    return [currentDefault, ...firstModels.slice(0, 19)]
+  }
+  return firstModels
+})
+const hiddenModelCount = computed(() => Math.max(props.provider.models.length - previewModels.value.length, 0))
 
 function isDefaultModel(model: string) {
   return isDefaultProvider.value && modelsStore.defaultModel === model
@@ -95,7 +109,8 @@ async function handleSetDefaultProvider() {
   }
 }
 
-async function handleSetDefaultModel(model: string) {
+async function handleSetDefaultModel(model: string | null) {
+  if (!model) return
   if (isDefaultModel(model)) return
 
   defaultingModel.value = model
@@ -241,36 +256,36 @@ async function handleDelete() {
           {{ isFiltered ? visibleCountLabel : provider.models.length }} {{ t('models.count') }}
         </span>
       </div>
+      <div class="default-model-row">
+        <span class="info-label">{{ t('models.defaultModel') }}</span>
+        <NSelect
+          class="default-model-select"
+          size="tiny"
+          filterable
+          :value="defaultModelSelectValue"
+          :options="defaultModelOptions"
+          :placeholder="t('models.selectModel')"
+          :disabled="provider.models.length === 0"
+          :loading="defaultingModel !== null"
+          @update:value="handleSetDefaultModel"
+        />
+      </div>
       <div class="models-list">
-        <div
-          v-for="model in provider.models.slice(0, 20)"
+        <button
+          v-for="model in previewModels"
           :key="model"
-          class="model-row"
+          class="model-tag model-tag-button"
+          :class="{ default: isDefaultModel(model) }"
+          type="button"
+          :title="t('models.aliasTitleFor', { model })"
+          @click="openAliasEditor(model)"
         >
-          <button
-            class="model-tag model-tag-button model-row-main"
-            :class="{ default: isDefaultModel(model) }"
-            type="button"
-            :title="t('models.aliasTitleFor', { model })"
-            @click="openAliasEditor(model)"
-          >
-            <span class="model-tag-name">{{ modelDisplayName(model) }}</span>
-            <span v-if="isDefaultModel(model)" class="model-tag-default">{{ t('models.defaultShort') }}</span>
-            <span v-if="modelAlias(model)" class="model-tag-id">{{ model }}</span>
-          </button>
-          <NButton
-            size="tiny"
-            quaternary
-            class="model-row-action"
-            :disabled="isDefaultModel(model)"
-            :loading="defaultingModel === model"
-            @click="handleSetDefaultModel(model)"
-          >
-            {{ isDefaultModel(model) ? t('models.defaultShort') : t('models.setDefault') }}
-          </NButton>
-        </div>
-        <span v-if="provider.models.length > 20" class="model-tag model-tag-more">
-          +{{ provider.models.length - 20 }} {{ t('models.more') }}
+          <span class="model-tag-name">{{ modelDisplayName(model) }}</span>
+          <span v-if="isDefaultModel(model)" class="model-tag-default">{{ t('models.defaultShort') }}</span>
+          <span v-if="modelAlias(model)" class="model-tag-id">{{ model }}</span>
+        </button>
+        <span v-if="hiddenModelCount > 0" class="model-tag model-tag-more">
+          +{{ hiddenModelCount }} {{ t('models.more') }}
         </span>
       </div>
     </div>
@@ -485,17 +500,24 @@ async function handleDelete() {
 
 .models-list {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   margin-top: 6px;
-  max-height: 144px;
+  height: 100px;
   overflow-y: auto;
+  align-content: flex-start;
 }
 
-.model-row {
+.default-model-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 2px;
+  min-width: 0;
+}
+
+.default-model-select {
+  flex: 1;
   min-width: 0;
 }
 
@@ -531,21 +553,11 @@ async function handleDelete() {
   border: 0;
   cursor: pointer;
   text-align: left;
-  min-width: 0;
 
   &:hover {
     background: rgba(var(--accent-primary-rgb), 0.16);
     color: $text-primary;
   }
-}
-
-.model-row-main {
-  flex: 1;
-  max-width: none;
-}
-
-.model-row-action {
-  flex-shrink: 0;
 }
 
 .model-tag-name,
