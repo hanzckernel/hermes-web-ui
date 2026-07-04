@@ -191,6 +191,52 @@ describe('AppSidebar navigation', () => {
     expect(stored.monitoring).toBe(false)
   })
 
+  it('reopens every active sidebar group from stored collapsed state', async () => {
+    mockRoute.name = 'hermes.petdex'
+    localStorage.setItem('hermes.sidebar.collapsedGroups', JSON.stringify({ agent: true, monitoring: true }))
+
+    const agentWrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          ProfileSelector: true,
+          ModelSelector: true,
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+          NButton: true,
+        },
+      },
+    })
+    await agentWrapper.vm.$nextTick()
+
+    let [agentGroup, monitoringGroup] = agentWrapper.findAll('.nav-group')
+    expect(agentGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
+    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
+    expect(JSON.parse(localStorage.getItem('hermes.sidebar.collapsedGroups') || '{}').agent).toBe(false)
+    agentWrapper.unmount()
+
+    localStorage.clear()
+    mockRoute.name = 'hermes.journey'
+    localStorage.setItem('hermes.sidebar.collapsedGroups', JSON.stringify({ agent: true, monitoring: true }))
+
+    const monitoringWrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          ProfileSelector: true,
+          ModelSelector: true,
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+          NButton: true,
+        },
+      },
+    })
+    await monitoringWrapper.vm.$nextTick()
+
+    ;[agentGroup, monitoringGroup] = monitoringWrapper.findAll('.nav-group')
+    expect(agentGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
+    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem('hermes.sidebar.collapsedGroups') || '{}').monitoring).toBe(false)
+  })
+
   it('keeps the active navigation group expanded when its label is clicked', async () => {
     mockRoute.name = 'hermes.skillsUsage'
     const wrapper = mount(AppSidebar, {
