@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 const openSessionSearchMock = vi.hoisted(() => vi.fn())
+const mockRoute = vi.hoisted(() => ({ name: 'hermes.chat' as string }))
 const mockAppStore = vi.hoisted(() => ({
   sidebarOpen: true,
   sidebarCollapsed: false,
@@ -33,7 +34,7 @@ vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<any>()
   return {
     ...actual,
-    useRoute: () => ({ name: 'hermes.chat' }),
+    useRoute: () => mockRoute,
     useRouter: () => ({ push: vi.fn(), hasRoute: () => true }),
   }
 })
@@ -112,6 +113,7 @@ describe('AppSidebar navigation', () => {
     mockAppStore.clientOutdated = false
     mockAppStore.updating = false
     mockAppStore.sidebarCollapsed = false
+    mockRoute.name = 'hermes.chat'
     mockAppStore.reloadClient.mockClear()
   })
 
@@ -160,6 +162,54 @@ describe('AppSidebar navigation', () => {
 
     await agentGroup.find('.nav-group-label').trigger('click')
     expect(agentGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
+  })
+
+  it('reopens the active monitoring group when it was stored collapsed', async () => {
+    mockRoute.name = 'hermes.skillsUsage'
+    localStorage.setItem('hermes.sidebar.collapsedGroups', JSON.stringify({ agent: true, monitoring: true }))
+
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          ProfileSelector: true,
+          ModelSelector: true,
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+          NButton: true,
+        },
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const [agentGroup, monitoringGroup] = wrapper.findAll('.nav-group')
+    expect(agentGroup.find('.nav-group-items').attributes('style')).toContain('display: none')
+    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
+    expect(monitoringGroup.text()).toContain('sidebar.skillsUsage')
+
+    const stored = JSON.parse(localStorage.getItem('hermes.sidebar.collapsedGroups') || '{}')
+    expect(stored.agent).toBe(true)
+    expect(stored.monitoring).toBe(false)
+  })
+
+  it('keeps the active navigation group expanded when its label is clicked', async () => {
+    mockRoute.name = 'hermes.skillsUsage'
+    const wrapper = mount(AppSidebar, {
+      global: {
+        stubs: {
+          ProfileSelector: true,
+          ModelSelector: true,
+          LanguageSwitch: true,
+          ThemeSwitch: true,
+          NButton: true,
+        },
+      },
+    })
+
+    const monitoringGroup = wrapper.findAll('.nav-group')[1]
+    await monitoringGroup.find('.nav-group-label').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(monitoringGroup.find('.nav-group-items').attributes('style')).toBeUndefined()
   })
 
   it('keeps MCP visible for admins while hiding device management', () => {

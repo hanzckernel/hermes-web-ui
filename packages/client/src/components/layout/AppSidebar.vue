@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { NButton, NModal, useMessage } from "naive-ui";
@@ -37,19 +37,54 @@ function hasRoute(name: string): boolean {
 const { record: collapsedGroups, persist: persistCollapsedGroups } = usePersistentRecord('hermes.sidebar.collapsedGroups');
 
 type SidebarGroupKey = "Agent" | "Monitoring" | "Tools" | "System";
+type SidebarGroupStorageKey = "agent" | "monitoring" | "tools" | "system";
+
+const routeGroupMap: Record<string, SidebarGroupStorageKey> = {
+  "hermes.jobs": "agent",
+  "hermes.kanban": "agent",
+  "hermes.channels": "agent",
+  "hermes.skills": "agent",
+  "hermes.plugins": "agent",
+  "hermes.mcp": "agent",
+  "hermes.memory": "agent",
+  "hermes.models": "agent",
+  "hermes.logs": "monitoring",
+  "hermes.usage": "monitoring",
+  "hermes.performance": "monitoring",
+  "hermes.skillsUsage": "monitoring",
+  "hermes.codingAgents": "tools",
+  "hermes.versionPreview": "tools",
+  "hermes.devices": "tools",
+  "hermes.profiles": "system",
+  "hermes.settings": "system",
+};
+
+const activeGroupKey = computed(() => routeGroupMap[selectedKey.value] || null);
 
 function groupLabel(key: SidebarGroupKey) {
   return t(`sidebar.group${key}${appStore.sidebarCollapsed ? "Short" : ""}`);
 }
 
-function toggleGroup(key: string) {
+function expandGroup(key: SidebarGroupStorageKey | null) {
+  if (!key || !collapsedGroups[key]) return;
+  collapsedGroups[key] = false;
+  persistCollapsedGroups();
+}
+
+function toggleGroup(key: SidebarGroupStorageKey) {
+  if (key === activeGroupKey.value) {
+    expandGroup(key);
+    return;
+  }
   collapsedGroups[key] = !collapsedGroups[key];
   persistCollapsedGroups();
 }
 
-function isGroupCollapsed(key: string) {
+function isGroupCollapsed(key: SidebarGroupStorageKey) {
   return !!collapsedGroups[key];
 }
+
+watch(activeGroupKey, expandGroup, { immediate: true });
 
 function handleSidebarClick(event: MouseEvent) {
   const target = event.target instanceof Element ? event.target : null;
