@@ -224,6 +224,12 @@ describe('group chat store baseline lifecycle', () => {
 
     store.selectChannel('task-1')
     expect(store.visibleMessages.map(message => message.id)).toEqual(['msg-task'])
+    store.emitTyping()
+    expect(groupChatApiMock.socket.emit).toHaveBeenCalledWith('typing', expect.objectContaining({
+      roomId: 'room-1',
+      channelId: 'task-1',
+      visibility: 'private',
+    }))
     await store.sendMessage('hello task')
 
     expect(groupChatApiMock.socket.emit).toHaveBeenCalledWith('message', expect.objectContaining({

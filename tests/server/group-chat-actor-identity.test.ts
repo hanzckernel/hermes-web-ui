@@ -18,6 +18,7 @@ import { ActorStore } from '../../packages/server/src/services/hermes/group-chat
 import { agentActorId } from '../../packages/server/src/services/hermes/group-chat/identity/actor-ids'
 import { GroupChatServer } from '../../packages/server/src/services/hermes/group-chat'
 import { groupChatRoutes, setGroupChatServer } from '../../packages/server/src/routes/hermes/group-chat'
+import { authenticateUserToken, isAuthEnabled } from '../../packages/server/src/middleware/user-auth'
 
 async function listen(server: HttpServer): Promise<{ baseUrl: string; port: number }> {
   return await new Promise(resolve => server.listen(0, '127.0.0.1', () => {
@@ -64,6 +65,8 @@ describe('group chat actor identity', () => {
   beforeEach(() => {
     db = new DatabaseSync(':memory:')
     groupChatDbMock.current = db
+    vi.mocked(isAuthEnabled).mockResolvedValue(false)
+    vi.mocked(authenticateUserToken).mockResolvedValue(null as any)
   })
 
   afterEach(() => {
@@ -207,6 +210,34 @@ describe('group chat actor identity', () => {
 
     expect(system).toMatchObject({ id: 'gc:room-1:system', kind: 'system', source: 'system' })
     expect(store.listActors('room-1').map(a => a.kind)).toEqual(['system'])
+  })
+
+  it('uses authenticated profile identity over client-supplied display names', async () => {
+    vi.mocked(isAuthEnabled).mockResolvedValue(true)
+    vi.mocked(authenticateUserToken).mockResolvedValue({ id: 42, username: 'Alice Auth', role: 'user', profiles: [] } as any)
+    initAllHermesTables()
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    server.getStorage().saveRoom('room-1', 'Room 1', 'ROOM1')
+    const { port } = await listen(httpServer)
+    const socket = clientIo(`http://127.0.0.1:${port}/group-chat`, {
+      transports: ['websocket'],
+      forceNew: true,
+      reconnection: false,
+      auth: { userId: 'spoof-user', name: 'Mallory', token: 'valid-token' },
+    })
+
+    try {
+      await new Promise(resolve => socket.once('connect', resolve))
+      const joined = await emitAck<any>(socket, 'join', { roomId: 'room-1', name: 'Eve' })
+
+      expect(joined.members[0].name).toBe('Alice Auth')
+      expect(joined.actors.find((actor: any) => actor.kind === 'human')).toMatchObject({ displayName: 'Alice Auth' })
+    } finally {
+      socket.disconnect()
+      server.getIO().close()
+      httpServer.close()
+    }
   })
 
   it('creates or updates a human actor when a socket joins', async () => {

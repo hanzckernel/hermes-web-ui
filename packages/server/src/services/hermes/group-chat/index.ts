@@ -936,6 +936,8 @@ export class GroupChatServer {
     private approvalVisibilityMap = new Map<string, ChatMessage>()
     /** Map: room/approval id → choices advertised by the approval request */
     private approvalChoicesMap = new Map<string, Set<string>>()
+    /** Map: bridge approval id → room-scoped approval key to prevent cross-room takeover */
+    private approvalKeyById = new Map<string, string>()
     readonly agentClients = new AgentClients()
     private _contextEngine: ContextEngine | null = null
     private _restoreScheduled = false
@@ -1095,8 +1097,8 @@ export class GroupChatServer {
         const authenticatedUser = socket.data.authUser as AuthenticatedUser | undefined
         const authUserId = requestedSource === 'human' ? authenticatedUser?.id : undefined
         const userId = authUserId ? authenticatedGroupUserId(authUserId) : auth.userId || socket.id
-        const userName = auth.name || authenticatedUser?.username || `User-${userId.slice(0, 6)}`
-        const description = auth.description || ''
+        const userName = authUserId ? authenticatedUser?.username || `User-${userId.slice(0, 6)}` : auth.name || `User-${userId.slice(0, 6)}`
+        const description = authUserId ? '' : auth.description || ''
 
         this.socketUserMap.set(socket.id, userId)
         this.socketRequestedSourceMap.set(socket.id, requestedSource)
@@ -1145,8 +1147,8 @@ export class GroupChatServer {
         }
         const requestedName = typeof data.name === 'string' ? data.name.trim() : ''
         const requestedDescription = typeof data.description === 'string' ? data.description.trim() : ''
-        const userName = requestedName || existingMember?.name || userInfo.name
-        const description = requestedDescription || existingMember?.description || userInfo.description
+        const userName = typeof socketAuthUserId === 'number' ? userInfo.name : requestedName || existingMember?.name || userInfo.name
+        const description = typeof socketAuthUserId === 'number' ? userInfo.description : requestedDescription || existingMember?.description || userInfo.description
 
         // Update stored user info
         this.userInfoMap.set(userId, { name: userName, description })
@@ -1386,6 +1388,7 @@ export class GroupChatServer {
         if (!id || !data.delta) return
         if (this.streamOwnerMap.get(id) !== socket.id) return
         const visibility = this.streamVisibilityMap.get(id)
+        if (!visibility || visibility.roomId !== roomId) return
         this.emitVisibleEvent(roomId, visibility, 'message_stream_delta', {
             roomId,
             id,
@@ -1401,6 +1404,7 @@ export class GroupChatServer {
         if (!id || !data.delta) return
         if (this.streamOwnerMap.get(id) !== socket.id) return
         const visibility = this.streamVisibilityMap.get(id)
+        if (!visibility || visibility.roomId !== roomId) return
         this.emitVisibleEvent(roomId, visibility, 'message_reasoning_delta', {
             roomId,
             id,
@@ -1416,6 +1420,7 @@ export class GroupChatServer {
         if (!id) return
         if (this.streamOwnerMap.get(id) !== socket.id) return
         const visibility = this.streamVisibilityMap.get(id)
+        if (!visibility || visibility.roomId !== roomId) return
         this.emitVisibleEvent(roomId, visibility, 'message_stream_end', { roomId, id })
         this.streamVisibilityMap.delete(id)
         this.streamOwnerMap.delete(id)
@@ -1423,12 +1428,14 @@ export class GroupChatServer {
 
     private handleTyping(socket: Socket, data: Partial<ChatMessage> & { roomId?: string }): void {
         const roomId = data.roomId || 'general'
+        const room = this.rooms.get(roomId)
+        if (!room || !room.hasOnlineMember(socket.id)) return
         const userId = this.socketUserMap.get(socket.id) || socket.id
         const userName = this.userInfoMap.get(userId)?.name || `User-${socket.id.slice(0, 6)}`
         const visibilityMessage = this.hasVisibilityEventFields(data)
             ? this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
             : undefined
-        if (visibilityMessage && !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
+        if (visibilityMessage && !this.canSocketWriteTypingEvent(socket, roomId, visibilityMessage)) return
 
         // Track typing state for rejoin recovery
         let roomTyping = this.typingState.get(roomId)
@@ -1457,6 +1464,8 @@ export class GroupChatServer {
 
     private handleStopTyping(socket: Socket, data: Partial<ChatMessage> & { roomId?: string }): void {
         const roomId = data.roomId || 'general'
+        const room = this.rooms.get(roomId)
+        if (!room || !room.hasOnlineMember(socket.id)) return
         const userId = this.socketUserMap.get(socket.id) || socket.id
 
         // Remove from typing state
@@ -1465,7 +1474,7 @@ export class GroupChatServer {
         const visibilityMessage = this.hasVisibilityEventFields(data)
             ? this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
             : existing?.visibilityMessage
-        if (visibilityMessage && !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
+        if (visibilityMessage && !this.canSocketWriteTypingEvent(socket, roomId, visibilityMessage)) return
         if (roomTyping) {
             if (existing) clearTimeout(existing.timer)
             roomTyping.delete(userId)
@@ -1537,8 +1546,9 @@ export class GroupChatServer {
             return
         }
         const interruptVisibilityMessage = this.contextStatusState.get(roomId)?.get(agentName)?.visibilityMessage
+        const interruptVisibilityFields = interruptVisibilityMessage ? this.visibilityEventFields(interruptVisibilityMessage) : {}
         try {
-            await this.agentClients.interruptAgent(roomId, agentName)
+            await this.agentClients.interruptAgent(roomId, agentName, interruptVisibilityFields)
             const roomStatuses = this.contextStatusState.get(roomId)
             roomStatuses?.delete(agentName)
             if (roomStatuses?.size === 0) this.contextStatusState.delete(roomId)
@@ -1563,13 +1573,15 @@ export class GroupChatServer {
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, data)) return
         const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
         const key = this.approvalVisibilityKey(roomId, data.approval_id)
-        if (this.approvalVisibilityMap.has(key)) return
+        if (this.approvalVisibilityMap.has(key) || this.approvalKeyById.has(data.approval_id)) return
+        const allowed = new Set(['once', 'session', 'deny', ...(data.allow_permanent ? ['always'] : [])])
         const choices = Array.isArray(data.choices) && data.choices.length
-            ? data.choices.map(choice => String(choice || '').trim().toLowerCase()).filter(Boolean)
+            ? data.choices.map(choice => String(choice || '').trim().toLowerCase()).filter(choice => allowed.has(choice))
             : ['once', 'session', 'deny']
         if (choices.length === 0) choices.push('once', 'session', 'deny')
         this.approvalVisibilityMap.set(key, visibilityMessage)
         this.approvalChoicesMap.set(key, new Set(choices))
+        this.approvalKeyById.set(data.approval_id, key)
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.requested', {
             event: 'approval.requested',
             roomId,
@@ -1600,6 +1612,7 @@ export class GroupChatServer {
         })
         this.approvalVisibilityMap.delete(key)
         this.approvalChoicesMap.delete(key)
+        this.approvalKeyById.delete(data.approval_id)
     }
 
     private async handleApprovalRespond(socket: Socket, data: { roomId?: string; approval_id?: string; choice?: string }, ack?: (response?: unknown) => void): Promise<void> {
@@ -1613,8 +1626,9 @@ export class GroupChatServer {
             ack?.({ error: 'Not in room' })
             return
         }
-        const visibilityMessage = this.approvalVisibilityMap.get(this.approvalVisibilityKey(roomId, data.approval_id))
-        if (!visibilityMessage) {
+        const key = this.approvalVisibilityKey(roomId, data.approval_id)
+        const visibilityMessage = this.approvalVisibilityMap.get(key)
+        if (!visibilityMessage || this.approvalKeyById.get(data.approval_id) !== key) {
             ack?.({ error: 'Approval not found' })
             return
         }
@@ -1633,7 +1647,7 @@ export class GroupChatServer {
             return
         }
         const choice = String(data.choice || 'deny').trim().toLowerCase()
-        const allowedChoices = this.approvalChoicesMap.get(this.approvalVisibilityKey(roomId, data.approval_id)) || new Set(['once', 'session', 'deny'])
+        const allowedChoices = this.approvalChoicesMap.get(key) || new Set(['once', 'session', 'deny'])
         if (!allowedChoices.has(choice)) {
             ack?.({ error: 'Approval choice not allowed' })
             return
@@ -1692,6 +1706,18 @@ export class GroupChatServer {
     private hasVisibilityEventFields(data: Partial<ChatMessage>): boolean {
         return ['channelId', 'visibility', 'audienceJson', 'scope', 'threadId', 'originEventId', 'metadataJson']
             .some(key => (data as Record<string, unknown>)[key] !== undefined && (data as Record<string, unknown>)[key] !== null)
+    }
+
+    private canSocketWriteTypingEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {
+        const actorId = this.socketActorMap.get(socket.id)
+        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        const channelId = normalizeChannelId(data.channelId)
+        const visibility = normalizeVisibility(data.visibility)
+        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
+        return channelId === 'public'
+            ? Boolean(actorId)
+            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
     }
 
     private canSocketWriteVisibilityEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {

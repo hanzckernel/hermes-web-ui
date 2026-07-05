@@ -64,6 +64,23 @@ describe('group chat streaming baseline', () => {
     expect(await streamEnd).toEqual({ roomId: 'room-1', id: 'stream-1' })
   })
 
+  it('does not let a stream owner replay deltas into another room', async () => {
+    const { alice, bob } = await joinPair()
+    groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
+    await emitAck(alice, 'join', { roomId: 'room-2' })
+    await emitAck(bob, 'join', { roomId: 'room-2' })
+    await emitAck(alice, 'join', { roomId: 'room-1' })
+    await emitAck(bob, 'join', { roomId: 'room-1' })
+
+    const streamStart = once<any>(bob, 'message_stream_start')
+    alice.emit('message_stream_start', { roomId: 'room-1', id: 'stream-cross-room' })
+    expect(await streamStart).toMatchObject({ roomId: 'room-1', id: 'stream-cross-room' })
+
+    const leakedDelta = once<any>(bob, 'message_stream_delta', 100)
+    alice.emit('message_stream_delta', { roomId: 'room-2', id: 'stream-cross-room', delta: 'leak' })
+    await expect(leakedDelta).rejects.toThrow('timeout waiting for message_stream_delta')
+  })
+
   it('ignores a representative invalid stream id', async () => {
     const { alice, bob } = await joinPair()
     const unexpected = once<any>(bob, 'message_stream_start', 100)

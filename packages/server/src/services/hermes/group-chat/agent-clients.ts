@@ -298,12 +298,12 @@ class AgentClient {
         this.socket!.emit('approval.resolved', { roomId, agentName: this.name, ...payload })
     }
 
-    async interrupt(roomId: string): Promise<void> {
+    async interrupt(roomId: string, extra: Record<string, unknown> = {}): Promise<void> {
         const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
         const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
         await new AgentBridgeClient().interrupt(sessionId, 'Interrupted by group chat user', this.profile)
-        this.stopTyping(roomId)
-        this.emitContextStatus(roomId, 'ready')
+        this.stopTyping(roomId, extra)
+        this.emitContextStatus(roomId, 'ready', extra)
     }
 
     emitMessageStreamStart(roomId: string, messageId: string, extra: Record<string, unknown> = {}): void {
@@ -1073,11 +1073,11 @@ export class AgentClients {
         return Promise.all(agents.map((agent) => agent.sendMessage(roomId, content)))
     }
 
-    async interruptAgent(roomId: string, agentName: string): Promise<void> {
+    async interruptAgent(roomId: string, agentName: string, extra: Record<string, unknown> = {}): Promise<void> {
         const agent = this.getAgents(roomId).find(a => a.name === agentName)
         if (!agent) throw new Error(`Agent "${agentName}" not found in room "${roomId}"`)
         this._mentionQueue.delete(`${roomId}:${agent.name}`)
-        await agent.interrupt(roomId)
+        await agent.interrupt(roomId, extra)
     }
 
     /**

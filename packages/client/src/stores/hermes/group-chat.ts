@@ -689,7 +689,13 @@ const currentUserAvatar = ref('')
         }
 
         return new Promise<void>((resolve, reject) => {
-            socket!.emit('message', { roomId: currentRoomId.value, id: messageId, content: finalContent, channelId: activeChannelId.value }, (res: { id?: string; error?: string }) => {
+            socket!.emit('message', {
+                roomId: currentRoomId.value,
+                id: messageId,
+                content: finalContent,
+                channelId: activeChannelId.value,
+                visibility: activeChannel.value.defaultVisibility || 'public',
+            }, (res: { id?: string; error?: string }) => {
                 if (res.error) {
                     messages.value = messages.value.filter(m => m.id !== messageId)
                     reject(new Error(res.error))
@@ -823,7 +829,11 @@ const currentUserAvatar = ref('')
     function emitTyping() {
         const socket = getSocket()
         if (!socket || !currentRoomId.value) return
-        socket.emit('typing', { roomId: currentRoomId.value })
+        socket.emit('typing', {
+            roomId: currentRoomId.value,
+            channelId: activeChannelId.value,
+            visibility: activeChannel.value.defaultVisibility || 'public',
+        })
         if (_typingTimer) clearTimeout(_typingTimer)
         _typingTimer = setTimeout(() => emitStopTyping(), 4000)
     }
@@ -831,7 +841,11 @@ const currentUserAvatar = ref('')
     function emitStopTyping() {
         const socket = getSocket()
         if (!socket || !currentRoomId.value) return
-        socket.emit('stop_typing', { roomId: currentRoomId.value })
+        socket.emit('stop_typing', {
+            roomId: currentRoomId.value,
+            channelId: activeChannelId.value,
+            visibility: activeChannel.value.defaultVisibility || 'public',
+        })
         if (_typingTimer) { clearTimeout(_typingTimer); _typingTimer = null }
     }
 

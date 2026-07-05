@@ -150,6 +150,24 @@ describe('group chat approval and context baseline', () => {
     await expect(emitAck(human, 'approval.respond', { roomId: 'room-1', approval_id: 'approval-no-always', choice: 'always' })).resolves.toEqual({ error: 'Approval choice not allowed' })
   })
 
+  it('does not let another room claim a duplicate bridge approval id', async () => {
+    const { agent, human } = await joinPair()
+    groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
+    groupServer.getStorage().addRoomAgent('room-2', 'agent-2', 'default', 'Other Agent', '', 1)
+    const otherAgent = await connectGroupChatClient(port, 'agent-2', 'Other Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
+    const otherHuman = await connectGroupChatClient(port, 'human-2', 'Other Human')
+    harness.sockets.push(otherAgent, otherHuman)
+    await emitAck(otherAgent, 'join', { roomId: 'room-2' })
+    await emitAck(otherHuman, 'join', { roomId: 'room-2' })
+
+    agent.emit('approval.requested', { roomId: 'room-1', agentName: 'Agent', approval_id: 'approval-shared' })
+    await once<any>(human, 'approval.requested')
+    otherAgent.emit('approval.requested', { roomId: 'room-2', agentName: 'Other Agent', approval_id: 'approval-shared' })
+    await new Promise(resolve => setTimeout(resolve, 80))
+
+    await expect(emitAck(otherHuman, 'approval.respond', { roomId: 'room-2', approval_id: 'approval-shared', choice: 'once' })).resolves.toEqual({ error: 'Approval not found' })
+  })
+
   it('only lets the requesting agent resolve its approval', async () => {
     const { agent, human } = await joinPair()
     groupServer.getStorage().addRoomAgent('room-1', 'agent-2', 'default', 'Other Agent', '', 1)
