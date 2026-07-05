@@ -72,7 +72,7 @@ export class ChannelStore {
         const rows = (this.db()?.prepare(
             `SELECT id, roomId, kind, name, parentChannelId, defaultVisibility, createdBy, createdAt, updatedAt, metadataJson
              FROM gc_channels WHERE roomId = ? ORDER BY CASE id WHEN 'public' THEN 0 ELSE 1 END, createdAt, id`
-        ).all(roomId) || []) as ChannelRow[]
+        ).all(roomId) || []) as unknown as ChannelRow[]
         return rows.map(row => this.mapChannel(row))
     }
 
@@ -117,7 +117,7 @@ export class ChannelStore {
         const rows = (this.db()?.prepare(
             `SELECT roomId, channelId, actorId, canRead, canWrite, canInvite, canModerate, updatedAt
              FROM gc_channel_members WHERE roomId = ? AND channelId = ? ORDER BY actorId`
-        ).all(roomId, channelId) || []) as ChannelMemberRow[]
+        ).all(roomId, channelId) || []) as unknown as ChannelMemberRow[]
         return rows.map(row => this.mapMember(row))
     }
 

@@ -15,10 +15,14 @@ import { createSocketIoCorsOrigin, shouldRejectUpgradeOrigin } from '../../../se
 import { paginateRecentGroupMessagesCanonical, sliceGroupMessagesCanonical, sliceGroupMessagesForSnapshotTail, type GroupMessageCursorCutoff } from './group-message-ordering'
 import { ActorStore } from './identity/actor-store'
 import { agentActorId, humanActorId, systemActorId } from './identity/actor-ids'
+import { ChannelStore } from './visibility/channel-store'
+import { VisibilityPolicy } from './visibility/visibility-policy'
+import { normalizeChannelId, normalizeScope, normalizeVisibility } from './visibility/types'
+import type { GroupChannel, GroupChannelKind, GroupMessageVisibility, VisibleGroupMessage } from './visibility/types'
 
 // ─── Types ────────────────────────────────────────────────────
 
-interface ChatMessage {
+interface ChatMessage extends VisibleGroupMessage {
     id: string
     roomId: string
     senderId: string
@@ -33,8 +37,17 @@ interface ChatMessage {
     reasoning?: string | null
     reasoning_details?: string | null
     reasoning_content?: string | null
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: GroupMessageVisibility | string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
     mentionDepth?: number
 }
+
+const GROUP_MESSAGE_SELECT = 'id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content, channelId, threadId, visibility, audienceJson, scope, originEventId, metadataJson'
 
 function contentToStorageString(content: unknown): string {
     if (typeof content === 'string') return content
@@ -163,12 +176,39 @@ function maxAgentMentionDepth(): number {
 class ChatStorage {
     private db() { return getDb() }
     private readonly actorStore = new ActorStore()
+    private readonly channelStore = new ChannelStore()
+    private readonly visibilityPolicy = new VisibilityPolicy(this.channelStore)
 
     private mapStoredMessageRow(row: any): ChatMessage {
         return {
             ...row,
             tool_calls: parseJsonArray(row.tool_calls),
+            channelId: normalizeChannelId(row.channelId),
+            threadId: row.threadId ?? null,
+            visibility: normalizeVisibility(row.visibility),
+            audienceJson: typeof row.audienceJson === 'string' ? row.audienceJson : '[]',
+            scope: normalizeScope(row.scope),
+            originEventId: row.originEventId ?? null,
+            metadataJson: typeof row.metadataJson === 'string' ? row.metadataJson : '{}',
         }
+    }
+
+    private listStoredMessages(roomId: string): ChatMessage[] {
+        const rows = (this.db()?.prepare(
+            `SELECT ${GROUP_MESSAGE_SELECT} FROM gc_messages WHERE roomId = ?`
+        ).all(roomId) || []) as any[]
+        return rows.map(row => this.mapStoredMessageRow(row))
+    }
+
+    private isPublicMessage(message: ChatMessage): boolean {
+        return normalizeChannelId(message.channelId) === 'public'
+            && normalizeVisibility(message.visibility) === 'public'
+            && (message.audienceJson == null || message.audienceJson === '' || message.audienceJson === '[]')
+    }
+
+    canReadMessage(actorId: string | null | undefined, message: ChatMessage): boolean {
+        if (!actorId) return this.isPublicMessage(message)
+        return this.visibilityPolicy.canReadMessage(actorId, message)
     }
 
     init(): void {
@@ -178,6 +218,8 @@ class ChatStorage {
         // Tables are now created centrally in initAllHermesTables()
         // Only create indexes here
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_messages_room ON gc_messages(roomId, timestamp)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_messages_channel ON gc_messages(roomId, channelId, timestamp)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_messages_thread ON gc_messages(roomId, threadId, timestamp)') } catch { /* ignore */ }
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_room_agents_room ON gc_room_agents(roomId)') } catch { /* ignore */ }
         try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_gc_room_members_unique ON gc_room_members(roomId, userId)') } catch { /* ignore */ }
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_pending_session_deletes_profile ON gc_pending_session_deletes(profile_name, status, next_attempt_at, created_at)') } catch { /* ignore */ }
@@ -385,17 +427,21 @@ class ChatStorage {
     // ─── Messages ─────────────────────────────────────────────
 
     getRecentMessagesForUI(roomId: string, limit = 150, offset = 0): ChatMessage[] {
-        const rows = (this.db()?.prepare(
-            'SELECT id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content FROM gc_messages WHERE roomId = ?'
-        ).all(roomId) || []) as any[]
-        return paginateRecentGroupMessagesCanonical(rows.map(row => this.mapStoredMessageRow(row)), { limit, offset })
+        return paginateRecentGroupMessagesCanonical(this.listStoredMessages(roomId), { limit, offset })
+    }
+
+    getVisibleMessagesForUI(roomId: string, actorId?: string | null, limit = 150, offset = 0): ChatMessage[] {
+        const visible = this.listStoredMessages(roomId).filter(message => this.canReadMessage(actorId, message))
+        return paginateRecentGroupMessagesCanonical(visible, { limit, offset })
     }
 
     getMessagesForContext(roomId: string, cutoff?: GroupMessageCursorCutoff): ChatMessage[] {
-        const rows = (this.db()?.prepare(
-            'SELECT id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content FROM gc_messages WHERE roomId = ?'
-        ).all(roomId) || []) as any[]
-        return sliceGroupMessagesCanonical(rows.map(row => this.mapStoredMessageRow(row)), cutoff).messages
+        return sliceGroupMessagesCanonical(this.listStoredMessages(roomId), cutoff).messages
+    }
+
+    getVisibleMessagesForContext(roomId: string, actorId?: string | null, cutoff?: GroupMessageCursorCutoff): ChatMessage[] {
+        const visible = this.listStoredMessages(roomId).filter(message => this.canReadMessage(actorId, message))
+        return sliceGroupMessagesCanonical(visible, cutoff).messages
     }
 
     getMessageCount(roomId: string): number {
@@ -405,9 +451,13 @@ class ChatStorage {
         return row?.total || 0
     }
 
+    getVisibleMessageCount(roomId: string, actorId?: string | null): number {
+        return this.listStoredMessages(roomId).filter(message => this.canReadMessage(actorId, message)).length
+    }
+
     getMessage(messageId: string): ChatMessage | null {
         const row = this.db()?.prepare(
-            'SELECT id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content FROM gc_messages WHERE id = ?'
+            `SELECT ${GROUP_MESSAGE_SELECT} FROM gc_messages WHERE id = ?`
         ).get(messageId) as any
         if (!row) return null
         return this.mapStoredMessageRow(row)
@@ -419,9 +469,14 @@ class ChatStorage {
 
     upsertMessage(msg: ChatMessage): void {
         const toolCallsJson = msg.tool_calls ? JSON.stringify(msg.tool_calls) : null
+        const channelId = normalizeChannelId(msg.channelId)
+        const visibility = normalizeVisibility(msg.visibility)
+        const audienceJson = typeof msg.audienceJson === 'string' ? msg.audienceJson : '[]'
+        const scope = normalizeScope(msg.scope)
+        const metadataJson = typeof msg.metadataJson === 'string' ? msg.metadataJson : '{}'
         this.db()?.prepare(
-            `INSERT INTO gc_messages (id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO gc_messages (id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content, channelId, threadId, visibility, audienceJson, scope, originEventId, metadataJson)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             + ` ON CONFLICT(id) DO UPDATE SET
                 roomId = excluded.roomId,
                 senderId = excluded.senderId,
@@ -435,7 +490,14 @@ class ChatStorage {
                 finish_reason = excluded.finish_reason,
                 reasoning = excluded.reasoning,
                 reasoning_details = excluded.reasoning_details,
-                reasoning_content = excluded.reasoning_content`
+                reasoning_content = excluded.reasoning_content,
+                channelId = excluded.channelId,
+                threadId = excluded.threadId,
+                visibility = excluded.visibility,
+                audienceJson = excluded.audienceJson,
+                scope = excluded.scope,
+                originEventId = excluded.originEventId,
+                metadataJson = excluded.metadataJson`
         ).run(
             msg.id, msg.roomId, msg.senderId, msg.senderName, messageContentForStorage(msg.role, msg.content), msg.timestamp,
             msg.role || 'user',
@@ -446,6 +508,13 @@ class ChatStorage {
             msg.reasoning ?? null,
             msg.reasoning_details ?? null,
             msg.reasoning_content ?? null,
+            channelId,
+            msg.threadId ?? null,
+            visibility,
+            audienceJson,
+            scope,
+            msg.originEventId ?? null,
+            metadataJson,
         )
     }
 
@@ -550,6 +619,7 @@ class ChatStorage {
         const db = this.db()
         if (!db) return
         this.actorStore.deleteRoomActors(roomId)
+        this.channelStore.deleteRoomChannels(roomId)
         db.prepare('DELETE FROM gc_messages WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_room_agents WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_room_members WHERE roomId = ?').run(roomId)
@@ -707,6 +777,49 @@ class ChatStorage {
         }
     }
 
+    resolveHumanActorId(roomId: string, userId: string, displayName?: string, authUserId?: number | null): string {
+        const existing = this.getMemberByUserId(roomId, userId) ||
+            (typeof authUserId === 'number' && authUserId > 0 ? this.getMemberByAuthUserId(roomId, authUserId) : null)
+        return this.actorStore.ensureHumanActor({
+            roomId,
+            userId,
+            displayName: displayName || existing?.name || userId,
+            description: existing?.description || '',
+            authUserId: authUserId ?? existing?.authUserId ?? null,
+        }).id
+    }
+
+    ensureDefaultPublicChannel(roomId: string, createdBy = systemActorId(roomId)): GroupChannel {
+        return this.channelStore.ensureDefaultPublicChannel(roomId, createdBy)
+    }
+
+    getChannels(roomId: string, actorId?: string | null): GroupChannel[] {
+        this.ensureDefaultPublicChannel(roomId)
+        const channels = this.channelStore.listChannels(roomId)
+        if (!actorId) return channels.filter(channel => channel.id === 'public')
+        return channels.filter(channel => channel.id === 'public' || channel.createdBy === actorId || this.channelStore.getChannelMember(roomId, channel.id, actorId)?.canRead)
+    }
+
+    createChannel(input: {
+        roomId: string
+        id?: string
+        kind: GroupChannelKind
+        name: string
+        createdBy: string
+        members?: Array<{ actorId: string; canRead?: boolean; canWrite?: boolean; canInvite?: boolean; canModerate?: boolean }>
+        metadata?: Record<string, unknown>
+    }): GroupChannel {
+        const members = [...(input.members || [])]
+        if (!members.some(member => member.actorId === input.createdBy)) {
+            members.push({ actorId: input.createdBy, canRead: true, canWrite: true, canInvite: true, canModerate: true })
+        }
+        return this.channelStore.createChannel({ ...input, members })
+    }
+
+    canWriteChannel(actorId: string, roomId: string, channelId: string): boolean {
+        return this.visibilityPolicy.canWriteChannel(actorId, roomId, channelId)
+    }
+
     getMemberByUserId(roomId: string, userId: string): Member | null {
         return (this.db()?.prepare(
             'SELECT id, userId, userName as name, description, joinedAt, avatar, authUserId FROM gc_room_members WHERE roomId = ? AND userId = ?'
@@ -802,6 +915,10 @@ export class GroupChatServer {
     private socketRequestedSourceMap = new Map<string, 'human' | 'agent'>()
     /** Map: socket.id → numeric users.id from the web UI auth (for avatar resolution) */
     private socketAuthUserIdMap = new Map<string, number>()
+    /** Map: socket.id → room-scoped actor id resolved on join */
+    private socketActorMap = new Map<string, string>()
+    /** Map: stream message id → visibility metadata inherited by stream deltas/end */
+    private streamVisibilityMap = new Map<string, ChatMessage>()
     readonly agentClients = new AgentClients()
     private _contextEngine: ContextEngine | null = null
     private _restoreScheduled = false
@@ -1051,15 +1168,26 @@ export class GroupChatServer {
         // Persist only human members. Agent sockets are runtime participants
         // tracked through gc_room_agents and AgentClients; storing them in
         // gc_room_members makes member counts grow on reconnect/restore.
+        let actorId: string
         if (source !== 'agent') {
             this.storage.addRoomMember(roomId, userId, userName, description, userAvatar, authUserId)
+            actorId = this.storage.resolveHumanActorId(roomId, userId, userName, authUserId)
         } else if (roomAgent) {
             this.storage.ensureAgentActor(roomAgent)
+            actorId = agentActorId(roomId, roomAgent.agentId)
+        } else {
+            actorId = this.storage.resolveHumanActorId(roomId, userId, userName, authUserId)
         }
+        this.storage.ensureDefaultPublicChannel(roomId)
+        this.socketActorMap.set(socket.id, actorId)
 
         // Add to in-memory online participants (keyed by userId)
         room.addOrUpdateMember(socketId, userId, userName, description, source, userAvatar)
         socket.join(roomId)
+        socket.join(`gc:actor:${actorId}`)
+        for (const channel of this.storage.getChannels(roomId, actorId)) {
+            socket.join(`gc:channel:${roomId}:${channel.id}`)
+        }
 
         if (source !== 'agent') {
             socket.to(roomId).emit('member_joined', {
@@ -1071,10 +1199,11 @@ export class GroupChatServer {
             })
         }
 
-        // Load history from SQLite
-        const messages = this.storage.getRecentMessagesForUI(roomId)
+        // Load actor-visible history from SQLite
+        const messages = this.storage.getVisibleMessagesForUI(roomId, actorId)
         const agents = this.storage.getRoomAgents(roomId)
         const actors = this.storage.getActors(roomId)
+        const channels = this.storage.getChannels(roomId, actorId)
 
         ack?.({
             roomId,
@@ -1083,6 +1212,8 @@ export class GroupChatServer {
             messages,
             agents,
             actors,
+            channels,
+            actorId,
             rooms: this.getRoomIds(),
             typingUsers: this.getTypingUsers(roomId),
             contextStatuses: this.getContextStatuses(roomId),
@@ -1104,6 +1235,12 @@ export class GroupChatServer {
         const member = room.getOnlineMemberBySocketId(socketId)
         const userId = member?.userId || socketId
         const userName = member?.name || `User-${socketId.slice(0, 6)}`
+        const actorId = this.socketActorMap.get(socket.id)
+        const channelId = normalizeChannelId(data.channelId)
+        if (!actorId || !this.storage.canWriteChannel(actorId, roomId, channelId)) {
+            ack?.({ error: 'Cannot write to channel' })
+            return
+        }
 
         const msg: ChatMessage = {
             id: this.normalizeClientMessageId(data.id) || this.generateId(),
@@ -1120,13 +1257,20 @@ export class GroupChatServer {
             reasoning: data.reasoning ?? null,
             reasoning_details: data.reasoning_details ?? null,
             reasoning_content: data.reasoning_content ?? null,
+            channelId,
+            threadId: data.threadId ?? null,
+            visibility: normalizeVisibility(data.visibility),
+            audienceJson: typeof data.audienceJson === 'string' ? data.audienceJson : '[]',
+            scope: normalizeScope(data.scope),
+            originEventId: data.originEventId ?? null,
+            metadataJson: typeof data.metadataJson === 'string' ? data.metadataJson : '{}',
         }
 
         const saved = this.storage.saveMessageAndRefreshRoom(msg)
         const savedMsg = saved.message
         const totalTokens = saved.totalTokens
 
-        this.nsp.to(roomId).emit('message', savedMsg)
+        this.emitVisibleMessage(roomId, savedMsg)
         this.nsp.to(roomId).emit('room_updated', { roomId, totalTokens })
         ack?.({ id: savedMsg.id })
 
@@ -1154,7 +1298,7 @@ export class GroupChatServer {
         }
     }
 
-    private handleMessageStreamStart(socket: Socket, data: { roomId?: string; id?: string; senderId?: string; senderName?: string; timestamp?: number }): void {
+    private handleMessageStreamStart(socket: Socket, data: { roomId?: string; id?: string; senderId?: string; senderName?: string; timestamp?: number; channelId?: string; threadId?: string; visibility?: string; audienceJson?: string; scope?: string }): void {
         const roomId = data.roomId || 'general'
         const room = this.rooms.get(roomId)
         if (!room || !room.hasOnlineMember(socket.id)) return
@@ -1162,7 +1306,7 @@ export class GroupChatServer {
         if (!id) return
 
         const member = room.getOnlineMemberBySocketId(socket.id)
-        this.nsp.to(roomId).emit('message_stream_start', {
+        const payload: ChatMessage = {
             id,
             roomId,
             senderId: data.senderId || member?.userId || socket.id,
@@ -1171,7 +1315,15 @@ export class GroupChatServer {
             timestamp: data.timestamp || Date.now(),
             role: 'assistant',
             finish_reason: 'streaming',
-        })
+            channelId: normalizeChannelId(data.channelId),
+            threadId: data.threadId ?? null,
+            visibility: normalizeVisibility(data.visibility),
+            audienceJson: typeof data.audienceJson === 'string' ? data.audienceJson : '[]',
+            scope: normalizeScope(data.scope),
+            metadataJson: '{}',
+        }
+        this.streamVisibilityMap.set(id, payload)
+        this.emitVisibleEvent(roomId, payload, 'message_stream_start', payload)
     }
 
     private handleMessageStreamDelta(socket: Socket, data: { roomId?: string; id?: string; delta?: string }): void {
@@ -1180,7 +1332,8 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const id = this.normalizeClientMessageId(data.id)
         if (!id || !data.delta) return
-        this.nsp.to(roomId).emit('message_stream_delta', {
+        const visibility = this.streamVisibilityMap.get(id)
+        this.emitVisibleEvent(roomId, visibility, 'message_stream_delta', {
             roomId,
             id,
             delta: String(data.delta),
@@ -1193,7 +1346,8 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const id = this.normalizeClientMessageId(data.id)
         if (!id || !data.delta) return
-        this.nsp.to(roomId).emit('message_reasoning_delta', {
+        const visibility = this.streamVisibilityMap.get(id)
+        this.emitVisibleEvent(roomId, visibility, 'message_reasoning_delta', {
             roomId,
             id,
             delta: String(data.delta),
@@ -1206,7 +1360,9 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const id = this.normalizeClientMessageId(data.id)
         if (!id) return
-        this.nsp.to(roomId).emit('message_stream_end', { roomId, id })
+        const visibility = this.streamVisibilityMap.get(id)
+        this.emitVisibleEvent(roomId, visibility, 'message_stream_end', { roomId, id })
+        this.streamVisibilityMap.delete(id)
     }
 
     private handleTyping(socket: Socket, data: { roomId?: string }): void {
@@ -1379,10 +1535,27 @@ export class GroupChatServer {
         this.socketUserMap.delete(socketId)
         this.socketRequestedSourceMap.delete(socketId)
         this.socketAuthUserIdMap.delete(socketId)
+        this.socketActorMap.delete(socketId)
         // Don't delete userInfoMap — it persists across reconnects
     }
 
     // ─── Helpers ────────────────────────────────────────────────
+
+    private emitVisibleMessage(roomId: string, message: ChatMessage): void {
+        this.emitVisibleEvent(roomId, message, 'message', message)
+    }
+
+    private emitVisibleEvent(roomId: string, visibilityMessage: ChatMessage | undefined, event: string, payload: unknown): void {
+        if (!visibilityMessage || this.storage.canReadMessage(null, visibilityMessage)) {
+            this.nsp.to(roomId).emit(event, payload)
+            return
+        }
+        for (const socket of this.nsp.sockets.values()) {
+            if (!socket.rooms.has(roomId)) continue
+            const actorId = this.socketActorMap.get(socket.id)
+            if (this.storage.canReadMessage(actorId, visibilityMessage)) socket.emit(event, payload)
+        }
+    }
 
     private getTypingUsers(roomId: string): Array<{ userId: string; userName: string }> {
         const roomTyping = this.typingState.get(roomId)

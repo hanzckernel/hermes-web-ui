@@ -26,15 +26,29 @@ describe('group chat REST route baseline', () => {
       messages: new Map<string, any[]>(),
       members: new Map<string, any[]>(),
       actors: new Map<string, any[]>(),
+      channels: new Map<string, any[]>(),
       saveRoom: vi.fn((id, name, inviteCode, config) => storage.rooms.set(id, { id, name, inviteCode, totalTokens: 0, sessionSeed: '0', ...config })),
       getRoom: vi.fn((id) => storage.rooms.get(id)),
       getAllRooms: vi.fn(() => [...storage.rooms.values()]),
       getRoomsForProfiles: vi.fn(() => [...storage.rooms.values()]),
       getRecentMessagesForUI: vi.fn((roomId, limit = 150, offset = 0) => (storage.messages.get(roomId) || []).slice(offset, offset + limit)),
+      getVisibleMessagesForUI: vi.fn((roomId, _actorId, limit = 150, offset = 0) => (storage.messages.get(roomId) || []).slice(offset, offset + limit)),
       getMessageCount: vi.fn((roomId) => (storage.messages.get(roomId) || []).length),
+      getVisibleMessageCount: vi.fn((roomId) => (storage.messages.get(roomId) || []).length),
       getRoomAgents: vi.fn((roomId) => storage.agents.get(roomId) || []),
       getRoomMembers: vi.fn((roomId) => storage.members.get(roomId) || []),
       getActors: vi.fn((roomId) => storage.actors.get(roomId) || []),
+      getChannels: vi.fn((roomId) => storage.channels.get(roomId) || [{ id: 'public', roomId, kind: 'public', name: 'Public' }]),
+      ensureDefaultPublicChannel: vi.fn((roomId) => {
+        const channel = { id: 'public', roomId, kind: 'public', name: 'Public' }
+        storage.channels.set(roomId, [channel])
+        return channel
+      }),
+      createChannel: vi.fn((input) => {
+        const channel = { id: input.id || `${input.kind}-1`, roomId: input.roomId, kind: input.kind, name: input.name, createdBy: input.createdBy }
+        storage.channels.set(input.roomId, [...(storage.channels.get(input.roomId) || []), channel])
+        return channel
+      }),
       getRoomByInviteCode: vi.fn((code) => [...storage.rooms.values()].find((r: any) => r.inviteCode === code)),
       addRoomAgent: vi.fn((roomId, agentId, profile, name, description, invited) => {
         const row = { id: `row-${agentId}`, roomId, agentId, profile, name, description, invited }
@@ -138,6 +152,38 @@ describe('group chat REST route baseline', () => {
       limit: 1,
       hasMore: false,
     })
+  })
+
+  it('returns readable channels for a room', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+    storage.channels.set('room-1', [{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`)
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.channels).toEqual([{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
+  })
+
+  it('creates a non-public channel for an actor when auth is disabled', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actorId: 'gc:room-1:human:alice', id: 'task-1', kind: 'task', name: 'Task 1' }),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(storage.createChannel).toHaveBeenCalledWith(expect.objectContaining({
+      roomId: 'room-1',
+      id: 'task-1',
+      kind: 'task',
+      name: 'Task 1',
+      createdBy: 'gc:room-1:human:alice',
+    }))
+    expect(body.channel).toMatchObject({ id: 'task-1', kind: 'task' })
   })
 
   it('rejects duplicate room agent profiles', async () => {
