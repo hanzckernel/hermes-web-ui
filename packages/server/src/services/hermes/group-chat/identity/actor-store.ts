@@ -85,6 +85,22 @@ export class ActorStore {
         return rows.map(row => this.mapActor(row))
     }
 
+    deleteActor(actorId: string): void {
+        const db = this.db()
+        if (!db) return
+        db.prepare('DELETE FROM gc_actor_capabilities WHERE actorId = ?').run(actorId)
+        db.prepare('DELETE FROM gc_actor_private_facts WHERE actorId = ?').run(actorId)
+        db.prepare('DELETE FROM gc_actors WHERE id = ?').run(actorId)
+    }
+
+    deleteRoomActors(roomId: string): void {
+        const db = this.db()
+        if (!db) return
+        db.prepare('DELETE FROM gc_actor_capabilities WHERE actorId IN (SELECT id FROM gc_actors WHERE roomId = ?)').run(roomId)
+        db.prepare('DELETE FROM gc_actor_private_facts WHERE roomId = ?').run(roomId)
+        db.prepare('DELETE FROM gc_actors WHERE roomId = ?').run(roomId)
+    }
+
     private ensureActor(input: EnsureActorInput): GroupActor {
         const now = Date.now()
         const metadataJson = JSON.stringify(input.metadata || {})

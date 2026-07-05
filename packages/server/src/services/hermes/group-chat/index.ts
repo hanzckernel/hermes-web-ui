@@ -13,6 +13,8 @@ import { findUserByUsername, getUserAvatar } from '../../../db/hermes/users-stor
 import { config } from '../../../config'
 import { createSocketIoCorsOrigin, shouldRejectUpgradeOrigin } from '../../../security'
 import { paginateRecentGroupMessagesCanonical, sliceGroupMessagesCanonical, sliceGroupMessagesForSnapshotTail, type GroupMessageCursorCutoff } from './group-message-ordering'
+import { ActorStore } from './identity/actor-store'
+import { agentActorId } from './identity/actor-ids'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -160,6 +162,7 @@ function maxAgentMentionDepth(): number {
 
 class ChatStorage {
     private db() { return getDb() }
+    private readonly actorStore = new ActorStore()
 
     private mapStoredMessageRow(row: any): ChatMessage {
         return {
@@ -305,6 +308,7 @@ class ChatStorage {
         this.db()?.prepare(
             'INSERT OR IGNORE INTO gc_rooms (id, name, inviteCode, triggerTokens, maxHistoryTokens, tailMessageCount) VALUES (?, ?, ?, ?, ?, ?)'
         ).run(id, name, inviteCode || null, config?.triggerTokens ?? 100000, config?.maxHistoryTokens ?? 32000, config?.tailMessageCount ?? 10)
+        this.actorStore.ensureSystemActor(id)
     }
 
     updateRoomConfig(roomId: string, config: { triggerTokens?: number; maxHistoryTokens?: number; tailMessageCount?: number }): void {
@@ -501,7 +505,9 @@ class ChatStorage {
         this.db()?.prepare(
             'INSERT INTO gc_room_agents (id, roomId, agentId, profile, name, description, invited) VALUES (?, ?, ?, ?, ?, ?, ?)'
         ).run(id, roomId, agentId, profile, name, description, invited)
-        return { id, roomId, agentId, profile, name, description, invited }
+        const agent = { id, roomId, agentId, profile, name, description, invited }
+        this.ensureAgentActor(agent)
+        return agent
     }
 
     getRoomAgent(roomId: string, agentRef: string): RoomAgent | null {
@@ -517,7 +523,9 @@ class ChatStorage {
     }
 
     removeRoomAgent(roomId: string, agentRef: string): void {
+        const agent = this.getRoomAgent(roomId, agentRef)
         this.db()?.prepare('DELETE FROM gc_room_agents WHERE roomId = ? AND (id = ? OR agentId = ?)').run(roomId, agentRef, agentRef)
+        if (agent) this.actorStore.deleteActor(agentActorId(roomId, agent.agentId))
     }
 
     // ─── Context Snapshots ──────────────────────────────────
@@ -541,6 +549,7 @@ class ChatStorage {
     deleteRoom(roomId: string): void {
         const db = this.db()
         if (!db) return
+        this.actorStore.deleteRoomActors(roomId)
         db.prepare('DELETE FROM gc_messages WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_room_agents WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_room_members WHERE roomId = ?').run(roomId)
@@ -623,6 +632,7 @@ class ChatStorage {
             this.db()?.prepare(
                 'UPDATE gc_room_members SET userId = ?, userName = ?, description = ?, avatar = ?, authUserId = ?, updatedAt = ? WHERE id = ?'
             ).run(userId, userName, description, nextAvatar, nextAuthUserId, Date.now(), existing.id)
+            this.actorStore.ensureHumanActor({ roomId, userId, displayName: userName, description, authUserId: nextAuthUserId })
             return
         }
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
@@ -630,6 +640,23 @@ class ChatStorage {
         this.db()?.prepare(
             'INSERT INTO gc_room_members (id, roomId, userId, userName, description, joinedAt, updatedAt, avatar, authUserId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(id, roomId, userId, userName, description, now, now, resolvedAvatar, authUserId ?? null)
+        this.actorStore.ensureHumanActor({ roomId, userId, displayName: userName, description, authUserId: authUserId ?? null })
+    }
+
+    ensureAgentActor(agent: RoomAgent): void {
+        this.actorStore.ensureAgentActor({
+            roomId: agent.roomId,
+            agentId: agent.agentId,
+            profile: agent.profile,
+            displayName: agent.name,
+            description: agent.description,
+            agentKind: 'hermes',
+            metadata: { invited: Boolean(agent.invited) },
+        })
+    }
+
+    getActors(roomId: string) {
+        return this.actorStore.listActors(roomId)
     }
 
     getMemberByUserId(roomId: string, userId: string): Member | null {
@@ -978,6 +1005,8 @@ export class GroupChatServer {
         // gc_room_members makes member counts grow on reconnect/restore.
         if (source !== 'agent') {
             this.storage.addRoomMember(roomId, userId, userName, description, userAvatar, authUserId)
+        } else if (roomAgent) {
+            this.storage.ensureAgentActor(roomAgent)
         }
 
         // Add to in-memory online participants (keyed by userId)
