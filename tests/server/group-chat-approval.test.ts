@@ -6,6 +6,7 @@ import {
   once,
 } from './group-chat-test-helpers'
 import type { GroupChatServer } from '../../packages/server/src/services/hermes/group-chat'
+import { GROUP_CHAT_AGENT_SOCKET_SECRET } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
 
 describe('group chat approval and context baseline', () => {
   let harness: Awaited<ReturnType<typeof createTestGroupChatServer>>
@@ -25,7 +26,8 @@ describe('group chat approval and context baseline', () => {
   })
 
   async function joinPair() {
-    const agent = await connectGroupChatClient(port, 'agent-1', 'Agent')
+    groupServer.getStorage().addRoomAgent('room-1', 'agent-1', 'default', 'Agent', '', 1)
+    const agent = await connectGroupChatClient(port, 'agent-1', 'Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
     const human = await connectGroupChatClient(port, 'human-1', 'Human')
     harness.sockets.push(agent, human)
     await emitAck(agent, 'join', { roomId: 'room-1' })
@@ -80,6 +82,8 @@ describe('group chat approval and context baseline', () => {
 
   it('relays approval resolved with normalized choice', async () => {
     const { agent, human } = await joinPair()
+    agent.emit('approval.requested', { roomId: 'room-1', agentName: 'Agent', approval_id: 'approval-1' })
+    await once<any>(human, 'approval.requested')
     const resolved = once<any>(human, 'approval.resolved')
 
     agent.emit('approval.resolved', { roomId: 'room-1', agentName: 'Agent', approval_id: 'approval-1', choice: 'deny' })

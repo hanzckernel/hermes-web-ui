@@ -1232,6 +1232,11 @@ export class GroupChatServer {
         logger.debug(`[GroupChat] ${userName} (user=${userId}) joined room: ${roomId}`)
     }
 
+    private isPublicOnlyWrite(channelId: string, visibility: string, audienceJson: string): boolean {
+        const audience = audienceJson.trim()
+        return channelId === 'public' && visibility === 'public' && (!audience || audience === '[]')
+    }
+
     private handleMessage(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; content: string | Array<Record<string, unknown>>; id?: string; mentionDepth?: number }, ack?: (res: any) => void): void {
         const socketId = socket.id
         const roomId = data.roomId || 'general'
@@ -1248,6 +1253,12 @@ export class GroupChatServer {
         const actorId = this.socketActorMap.get(socket.id)
         const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
         const channelId = normalizeChannelId(data.channelId)
+        const visibility = normalizeVisibility(data.visibility)
+        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) {
+            ack?.({ error: 'Cannot write to channel' })
+            return
+        }
         const canWrite = channelId === 'public'
             ? Boolean(actorId)
             : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
@@ -1273,8 +1284,8 @@ export class GroupChatServer {
             reasoning_content: data.reasoning_content ?? null,
             channelId,
             threadId: data.threadId ?? null,
-            visibility: normalizeVisibility(data.visibility),
-            audienceJson: typeof data.audienceJson === 'string' ? data.audienceJson : '[]',
+            visibility,
+            audienceJson,
             scope: normalizeScope(data.scope),
             originEventId: data.originEventId ?? null,
             metadataJson: typeof data.metadataJson === 'string' ? data.metadataJson : '{}',
@@ -1330,6 +1341,9 @@ export class GroupChatServer {
         const actorId = this.socketActorMap.get(socket.id)
         const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
         const channelId = normalizeChannelId(data.channelId)
+        const visibility = normalizeVisibility(data.visibility)
+        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return
         const canWrite = channelId === 'public'
             ? Boolean(actorId)
             : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
@@ -1345,8 +1359,8 @@ export class GroupChatServer {
             finish_reason: 'streaming',
             channelId,
             threadId: data.threadId ?? null,
-            visibility: normalizeVisibility(data.visibility),
-            audienceJson: typeof data.audienceJson === 'string' ? data.audienceJson : '[]',
+            visibility,
+            audienceJson,
             scope: normalizeScope(data.scope),
             metadataJson: '{}',
         }
@@ -1503,6 +1517,7 @@ export class GroupChatServer {
     private handleApprovalRequested(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }): void {
         const roomId = data.roomId
         if (!roomId || !data.approval_id) return
+        if (!this.canSocketWriteVisibilityEvent(socket, roomId, data)) return
         const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
         this.approvalVisibilityMap.set(this.approvalVisibilityKey(roomId, data.approval_id), visibilityMessage)
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.requested', {
@@ -1522,7 +1537,8 @@ export class GroupChatServer {
         const roomId = data.roomId
         if (!roomId || !data.approval_id) return
         const key = this.approvalVisibilityKey(roomId, data.approval_id)
-        const visibilityMessage = this.approvalVisibilityMap.get(key) || this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
+        const visibilityMessage = this.approvalVisibilityMap.get(key)
+        if (!visibilityMessage || !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.resolved', {
             event: 'approval.resolved',
             roomId,
@@ -1546,7 +1562,11 @@ export class GroupChatServer {
             return
         }
         const visibilityMessage = this.approvalVisibilityMap.get(this.approvalVisibilityKey(roomId, data.approval_id))
-        if (visibilityMessage && !this.storage.canReadMessage(this.socketVisibilityActorMap.get(socket.id), visibilityMessage)) {
+        if (!visibilityMessage) {
+            ack?.({ error: 'Approval not found' })
+            return
+        }
+        if (!this.storage.canReadMessage(this.socketVisibilityActorMap.get(socket.id), visibilityMessage)) {
             ack?.({ error: 'Approval not visible' })
             return
         }
@@ -1599,6 +1619,21 @@ export class GroupChatServer {
 
     private approvalVisibilityKey(roomId: string, approvalId: string): string {
         return `${roomId}:${approvalId}`
+    }
+
+    private canSocketWriteVisibilityEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {
+        const room = this.rooms.get(roomId)
+        const member = room?.getOnlineMemberBySocketId(socket.id)
+        if (member?.source !== 'agent') return false
+        const actorId = this.socketActorMap.get(socket.id)
+        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        const channelId = normalizeChannelId(data.channelId)
+        const visibility = normalizeVisibility(data.visibility)
+        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
+        return channelId === 'public'
+            ? Boolean(actorId)
+            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
     }
 
     private approvalVisibilityMessage(socket: Socket, roomId: string, approvalId: string, data: Partial<ChatMessage> & { command?: string; description?: string; agentName?: string }): ChatMessage {

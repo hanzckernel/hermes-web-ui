@@ -245,6 +245,27 @@ describe('group chat channel visibility runtime', () => {
         visibility: 'private',
         audienceJson: JSON.stringify([authActor]),
       })).resolves.toEqual({ error: 'Cannot write to channel' })
+      await expect(emitAck(socket, 'message', {
+        roomId: 'room-1',
+        id: 'spoof-public-private',
+        content: 'spoof public private',
+        channelId: 'public',
+        visibility: 'private',
+        audienceJson: JSON.stringify([authActor]),
+      })).resolves.toEqual({ error: 'Cannot write to channel' })
+      let sawSpoofStream = false
+      socket.on('message_stream_start', (message: any) => {
+        if (message.id === 'spoof-stream') sawSpoofStream = true
+      })
+      socket.emit('message_stream_start', {
+        roomId: 'room-1',
+        id: 'spoof-stream',
+        channelId: 'public',
+        visibility: 'private',
+        audienceJson: JSON.stringify([authActor]),
+      })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(sawSpoofStream).toBe(false)
     } finally {
       socket.disconnect()
       server.getIO().close()
@@ -266,19 +287,27 @@ describe('group chat channel visibility runtime', () => {
     storage.saveRoom('room-1', 'Room 1', 'ROOM1')
     const aliceSocket = await connect(port, 'alice', 'Alice', { token: 'alice-token' })
     const bobSocket = await connect(port, 'bob', 'Bob', { token: 'bob-token' })
+    let agentSocket: ClientSocket | undefined
 
     try {
       const aliceJoin = await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
       await emitAck<any>(bobSocket, 'join', { roomId: 'room-1' })
       const alice = aliceJoin.actorId
+      storage.addRoomAgent('room-1', 'agent-1', 'default', 'Agent', '', 1)
+      const agent = `gc:room-1:agent:agent-1`
       storage.createChannel({
         roomId: 'room-1',
         id: 'private-1',
         kind: 'private',
         name: 'Alice private',
         createdBy: alice,
-        members: [{ actorId: alice, canRead: true, canWrite: true }],
+        members: [
+          { actorId: alice, canRead: true, canWrite: true },
+          { actorId: agent, canRead: true, canWrite: true },
+        ],
       })
+      agentSocket = await connect(port, 'agent-1', 'Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
+      await emitAck<any>(agentSocket, 'join', { roomId: 'room-1' })
 
       const publicForBob = once<any>(bobSocket, 'message')
       await emitAck(aliceSocket, 'message', { roomId: 'room-1', id: 'public-live', content: 'public live' })
@@ -306,7 +335,7 @@ describe('group chat channel visibility runtime', () => {
         if (message.approval_id === 'private-approval') bobSawApproval = true
       })
       const aliceApproval = once<any>(aliceSocket, 'approval.requested')
-      aliceSocket.emit('approval.requested', {
+      agentSocket.emit('approval.requested', {
         roomId: 'room-1',
         approval_id: 'private-approval',
         command: 'secret command',
@@ -335,6 +364,7 @@ describe('group chat channel visibility runtime', () => {
       expect(aliceSawBobStream).toBe(false)
     } finally {
       aliceSocket.disconnect()
+      agentSocket?.disconnect()
       bobSocket.disconnect()
       server.getIO().close()
       httpServer.close()
