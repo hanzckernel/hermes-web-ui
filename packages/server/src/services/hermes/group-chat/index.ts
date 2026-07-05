@@ -824,6 +824,11 @@ class ChatStorage {
         return this.actorStore.canCreateChannel(actorId, kind)
     }
 
+    canActor(actorId: string | null | undefined, capability: string): boolean {
+        const actor = actorId ? this.actorStore.getActor(actorId) : null
+        return Boolean(actor?.capabilities?.includes(capability))
+    }
+
     getMemberByUserId(roomId: string, userId: string): Member | null {
         return (this.db()?.prepare(
             'SELECT id, userId, userName as name, description, joinedAt, avatar, authUserId FROM gc_room_members WHERE roomId = ? AND userId = ?'
@@ -1566,8 +1571,18 @@ export class GroupChatServer {
             ack?.({ error: 'Approval not found' })
             return
         }
-        if (!this.storage.canReadMessage(this.socketVisibilityActorMap.get(socket.id), visibilityMessage)) {
+        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        const actorId = visibilityActorId || this.socketActorMap.get(socket.id)
+        if (!visibilityActorId && !this.isPublicOnlyWrite(normalizeChannelId(visibilityMessage.channelId), normalizeVisibility(visibilityMessage.visibility), typeof visibilityMessage.audienceJson === 'string' ? visibilityMessage.audienceJson : '[]')) {
             ack?.({ error: 'Approval not visible' })
+            return
+        }
+        if (!this.storage.canReadMessage(actorId, visibilityMessage)) {
+            ack?.({ error: 'Approval not visible' })
+            return
+        }
+        if (!this.storage.canActor(actorId, 'approval.respond')) {
+            ack?.({ error: 'Cannot respond to approval' })
             return
         }
         try {

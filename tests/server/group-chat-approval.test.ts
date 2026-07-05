@@ -97,6 +97,14 @@ describe('group chat approval and context baseline', () => {
     })
   })
 
+  it('rejects approval responses from agent sockets without respond capability', async () => {
+    const { agent, human } = await joinPair()
+    agent.emit('approval.requested', { roomId: 'room-1', agentName: 'Agent', approval_id: 'approval-agent-denied' })
+    await once<any>(human, 'approval.requested')
+
+    await expect(emitAck(agent, 'approval.respond', { roomId: 'room-1', approval_id: 'approval-agent-denied', choice: 'once' })).resolves.toEqual({ error: 'Cannot respond to approval' })
+  })
+
   it('rejects approval responses from sockets that have not joined the room', async () => {
     const outsider = await connectGroupChatClient(port, 'outsider', 'Outsider')
     harness.sockets.push(outsider)

@@ -28,8 +28,10 @@ export class VisibilityPolicy {
 
         const audience = this.parseAudience(normalized.audienceJson)
         const visibility = normalized.visibility
-        if (visibility === 'public' && normalized.channelId === 'public') return audience.valid
         if (!audience.valid) return false
+        if (visibility === 'public' && normalized.channelId === 'public') {
+            return audience.actorIds.length === 0 || audience.actorIds.includes(actorId)
+        }
         if (audience.actorIds.includes(actorId)) return true
 
         const membership = this.channels.getChannelMember(normalized.roomId, normalizeChannelId(normalized.channelId), actorId)

@@ -59,6 +59,14 @@ describe('group chat visibility policy', () => {
     expect(policy.canReadMessage('gc:room-1:agent:worker', message())).toBe(true)
   })
 
+  it('restricts public-channel audience-scoped messages to the audience', () => {
+    const audienceMessage = message({ audienceJson: JSON.stringify(['gc:room-1:human:alice']) })
+
+    expect(policy.canReadMessage('gc:room-1:human:alice', audienceMessage)).toBe(true)
+    expect(policy.canReadMessage('gc:room-1:human:bob', audienceMessage)).toBe(false)
+    expect(policy.canReadMessage('gc:room-1:agent:worker', audienceMessage)).toBe(false)
+  })
+
   it('shows private messages only to sender, system, explicit audience, or channel readers', () => {
     channels.createChannel({
       roomId: 'room-1',
