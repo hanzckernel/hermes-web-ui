@@ -48,6 +48,7 @@ function hasSameContextVisibilityEnvelope(message: StoredMessage, currentMessage
     return normalizeChannelId(message.channelId) === normalizeChannelId(currentMessage.channelId)
         && normalizeVisibility(message.visibility) === normalizeVisibility(currentMessage.visibility)
         && normalizeScope(message.scope) === normalizeScope(currentMessage.scope)
+        && String(message.threadId ?? '') === String(currentMessage.threadId ?? '')
         && audienceFingerprint(message.audienceJson) === audienceFingerprint(currentMessage.audienceJson)
 }
 

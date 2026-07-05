@@ -211,9 +211,33 @@ describe('group chat history windows', () => {
       audienceJson: JSON.stringify(['gc:room-1:human:alice', 'gc:room-1:agent:worker']),
       scope: 'conversation',
     })
+    const objectAudiencePrivate = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: { actorIds: ['gc:room-1:agent:worker', 'gc:room-1:human:alice'] },
+      scope: 'conversation',
+    })
+    const legacyObjectAudiencePrivate = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: { audienceActorIds: ['gc:room-1:human:alice'] },
+      scope: 'conversation',
+    })
+    const longNamePublicSession = groupBridgeSessionId('room-1', 'profile'.repeat(30), 'Worker'.repeat(30), 'seed'.repeat(30), {})
+    const longNamePrivateSession = groupBridgeSessionId('room-1', 'profile'.repeat(30), 'Worker'.repeat(30), 'seed'.repeat(30), {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: { actorIds: ['gc:room-1:human:alice'] },
+      scope: 'conversation',
+    })
 
     expect(publicSession).not.toBe(privateSession)
     expect(samePrivateDifferentAudienceOrder).toBe(normalizedPrivate)
+    expect(objectAudiencePrivate).toBe(normalizedPrivate)
+    expect(legacyObjectAudiencePrivate).toBe(privateSession)
+    expect(longNamePublicSession).not.toBe(longNamePrivateSession)
+    expect(longNamePublicSession).toHaveLength(120)
+    expect(longNamePrivateSession).toHaveLength(120)
   })
 
   it('uses the full context transcript for the final AgentClient room estimate', async () => {

@@ -929,8 +929,10 @@ export function groupBridgeSessionId(
     sessionSeed: string,
     visibilityExtra: Record<string, unknown> = {},
 ): string {
-    const raw = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}_${groupBridgeVisibilitySessionKey(visibilityExtra)}`
-    return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120)
+    const visibilityKey = groupBridgeVisibilitySessionKey(visibilityExtra)
+    const suffix = `_${visibilityKey}`
+    const rawPrefix = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+    return `${rawPrefix.slice(0, Math.max(0, 120 - suffix.length))}${suffix}`
 }
 
 function groupBridgeVisibilitySessionKey(visibilityExtra: Record<string, unknown>): string {
@@ -946,13 +948,17 @@ function groupBridgeVisibilitySessionKey(visibilityExtra: Record<string, unknown
 
 function canonicalAudience(value: unknown): string[] {
     if (value == null || value === '') return []
-    let parsed = value
+    let parsed: unknown = value
     if (typeof value === 'string') {
         try {
             parsed = JSON.parse(value)
         } catch {
             return [value.trim()].filter(Boolean)
         }
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const record = parsed as Record<string, unknown>
+        parsed = record.actorIds || record.audienceActorIds || record.actors
     }
     if (!Array.isArray(parsed)) return []
     return [...new Set(parsed
@@ -1282,8 +1288,18 @@ export class AgentClients {
 function isPublicVisibilityExtra(extra: Record<string, unknown>): boolean {
     const channelId = String(extra.channelId || 'public')
     const visibility = String(extra.visibility || 'public')
-    const audienceJson = typeof extra.audienceJson === 'string' ? extra.audienceJson.trim() : '[]'
+    const audienceJson = normalizeAudienceJsonExtra(extra.audienceJson).trim()
     return channelId === 'public' && visibility === 'public' && (!audienceJson || audienceJson === '[]')
+}
+
+function normalizeAudienceJsonExtra(value: unknown): string {
+    if (value == null || value === '') return '[]'
+    if (typeof value === 'string') return value
+    try {
+        return JSON.stringify(value)
+    } catch {
+        return 'null'
+    }
 }
 
 function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {

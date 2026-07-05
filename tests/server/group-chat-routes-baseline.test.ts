@@ -130,6 +130,7 @@ describe('group chat REST route baseline', () => {
       expect.objectContaining({ profile: 'bad-profile', ok: false, code: 'PROFILE_AGENT_CONNECT_FAILED' }),
     ])
     expect(storage.saveRoom).toHaveBeenCalled()
+    expect(storage.addRoomAgent.mock.invocationCallOrder[0]).toBeLessThan(agentClients.addAgentToRoom.mock.invocationCallOrder[0])
   })
 
   it('returns room detail with paging metadata, agents, and members', async () => {

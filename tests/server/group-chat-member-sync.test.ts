@@ -139,14 +139,20 @@ describe('Group Chat member/agent identity sync', () => {
     expect(addRoomAgent).not.toHaveBeenCalled()
   })
 
-  it('does not persist an agent and disconnects runtime state when room join fails', async () => {
-    const addRoomAgent = vi.fn()
+  it('does not leave a persisted agent and disconnects runtime state when room join fails', async () => {
+    const addRoomAgent = vi.fn((roomId: string, agentId: string, profile: string, name: string, description: string, invited: number) => ({
+      id: 'row-1', roomId, agentId, profile, name, description, invited,
+    }))
+    const removeRoomMembersForAgent = vi.fn()
+    const removeRoomAgent = vi.fn()
     const runtimeClient = { agentId: 'agent-stable-1' }
     const chatServer = {
       getStorage: () => ({
         getRoomAgents: vi.fn(() => []),
         getRoomMembers: vi.fn(() => []),
         addRoomAgent,
+        removeRoomMembersForAgent,
+        removeRoomAgent,
       }),
       agentClients: {
         createAgent: vi.fn(async () => runtimeClient),
@@ -173,7 +179,10 @@ describe('Group Chat member/agent identity sync', () => {
       profile: 'default',
       reason: 'join failed',
     })
-    expect(addRoomAgent).not.toHaveBeenCalled()
+    expect(addRoomAgent).toHaveBeenCalledWith('room-1', expect.any(String), 'default', 'Worker', '', 0)
+    const persistedAgentId = addRoomAgent.mock.calls[0][1]
+    expect(removeRoomMembersForAgent).toHaveBeenCalledWith('room-1', expect.objectContaining({ agentId: persistedAgentId }))
+    expect(removeRoomAgent).toHaveBeenCalledWith('room-1', persistedAgentId)
     expect(chatServer.agentClients.removeAgentFromRoom).toHaveBeenCalledWith('room-1', 'agent-stable-1')
   })
 
@@ -350,8 +359,8 @@ describe('Group Chat member/agent identity sync', () => {
       ['agent-1', { name: '丫鬟', description: '' }],
     ])
     server.socketActorMap = new Map([
-      ['human-socket', 'gc:room-1:human:human-1'],
-      ['agent-socket', 'gc:room-1:agent:agent-1'],
+      ['human-socket:room-1', 'gc:room-1:human:human-1'],
+      ['agent-socket:room-1', 'gc:room-1:agent:agent-1'],
     ])
     server.socketVisibilityActorMap = new Map(server.socketActorMap)
     server.agentClients = { processMentions: vi.fn(async () => undefined) }

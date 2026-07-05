@@ -286,10 +286,20 @@ describe('group chat actor-scoped reply context visibility', () => {
       audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
       scope: 'conversation',
     })
+    const otherThreadPrivate = makeMessage({
+      id: 'other-thread-private',
+      content: 'other thread private',
+      timestamp: 3,
+      channelId: 'private-1',
+      threadId: 'thread-2',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'conversation',
+    })
     const otherPrivate = makeMessage({
       id: 'other-private',
       content: 'other private',
-      timestamp: 3,
+      timestamp: 4,
       channelId: 'private-2',
       visibility: 'private',
       audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
@@ -298,14 +308,16 @@ describe('group chat actor-scoped reply context visibility', () => {
     const currentPrivate = makeMessage({
       id: 'current-private',
       content: '@Worker private question',
-      timestamp: 4,
+      timestamp: 5,
       channelId: 'private-1',
+      threadId: 'thread-1',
       visibility: 'private',
       audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
       scope: 'conversation',
     })
 
-    expect(filterMessagesForContextVisibility([publicMessage, samePrivate, otherPrivate], currentPrivate).map(message => message.id))
+    samePrivate.threadId = 'thread-1'
+    expect(filterMessagesForContextVisibility([publicMessage, samePrivate, otherThreadPrivate, otherPrivate], currentPrivate).map(message => message.id))
       .toEqual(['public', 'same-private'])
   })
 })
