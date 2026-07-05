@@ -199,6 +199,7 @@ describe('Group Chat member/agent identity sync', () => {
       removeRoomMembersForAgent: vi.fn(),
       removeRoomAgent: vi.fn(),
       getRoomMembers: vi.fn(() => [{ id: 'member-1', userId: 'human-1', name: 'Han', description: '', joinedAt: 1 }]),
+      getActors: vi.fn(() => []),
     }
     const chatServer = {
       getStorage: () => storage,
@@ -221,6 +222,7 @@ describe('Group Chat member/agent identity sync', () => {
       success: true,
       agents: [],
       members: [{ id: 'member-1', userId: 'human-1', name: 'Han', description: '', joinedAt: 1 }],
+      actors: [],
     })
   })
 
@@ -231,6 +233,8 @@ describe('Group Chat member/agent identity sync', () => {
     server.socketUserMap = new Map([['socket-1', 'auth:42']])
     server.socketRequestedSourceMap = new Map([['socket-1', 'human']])
     server.socketAuthUserIdMap = new Map([['socket-1', 42]])
+    server.socketActorMap = new Map()
+    server.socketVisibilityActorMap = new Map()
     server.userInfoMap = new Map([['auth:42', { name: 'alice-login', description: '' }]])
     server.typingState = new Map()
     server.contextStatusState = new Map()
@@ -248,8 +252,12 @@ describe('Group Chat member/agent identity sync', () => {
       })),
       saveRoom: vi.fn(),
       addRoomMember: vi.fn(),
-      getRecentMessagesForUI: vi.fn(() => []),
+      resolveHumanActorId: vi.fn(() => 'gc:room-1:human:opaque'),
+      ensureDefaultPublicChannel: vi.fn(),
+      getVisibleMessagesForUI: vi.fn(() => []),
       getRoomAgents: vi.fn(() => []),
+      getActors: vi.fn(() => []),
+      getChannels: vi.fn(() => [{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }]),
     }
     const socket = {
       id: 'socket-1',
@@ -338,8 +346,15 @@ describe('Group Chat member/agent identity sync', () => {
       ['human-1', { name: 'Human', description: '' }],
       ['agent-1', { name: '丫鬟', description: '' }],
     ])
+    server.socketActorMap = new Map([
+      ['human-socket', 'gc:room-1:human:human-1'],
+      ['agent-socket', 'gc:room-1:agent:agent-1'],
+    ])
+    server.socketVisibilityActorMap = new Map(server.socketActorMap)
     server.agentClients = { processMentions: vi.fn(async () => undefined) }
     server.storage = {
+      canReadMessage: vi.fn(() => true),
+      canWriteChannel: vi.fn(() => true),
       saveMessageAndRefreshRoom: vi.fn((msg: any) => ({ message: msg, totalTokens: 123 })),
     }
     server.nsp = { to: vi.fn(() => ({ emit })) }

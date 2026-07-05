@@ -193,7 +193,7 @@ describe('group chat actor identity', () => {
     const second = store.ensureHumanActor({ roomId: 'room-1', userId: 'auth:42', displayName: 'Alicia', authUserId: 42 })
 
     expect(first.id).toMatch(/^gc:room-1:human:auth:[a-f0-9]{16}$/)
-    expect(first.id).not.toContain('auth:42')
+    expect(first.id).not.toBe('gc:room-1:human:auth:42')
     expect(second.id).toBe(first.id)
     expect(second.displayName).toBe('Alicia')
   })
