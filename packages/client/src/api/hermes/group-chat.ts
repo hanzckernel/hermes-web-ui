@@ -67,11 +67,28 @@ export interface MemberInfo {
     avatar?: string
 }
 
+export interface GroupActor {
+    id: string
+    roomId: string
+    kind: 'human' | 'agent' | 'system' | 'tool' | 'external_user' | 'workflow' | string
+    source: string
+    displayName: string
+    description?: string | null
+    profile?: string | null
+    agentKind?: string | null
+    authUserId?: number | null
+    status?: string
+    capabilities?: string[]
+    metadata?: Record<string, unknown>
+}
+
 export interface JoinResult {
     roomId: string
     roomName: string
     members: MemberInfo[]
     messages: ChatMessage[]
+    agents?: RoomAgent[]
+    actors?: GroupActor[]
     rooms: string[]
 }
 
@@ -168,7 +185,7 @@ export async function listRooms(): Promise<{ rooms: RoomInfo[] }> {
 export async function getRoomDetail(
     roomId: string,
     options: { offset?: number; limit?: number } = {},
-): Promise<{ room: RoomInfo; messages: ChatMessage[]; agents: RoomAgent[]; members: MemberInfo[]; total?: number; offset?: number; limit?: number; hasMore?: boolean }> {
+): Promise<{ room: RoomInfo; messages: ChatMessage[]; agents: RoomAgent[]; members: MemberInfo[]; actors?: GroupActor[]; total?: number; offset?: number; limit?: number; hasMore?: boolean }> {
     const params = new URLSearchParams()
     if (options.offset != null) params.set('offset', String(options.offset))
     if (options.limit != null) params.set('limit', String(options.limit))
@@ -205,7 +222,7 @@ export async function listAgents(roomId: string): Promise<{ agents: RoomAgent[] 
     return request(`/api/hermes/group-chat/rooms/${roomId}/agents`)
 }
 
-export async function removeAgent(roomId: string, agentId: string): Promise<{ success: boolean; agents: RoomAgent[]; members: MemberInfo[] }> {
+export async function removeAgent(roomId: string, agentId: string): Promise<{ success: boolean; agents: RoomAgent[]; members: MemberInfo[]; actors?: GroupActor[] }> {
     return request(`/api/hermes/group-chat/rooms/${roomId}/agents/${agentId}`, {
         method: 'DELETE',
     })

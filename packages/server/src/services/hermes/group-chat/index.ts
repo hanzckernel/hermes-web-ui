@@ -1019,12 +1019,14 @@ export class GroupChatServer {
                 memberId: userId,
                 memberName: userName,
                 members: room.getMembersList(),
+                actors: this.storage.getActors(roomId),
             })
         }
 
         // Load history from SQLite
         const messages = this.storage.getRecentMessagesForUI(roomId)
         const agents = this.storage.getRoomAgents(roomId)
+        const actors = this.storage.getActors(roomId)
 
         ack?.({
             roomId,
@@ -1032,6 +1034,7 @@ export class GroupChatServer {
             members: room.getMembersList(),
             messages,
             agents,
+            actors,
             rooms: this.getRoomIds(),
             typingUsers: this.getTypingUsers(roomId),
             contextStatuses: this.getContextStatuses(roomId),
@@ -1357,6 +1360,7 @@ export class GroupChatServer {
                         memberId: member?.userId || socketId,
                         memberName: member?.name || `User-${socketId.slice(0, 6)}`,
                         members: room.getMembersList(),
+                        actors: this.storage.getActors(rid),
                     })
                 }
             }

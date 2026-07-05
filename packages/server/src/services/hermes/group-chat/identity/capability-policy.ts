@@ -67,6 +67,18 @@ export class CapabilityPolicy {
         return []
     }
 
+    effectiveCapabilities(actor: GroupActor): string[] {
+        const capabilities = new Set(this.defaultCapabilities(actor))
+        const rows = (this.db()?.prepare(
+            'SELECT capability, enabled FROM gc_actor_capabilities WHERE actorId = ?'
+        ).all(actor.id) || []) as Array<{ capability: string; enabled: number }>
+        for (const row of rows) {
+            if (Number(row.enabled) === 1) capabilities.add(row.capability)
+            else capabilities.delete(row.capability)
+        }
+        return [...capabilities].sort()
+    }
+
     private explicitCapability(actorId: string, capability: string): boolean | null {
         const row = this.db()?.prepare(
             'SELECT enabled, scopeJson FROM gc_actor_capabilities WHERE actorId = ? AND capability = ?'

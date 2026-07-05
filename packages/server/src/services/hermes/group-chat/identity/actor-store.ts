@@ -1,4 +1,5 @@
 import { getDb } from '../../../../db'
+import { CapabilityPolicy } from './capability-policy'
 import { agentActorId, authenticatedHumanActorId, humanActorId, systemActorId } from './actor-ids'
 import type { GroupActor, GroupActorKind, GroupActorSource, GroupAgentKind } from './types'
 
@@ -18,6 +19,7 @@ interface EnsureActorInput {
 }
 
 export class ActorStore {
+    private readonly capabilityPolicy = new CapabilityPolicy()
     private db() { return getDb() }
 
     ensureHumanActor(input: {
@@ -81,7 +83,7 @@ export class ActorStore {
              FROM gc_actors
              WHERE roomId = ?
              ORDER BY createdAt, rowid`
-        ).all(roomId) || []) as ActorRow[]
+        ).all(roomId) || []) as unknown as ActorRow[]
         return rows.map(row => this.mapActor(row))
     }
 
@@ -153,6 +155,7 @@ export class ActorStore {
         } catch {
             metadata = {}
         }
-        return { ...row, metadata }
+        const actor = { ...row, metadata }
+        return { ...actor, capabilities: this.capabilityPolicy.effectiveCapabilities(actor) }
     }
 }

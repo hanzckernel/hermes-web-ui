@@ -109,7 +109,9 @@ describe('group chat actor identity', () => {
     })
 
     expect(human).toMatchObject({ id: 'gc:room-1:human:user-1', kind: 'human', source: 'web-ui' })
+    expect(human.capabilities).toEqual(expect.arrayContaining(['message.read', 'message.write']))
     expect(agent).toMatchObject({ id: 'gc:room-1:agent:agent-1', kind: 'agent', agentKind: 'hermes' })
+    expect(agent.capabilities).toEqual(expect.arrayContaining(['message.read', 'agent.handoff']))
     expect(store.listActors('room-1').map(a => a.id)).toEqual([human.id, agent.id])
   })
 
@@ -165,6 +167,9 @@ describe('group chat actor identity', () => {
       const joined = await emitAck<any>(socket, 'join', { roomId: 'room-1' })
 
       expect(joined).toMatchObject({ roomId: 'room-1' })
+      expect(joined.actors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'gc:room-1:human:user-1', kind: 'human', displayName: 'Alice' }),
+      ]))
       expect(server.getStorage().getActors('room-1')).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: 'gc:room-1:human:user-1', kind: 'human', displayName: 'Alice' }),
       ]))

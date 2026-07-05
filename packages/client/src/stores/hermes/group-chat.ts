@@ -15,6 +15,7 @@ import {
     type RoomAgent,
     type ChatMessage,
     type MemberInfo,
+    type GroupActor,
     createRoom,
     listRooms,
     getRoomDetail,
@@ -136,6 +137,7 @@ export const useGroupChatStore = defineStore('groupChat', () => {
     const messages = ref<ChatMessage[]>([])
     const members = ref<MemberInfo[]>([])
     const agents = ref<RoomAgent[]>([])
+    const actors = ref<GroupActor[]>([])
     const roomName = ref('')
     const isJoining = ref(false)
     const error = ref<string | null>(null)
@@ -220,6 +222,7 @@ const currentUserAvatar = ref('')
     function applyRealtimeJoinState(res: any, options: { syncMessages?: boolean } = {}) {
         members.value = res.members || []
         if (res.agents) agents.value = res.agents
+        if (Array.isArray(res.actors)) actors.value = res.actors
         if (res.roomName) roomName.value = res.roomName
         const currentMember = members.value.find(member => member.userId === userId.value)
         if (currentMember?.name) userName.value = currentMember.name
@@ -552,6 +555,7 @@ const currentUserAvatar = ref('')
         resetMessagePaging()
         members.value = []
         agents.value = []
+        actors.value = []
         roomName.value = ''
         typingUsers.value.clear()
         contextStatuses.value.clear()
@@ -577,6 +581,7 @@ const currentUserAvatar = ref('')
             applyMessagePaging(res)
             agents.value = res.agents
             members.value = res.members || []
+            actors.value = res.actors || []
         } catch (err: any) {
             error.value = err.message
             throw err
@@ -697,6 +702,7 @@ const currentUserAvatar = ref('')
                 resetMessagePaging()
                 members.value = []
                 agents.value = []
+                actors.value = []
                 roomName.value = ''
             }
         } catch (err: any) {
@@ -757,6 +763,7 @@ const currentUserAvatar = ref('')
             const res = await removeAgent(roomId, agentId)
             agents.value = res.agents ?? agents.value.filter(a => a.id !== agentId && a.agentId !== agentId)
             if (res.members) members.value = res.members
+            if (res.actors) actors.value = res.actors
         } catch (err: any) {
             error.value = err.message
             throw err
@@ -818,6 +825,7 @@ const currentUserAvatar = ref('')
         messages,
         members,
         agents,
+        actors,
         roomName,
         isJoining,
         error,

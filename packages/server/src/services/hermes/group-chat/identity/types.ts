@@ -15,6 +15,7 @@ export interface GroupActor {
     externalPlatform?: string | null
     externalUserId?: string | null
     status: 'active' | 'inactive' | 'removed'
+    capabilities?: string[]
     metadata: Record<string, unknown>
     createdAt: number
     updatedAt: number
