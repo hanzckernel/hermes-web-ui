@@ -190,7 +190,7 @@ describe('group chat REST route baseline', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(contextEngine.forceCompress).toHaveBeenCalledWith('room-1')
+    expect(contextEngine.forceCompress).toHaveBeenCalledWith('room-1', undefined, null)
     expect(body).toEqual({ success: true })
   })
 

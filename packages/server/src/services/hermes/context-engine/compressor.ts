@@ -420,8 +420,11 @@ export class ContextEngine {
      * Force compress all messages in a room (full compression).
      * Used when user manually triggers compression.
      */
-    async forceCompress(roomId: string, profile?: string): Promise<string> {
-        const allMessages = this.messageFetcher.getMessagesForContext(roomId)
+    async forceCompress(roomId: string, profile?: string, actorId?: string | null): Promise<string> {
+        const visibleFetcher = this.messageFetcher.getVisibleMessagesForContext
+        const allMessages = visibleFetcher
+            ? visibleFetcher.call(this.messageFetcher, roomId, actorId ?? null)
+            : this.messageFetcher.getMessagesForContext(roomId)
         if (allMessages.length === 0) return ''
 
         const config = { ...this.config }
@@ -436,7 +439,9 @@ export class ContextEngine {
             const toCompress = allMessages.length > tailMessageCount ? allMessages.slice(0, -tailMessageCount) : allMessages
             const lastCompressedMsg = toCompress[toCompress.length - 1]
 
-            this.messageFetcher.saveContextSnapshot(roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            if (!actorId) {
+                this.messageFetcher.saveContextSnapshot(roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            }
             logger.debug(`[ContextEngine] forceCompress DONE in ${elapsed}ms`)
             if (result.sessionId) this.sessionCleaner?.(result.sessionId)
             return result.summary

@@ -86,7 +86,7 @@ export interface SummaryCacheEntry {
 
 export interface MessageFetcher {
     getMessagesForContext(roomId: string, cutoff?: GroupMessageCursorCutoff): StoredMessage[]
-    getVisibleMessagesForContext?(roomId: string, actorId: string, cutoff?: GroupMessageCursorCutoff): StoredMessage[]
+    getVisibleMessagesForContext?(roomId: string, actorId?: string | null, cutoff?: GroupMessageCursorCutoff): StoredMessage[]
     getContextSnapshot(roomId: string): ContextSnapshot | null
     saveContextSnapshot(roomId: string, summary: string, lastMessageId: string, lastMessageTimestamp: number): void
     deleteContextSnapshot(roomId: string): void

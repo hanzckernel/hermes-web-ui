@@ -1353,11 +1353,13 @@ export class GroupChatServer {
             ? Boolean(actorId)
             : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
         if (!canWrite) return
+        const senderId = member?.userId || this.socketUserMap.get(socket.id) || socket.id
+        const senderName = member?.name || this.userInfoMap.get(senderId)?.name || `User-${senderId.slice(0, 6)}`
         const payload: ChatMessage = {
             id,
             roomId,
-            senderId: data.senderId || member?.userId || socket.id,
-            senderName: data.senderName || member?.name || `User-${socket.id.slice(0, 6)}`,
+            senderId,
+            senderName,
             content: '',
             timestamp: data.timestamp || Date.now(),
             role: 'assistant',
@@ -1522,13 +1524,15 @@ export class GroupChatServer {
     private handleApprovalRequested(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }): void {
         const roomId = data.roomId
         if (!roomId || !data.approval_id) return
+        const actorId = this.socketActorMap.get(socket.id)
+        if (!this.storage.canActor(actorId, 'approval.request')) return
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, data)) return
         const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
         this.approvalVisibilityMap.set(this.approvalVisibilityKey(roomId, data.approval_id), visibilityMessage)
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.requested', {
             event: 'approval.requested',
             roomId,
-            agentName: data.agentName || '',
+            agentName: visibilityMessage.senderName || '',
             approval_id: data.approval_id,
             command: data.command || '',
             description: data.description || '',
@@ -1543,11 +1547,12 @@ export class GroupChatServer {
         if (!roomId || !data.approval_id) return
         const key = this.approvalVisibilityKey(roomId, data.approval_id)
         const visibilityMessage = this.approvalVisibilityMap.get(key)
-        if (!visibilityMessage || !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
+        const actorId = this.socketActorMap.get(socket.id)
+        if (!visibilityMessage || visibilityMessage.senderId !== actorId || !this.storage.canActor(actorId, 'approval.request') || !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.resolved', {
             event: 'approval.resolved',
             roomId,
-            agentName: data.agentName || '',
+            agentName: visibilityMessage.senderName || '',
             approval_id: data.approval_id,
             choice: data.choice || '',
             ...this.visibilityEventFields(visibilityMessage),
@@ -1653,11 +1658,13 @@ export class GroupChatServer {
 
     private approvalVisibilityMessage(socket: Socket, roomId: string, approvalId: string, data: Partial<ChatMessage> & { command?: string; description?: string; agentName?: string }): ChatMessage {
         const senderId = this.socketActorMap.get(socket.id) || socket.id
+        const room = this.rooms.get(roomId)
+        const member = room?.getOnlineMemberBySocketId(socket.id)
         return {
             id: `approval:${approvalId}`,
             roomId,
             senderId,
-            senderName: data.agentName || senderId,
+            senderName: member?.name || data.agentName || senderId,
             content: data.description || data.command || '',
             timestamp: Date.now(),
             role: 'assistant',
