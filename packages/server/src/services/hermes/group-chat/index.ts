@@ -14,7 +14,7 @@ import { config } from '../../../config'
 import { createSocketIoCorsOrigin, shouldRejectUpgradeOrigin } from '../../../security'
 import { paginateRecentGroupMessagesCanonical, sliceGroupMessagesCanonical, sliceGroupMessagesForSnapshotTail, type GroupMessageCursorCutoff } from './group-message-ordering'
 import { ActorStore } from './identity/actor-store'
-import { agentActorId, authenticatedHumanActorId, humanActorId } from './identity/actor-ids'
+import { agentActorId, humanActorId, systemActorId } from './identity/actor-ids'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -664,9 +664,19 @@ class ChatStorage {
         return Boolean(this.db()?.prepare('SELECT 1 FROM gc_actors WHERE id = ?').get(actorId))
     }
 
+    private humanActorExists(roomId: string, userId: string, authUserId: number | null): boolean {
+        if (typeof authUserId === 'number' && authUserId > 0) {
+            return Boolean(this.db()?.prepare(
+                "SELECT 1 FROM gc_actors WHERE roomId = ? AND kind = 'human' AND authUserId = ? LIMIT 1"
+            ).get(roomId, authUserId))
+        }
+        return this.actorExists(humanActorId(roomId, userId))
+    }
+
     private ensureActorsForRoom(roomId: string): void {
         const db = this.db()
         if (!db) return
+        if (!this.actorExists(systemActorId(roomId))) this.actorStore.ensureSystemActor(roomId)
         const members = (db.prepare(
             `SELECT m.userId, m.userName as name, m.description, m.authUserId
              FROM gc_room_members m
@@ -682,10 +692,7 @@ class ChatStorage {
             const authUserId = typeof member.authUserId === 'number' && member.authUserId > 0
                 ? member.authUserId
                 : authFromUserId ? Number(authFromUserId) : null
-            const actorId = typeof authUserId === 'number' && authUserId > 0
-                ? authenticatedHumanActorId(roomId, authUserId)
-                : humanActorId(roomId, member.userId)
-            if (!this.actorExists(actorId)) {
+            if (!this.humanActorExists(roomId, member.userId, authUserId)) {
                 this.actorStore.ensureHumanActor({
                     roomId,
                     userId: member.userId,

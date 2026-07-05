@@ -137,12 +137,12 @@ describe('group chat actor identity', () => {
     }
   })
 
-  it('backfills actor summaries for legacy persisted members and agents', () => {
+  it('backfills actor summaries for legacy persisted members, agents, and rooms', () => {
     initAllHermesTables()
     const httpServer = createServer()
     const server = new GroupChatServer(httpServer)
     const storage = server.getStorage()
-    storage.saveRoom('legacy-room', 'Legacy Room', 'LEGACY')
+    db.prepare('INSERT INTO gc_rooms (id, name, inviteCode) VALUES (?, ?, ?)').run('legacy-room', 'Legacy Room', 'LEGACY')
     db.prepare('INSERT INTO gc_room_members (id, roomId, userId, userName, description, joinedAt, updatedAt, avatar, authUserId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run('member-1', 'legacy-room', 'auth:42', 'Alice', '', 1, 1, '', 42)
     db.prepare('INSERT INTO gc_room_agents (id, roomId, agentId, profile, name, description, invited) VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -151,6 +151,7 @@ describe('group chat actor identity', () => {
     try {
       const actors = storage.getActors('legacy-room') as any[]
       expect(actors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'gc:legacy-room:system', kind: 'system', displayName: 'System' }),
         expect.objectContaining({ id: expect.stringMatching(/^gc:legacy-room:human:auth:[a-f0-9]{16}$/), kind: 'human', displayName: 'Alice' }),
         expect.objectContaining({ id: 'gc:legacy-room:agent:agent-1', kind: 'agent', displayName: 'Worker' }),
       ]))
@@ -182,6 +183,19 @@ describe('group chat actor identity', () => {
     expect(second).toMatchObject({ displayName: 'Alicia', metadata: { color: 'green' } })
     expect(second.createdAt).toBe(first.createdAt)
     expect(second.updatedAt).toBeGreaterThanOrEqual(first.updatedAt)
+  })
+
+  it('uses opaque persisted ids for authenticated human actors', () => {
+    initAllHermesTables()
+    const store = new ActorStore()
+
+    const first = store.ensureHumanActor({ roomId: 'room-1', userId: 'auth:42', displayName: 'Alice', authUserId: 42 })
+    const second = store.ensureHumanActor({ roomId: 'room-1', userId: 'auth:42', displayName: 'Alicia', authUserId: 42 })
+
+    expect(first.id).toMatch(/^gc:room-1:human:auth:[a-f0-9]{16}$/)
+    expect(first.id).not.toContain('auth:42')
+    expect(second.id).toBe(first.id)
+    expect(second.displayName).toBe('Alicia')
   })
 
   it('ensures one system actor and does not pre-create tool actors', () => {

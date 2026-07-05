@@ -1,6 +1,6 @@
 import { getDb } from '../../../../db'
 import { CapabilityPolicy } from './capability-policy'
-import { agentActorId, authenticatedHumanActorId, humanActorId, systemActorId } from './actor-ids'
+import { agentActorId, humanActorId, newAuthenticatedHumanActorId, systemActorId } from './actor-ids'
 import type { GroupActor, GroupActorKind, GroupActorSource, GroupAgentKind } from './types'
 
 type ActorRow = Omit<GroupActor, 'metadata'> & { metadataJson: string }
@@ -30,16 +30,18 @@ export class ActorStore {
         authUserId?: number | null
         metadata?: Record<string, unknown>
     }): GroupActor {
+        const authUserId = typeof input.authUserId === 'number' && input.authUserId > 0 ? input.authUserId : null
+        const existingAuthActor = authUserId ? this.getHumanActorByAuthUserId(input.roomId, authUserId) : null
         return this.ensureActor({
-            id: typeof input.authUserId === 'number'
-                ? authenticatedHumanActorId(input.roomId, input.authUserId)
-                : humanActorId(input.roomId, input.userId),
+            id: existingAuthActor?.id || (authUserId
+                ? newAuthenticatedHumanActorId(input.roomId)
+                : humanActorId(input.roomId, input.userId)),
             roomId: input.roomId,
             kind: 'human',
             source: 'web-ui',
             displayName: input.displayName,
             description: input.description,
-            authUserId: input.authUserId ?? null,
+            authUserId,
             metadata: input.metadata,
         })
     }
@@ -144,6 +146,18 @@ export class ActorStore {
              FROM gc_actors
              WHERE id = ?`
         ).get(id) as ActorRow | undefined
+        return row ? this.mapActor(row) : null
+    }
+
+    private getHumanActorByAuthUserId(roomId: string, authUserId: number): GroupActor | null {
+        const row = this.db()?.prepare(
+            `SELECT id, roomId, kind, source, displayName, description, profile, agentKind, authUserId,
+                    externalPlatform, externalUserId, status, createdAt, updatedAt, metadataJson
+             FROM gc_actors
+             WHERE roomId = ? AND kind = 'human' AND authUserId = ?
+             ORDER BY createdAt, rowid
+             LIMIT 1`
+        ).get(roomId, authUserId) as ActorRow | undefined
         return row ? this.mapActor(row) : null
     }
 
