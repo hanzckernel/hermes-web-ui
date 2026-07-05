@@ -449,6 +449,13 @@ export const GC_MESSAGES_SCHEMA: Record<string, string> = {
   reasoning: 'TEXT',
   reasoning_details: 'TEXT',
   reasoning_content: 'TEXT',
+  channelId: "TEXT NOT NULL DEFAULT 'public'",
+  threadId: 'TEXT',
+  visibility: "TEXT NOT NULL DEFAULT 'public'",
+  audienceJson: "TEXT NOT NULL DEFAULT '[]'",
+  scope: "TEXT NOT NULL DEFAULT 'conversation'",
+  originEventId: 'TEXT',
+  metadataJson: "TEXT NOT NULL DEFAULT '{}'",
 }
 
 export const GC_ROOM_AGENTS_TABLE = 'gc_room_agents'
@@ -569,6 +576,47 @@ export const GC_ACTOR_CAPABILITY_INDEXES = {
 export const GC_ACTOR_PRIVATE_FACT_INDEXES = {
   idx_gc_actor_private_facts_room_actor: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_private_facts_room_actor ON gc_actor_private_facts(roomId, actorId)',
   idx_gc_actor_private_facts_expiry: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_private_facts_expiry ON gc_actor_private_facts(expiresAt)',
+}
+
+export const GC_MESSAGES_VISIBILITY_INDEXES = {
+  idx_gc_messages_channel: 'CREATE INDEX IF NOT EXISTS idx_gc_messages_channel ON gc_messages(roomId, channelId, timestamp)',
+  idx_gc_messages_thread: 'CREATE INDEX IF NOT EXISTS idx_gc_messages_thread ON gc_messages(roomId, threadId, timestamp)',
+}
+
+export const GC_CHANNELS_TABLE = 'gc_channels'
+
+export const GC_CHANNELS_SCHEMA: Record<string, string> = {
+  id: 'TEXT NOT NULL',
+  roomId: 'TEXT NOT NULL',
+  kind: 'TEXT NOT NULL',
+  name: 'TEXT NOT NULL',
+  parentChannelId: 'TEXT',
+  defaultVisibility: "TEXT NOT NULL DEFAULT 'public'",
+  createdBy: 'TEXT NOT NULL',
+  createdAt: 'INTEGER NOT NULL',
+  updatedAt: 'INTEGER NOT NULL',
+  metadataJson: "TEXT NOT NULL DEFAULT '{}'",
+}
+
+export const GC_CHANNEL_MEMBERS_TABLE = 'gc_channel_members'
+
+export const GC_CHANNEL_MEMBERS_SCHEMA: Record<string, string> = {
+  roomId: 'TEXT NOT NULL',
+  channelId: 'TEXT NOT NULL',
+  actorId: 'TEXT NOT NULL',
+  canRead: 'INTEGER NOT NULL DEFAULT 1',
+  canWrite: 'INTEGER NOT NULL DEFAULT 0',
+  canInvite: 'INTEGER NOT NULL DEFAULT 0',
+  canModerate: 'INTEGER NOT NULL DEFAULT 0',
+  updatedAt: 'INTEGER NOT NULL',
+}
+
+export const GC_CHANNEL_INDEXES = {
+  idx_gc_channels_room: 'CREATE INDEX IF NOT EXISTS idx_gc_channels_room ON gc_channels(roomId)',
+}
+
+export const GC_CHANNEL_MEMBER_INDEXES = {
+  idx_gc_channel_members_actor: 'CREATE INDEX IF NOT EXISTS idx_gc_channel_members_actor ON gc_channel_members(roomId, actorId)',
 }
 
 // ============================================================================
@@ -915,6 +963,7 @@ export function initAllHermesTables(): void {
     // Group chat - basic tables
     syncTable(GC_ROOMS_TABLE, GC_ROOMS_SCHEMA)
     syncTable(GC_MESSAGES_TABLE, GC_MESSAGES_SCHEMA)
+    createIndexes(db, GC_MESSAGES_VISIBILITY_INDEXES)
     syncTable(GC_CONTEXT_SNAPSHOTS_TABLE, GC_CONTEXT_SNAPSHOTS_SCHEMA)
     syncTable(GC_PENDING_SESSION_DELETES_TABLE, GC_PENDING_SESSION_DELETES_SCHEMA)
     syncTable(GC_SESSION_PROFILES_TABLE, GC_SESSION_PROFILES_SCHEMA)
@@ -927,6 +976,16 @@ export function initAllHermesTables(): void {
     syncTable(GC_ACTOR_PRIVATE_FACTS_TABLE, GC_ACTOR_PRIVATE_FACTS_SCHEMA, {
       indexes: GC_ACTOR_PRIVATE_FACT_INDEXES,
     })
+    syncTable(GC_CHANNELS_TABLE, GC_CHANNELS_SCHEMA, {
+      primaryKey: 'roomId, id',
+      indexes: GC_CHANNEL_INDEXES,
+    })
+    syncTable(GC_CHANNEL_MEMBERS_TABLE, GC_CHANNEL_MEMBERS_SCHEMA, {
+      primaryKey: 'roomId, channelId, actorId',
+      indexes: GC_CHANNEL_MEMBER_INDEXES,
+    })
+    createIndexes(db, GC_CHANNEL_INDEXES)
+    createIndexes(db, GC_CHANNEL_MEMBER_INDEXES)
 
     // Group chat - single-column primary key tables (PRIMARY KEY in column definition)
     syncTable(GC_ROOM_AGENTS_TABLE, GC_ROOM_AGENTS_SCHEMA, {
