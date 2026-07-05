@@ -410,12 +410,17 @@ describe('group chat channel visibility runtime', () => {
       expect(storage.getRoom('room-1').totalTokens).toBe(publicTotalTokens)
 
       const aliceReady = once<any>(aliceSocket, 'context_status')
+      const bobPublicReady = once<any>(bobSocket, 'context_status', 100)
       agentSocket.emit('context_status', {
         roomId: 'room-1',
         agentName: 'Agent',
         status: 'ready',
+        channelId: 'public',
+        visibility: 'public',
+        audienceJson: '[]',
       })
       expect(await aliceReady).toMatchObject({ status: 'ready', channelId: 'private-1' })
+      await expect(bobPublicReady).rejects.toThrow('timeout waiting for context_status')
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(bobSawPrivateStatus).toBe(false)
 

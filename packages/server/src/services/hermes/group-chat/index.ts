@@ -1354,6 +1354,7 @@ export class GroupChatServer {
         if (!id) return
 
         const member = room.getOnlineMemberBySocketId(socket.id)
+        if (member?.source !== 'agent') return
         const actorId = this.socketActorMap.get(socket.id)
         const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
         const channelId = normalizeChannelId(data.channelId)
@@ -1511,8 +1512,7 @@ export class GroupChatServer {
         const statusData = { ...data, agentName }
         let roomStatuses = this.contextStatusState.get(roomId)
         const existingStatus = roomStatuses?.get(agentName)
-        const hasIncomingVisibility = this.hasVisibilityEventFields(data)
-        const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage && !hasIncomingVisibility
+        const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage
             ? existingStatus.visibilityMessage
             : this.contextStatusVisibilityMessage(socket, roomId, statusData)
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return

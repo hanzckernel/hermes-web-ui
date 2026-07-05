@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client'
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { getToken } from '../../../services/auth'
 import { logger } from '../../../services/logger'
 import { updateUsage } from '../../../db/hermes/usage-store'
@@ -301,7 +301,7 @@ class AgentClient {
 
     async interrupt(roomId: string, extra: Record<string, unknown> = {}): Promise<void> {
         const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
-        const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
+        const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed, extra)
         await new AgentBridgeClient().interrupt(sessionId, 'Interrupted by group chat user', this.profile)
         this.stopTyping(roomId, extra)
         this.emitContextStatus(roomId, 'ready', extra)
@@ -471,7 +471,7 @@ class AgentClient {
             let instructions: string | undefined
             const bridge = new AgentBridgeClient()
             const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
-            const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
+            const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed, visibilityExtra)
             const modelContext = await resolveGroupAgentModelContext(this.profile)
             const currentContextMessage = mentionMessageToStoredContextMessage(roomId, msg)
 
@@ -922,9 +922,43 @@ class AgentClient {
     }
 }
 
-function groupBridgeSessionId(roomId: string, profile: string, name: string, sessionSeed: string): string {
-    const raw = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}`
+export function groupBridgeSessionId(
+    roomId: string,
+    profile: string,
+    name: string,
+    sessionSeed: string,
+    visibilityExtra: Record<string, unknown> = {},
+): string {
+    const raw = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}_${groupBridgeVisibilitySessionKey(visibilityExtra)}`
     return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120)
+}
+
+function groupBridgeVisibilitySessionKey(visibilityExtra: Record<string, unknown>): string {
+    const canonical = JSON.stringify({
+        channelId: typeof visibilityExtra.channelId === 'string' ? visibilityExtra.channelId : 'public',
+        threadId: typeof visibilityExtra.threadId === 'string' ? visibilityExtra.threadId : null,
+        visibility: typeof visibilityExtra.visibility === 'string' ? visibilityExtra.visibility : 'public',
+        scope: typeof visibilityExtra.scope === 'string' ? visibilityExtra.scope : 'room',
+        audience: canonicalAudience(visibilityExtra.audienceJson),
+    })
+    return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+}
+
+function canonicalAudience(value: unknown): string[] {
+    if (value == null || value === '') return []
+    let parsed = value
+    if (typeof value === 'string') {
+        try {
+            parsed = JSON.parse(value)
+        } catch {
+            return [value.trim()].filter(Boolean)
+        }
+    }
+    if (!Array.isArray(parsed)) return []
+    return [...new Set(parsed
+        .filter((actor): actor is string => typeof actor === 'string' && actor.trim().length > 0)
+        .map(actor => actor.trim())
+        .sort())]
 }
 
 function groupMessageId(roomId: string, profile: string, name: string): string {
