@@ -226,7 +226,7 @@ describe('Group Chat member/agent identity sync', () => {
     })
   })
 
-  it('reuses an authenticated member name when the browser has no local group-chat name', () => {
+  it('uses authenticated login identity instead of persisted spoofable member display data', () => {
     const emit = vi.fn()
     const server = Object.create(GroupChatServer.prototype) as any
     server.rooms = new Map()
@@ -271,13 +271,13 @@ describe('Group Chat member/agent identity sync', () => {
     expect(server.storage.addRoomMember).toHaveBeenCalledWith(
       'room-1',
       'auth:42',
-      'Alice Display',
-      'saved description',
+      'alice-login',
+      '',
       '',
       42,
     )
     expect(ack.mock.calls[0][0].members).toEqual([
-      expect.objectContaining({ userId: 'auth:42', name: 'Alice Display' }),
+      expect.objectContaining({ userId: 'auth:42', name: 'alice-login' }),
     ])
   })
 
