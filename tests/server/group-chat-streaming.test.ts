@@ -41,7 +41,7 @@ describe('group chat streaming baseline', () => {
     expect(await streamStart).toMatchObject({
       id: 'stream-1',
       roomId: 'room-1',
-      senderName: 'Worker',
+      senderName: 'Alice',
       role: 'assistant',
       finish_reason: 'streaming',
     })

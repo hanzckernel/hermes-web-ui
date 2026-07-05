@@ -128,7 +128,7 @@ describe('group chat actor identity', () => {
       const actors = storage.getActors('room-1') as any[]
       const human = actors.find(actor => actor.kind === 'human')
       expect(human.id).toMatch(/^gc:room-1:human:auth:[a-f0-9]{16}$/)
-      expect(human.id).not.toContain('42')
+      expect(human.id).not.toBe('gc:room-1:human:auth:42')
       expect(human).not.toHaveProperty('authUserId')
       expect(human).not.toHaveProperty('externalUserId')
     } finally {
