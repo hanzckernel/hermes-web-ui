@@ -46,6 +46,11 @@ describe('group chat streaming baseline', () => {
       finish_reason: 'streaming',
     })
 
+    const hijackDelta = once<any>(bob, 'message_stream_delta', 100)
+    bob.emit('message_stream_start', { roomId: 'room-1', id: 'stream-1', senderName: 'Bob' })
+    bob.emit('message_stream_delta', { roomId: 'room-1', id: 'stream-1', delta: 'hijack' })
+    await expect(hijackDelta).rejects.toThrow('timeout waiting for message_stream_delta')
+
     const contentDelta = once<any>(bob, 'message_stream_delta')
     alice.emit('message_stream_delta', { roomId: 'room-1', id: 'stream-1', delta: 'hello' })
     expect(await contentDelta).toEqual({ roomId: 'room-1', id: 'stream-1', delta: 'hello' })

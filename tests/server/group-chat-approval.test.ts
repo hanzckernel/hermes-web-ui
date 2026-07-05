@@ -150,6 +150,7 @@ describe('group chat approval and context baseline', () => {
       if (event.approval_id === 'approval-owned') resolvedByOther = true
     })
 
+    other.emit('approval.requested', { roomId: 'room-1', agentName: 'Other Agent', approval_id: 'approval-owned' })
     other.emit('approval.resolved', { roomId: 'room-1', agentName: 'Other Agent', approval_id: 'approval-owned', choice: 'deny' })
     await new Promise(resolve => setTimeout(resolve, 80))
     expect(resolvedByOther).toBe(false)

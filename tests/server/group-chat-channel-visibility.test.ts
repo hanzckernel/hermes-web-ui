@@ -348,6 +348,29 @@ describe('group chat channel visibility runtime', () => {
       expect(bobSawApproval).toBe(false)
       await expect(emitAck(bobSocket, 'approval.respond', { roomId: 'room-1', approval_id: 'private-approval', choice: 'once' })).resolves.toEqual({ error: 'Approval not visible' })
 
+      let bobSawPrivateStatus = false
+      let bobSawPrivateRoomUpdate = false
+      bobSocket.on('context_status', (message: any) => {
+        if (message.channelId === 'private-1') bobSawPrivateStatus = true
+      })
+      bobSocket.on('room_updated', (message: any) => {
+        if (message.totalTokens === 321) bobSawPrivateRoomUpdate = true
+      })
+      const aliceStatus = once<any>(aliceSocket, 'context_status')
+      agentSocket.emit('context_status', {
+        roomId: 'room-1',
+        agentName: 'Agent',
+        status: 'replying',
+        totalTokens: 321,
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+      expect(await aliceStatus).toMatchObject({ status: 'replying', channelId: 'private-1' })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(bobSawPrivateStatus).toBe(false)
+      expect(bobSawPrivateRoomUpdate).toBe(false)
+
       let aliceSawBobStream = false
       aliceSocket.on('message_stream_start', (message: any) => {
         if (message.id === 'bob-private-stream') aliceSawBobStream = true

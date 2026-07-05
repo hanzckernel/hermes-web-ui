@@ -37,7 +37,7 @@ export class VisibilityPolicy {
         const membership = this.channels.getChannelMember(normalized.roomId, normalizeChannelId(normalized.channelId), actorId)
         if (membership?.canRead) return true
 
-        if (visibility === 'agent-only') return actorId.includes(':agent:')
+        if (visibility === 'agent-only') return normalized.channelId === 'public' && actorId.includes(':agent:')
         if (visibility === 'system-only' || visibility === 'audit-only') return false
         if (visibility === 'external') return false
 

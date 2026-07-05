@@ -506,6 +506,7 @@ class AgentClient {
                         profile: this.profile,
                         onProgress: (event: { status: 'compressing'; messageCount: number; tokenCount: number }) => {
                             onStatus?.('compressing', {
+                                ...visibilityExtra,
                                 messageCount: event.messageCount,
                                 totalTokens: event.tokenCount,
                             })
@@ -526,13 +527,13 @@ class AgentClient {
                     instructions = ctx.instructions
                     if (typeof ctx.meta.contextTokenEstimate === 'number' && Number.isFinite(ctx.meta.contextTokenEstimate)) {
                         this.storage.updateRoomTotalTokens?.(roomId, ctx.meta.contextTokenEstimate)
-                        onStatus?.('replying', { totalTokens: ctx.meta.contextTokenEstimate })
+                        onStatus?.('replying', { ...visibilityExtra, totalTokens: ctx.meta.contextTokenEstimate })
                     }
                     logger.debug(`[AgentClients] ${this.name}: context built — historyLen=${conversationHistory.length}, meta=%j`, ctx.meta)
-                    onStatus?.('replying')
+                    onStatus?.('replying', visibilityExtra)
                 } catch (err: any) {
                     logger.warn(`[AgentClients] ${this.name}: context engine failed: ${err.message}`)
-                    onStatus?.('replying')
+                    onStatus?.('replying', visibilityExtra)
                     // Degrade: continue without context
                 }
             }
@@ -607,7 +608,7 @@ class AgentClient {
                 await this.sendAgentErrorMessage(roomId, streamMessageId, lastChunk.error || 'Run failed', msg, reasoningContent)
                 this.emitMessageStreamEnd(roomId, streamMessageId)
                 this.stopTyping(roomId)
-                onStatus?.('ready')
+                onStatus?.('ready', visibilityExtra)
                 return
             }
 
@@ -627,14 +628,14 @@ class AgentClient {
                     reasoning_content: reasoningContent || null,
                 })
                 this.emitMessageStreamEnd(roomId, streamMessageId)
-                await this.refreshRoomFullContextEstimate(roomId, sessionId, bridge, instructions, modelContext)
-                onStatus?.('ready')
+                await this.refreshRoomFullContextEstimate(roomId, sessionId, bridge, instructions, modelContext, visibilityExtra)
+                onStatus?.('ready', visibilityExtra)
                 return
             }
             logger.warn(`[AgentClients] ${this.name}: bridge response completed without content`)
             this.emitMessageStreamEnd(roomId, streamMessageId)
             this.stopTyping(roomId)
-            onStatus?.('ready')
+            onStatus?.('ready', visibilityExtra)
         } catch (err: any) {
             logger.error(`[AgentClients] ${this.name}: error handling message: ${err.message}`)
             try {
@@ -644,7 +645,7 @@ class AgentClient {
                 logger.warn(`[AgentClients] ${this.name}: failed to send error message: ${sendErr.message}`)
             }
             this.stopTyping(roomId)
-            onStatus?.('ready')
+            onStatus?.('ready', visibilityExtra)
         }
     }
 
@@ -654,6 +655,7 @@ class AgentClient {
         bridge: AgentBridgeClient,
         instructions?: string,
         modelContext: GroupModelContext = { model: '', provider: '' },
+        visibilityExtra: Record<string, unknown> = {},
     ): Promise<void> {
         if (!this.storage?.getMessagesForContext) return
         try {
@@ -670,7 +672,7 @@ class AgentClient {
             if (cachedTokens == null || cachedTokens <= 0) return
             const rounded = Math.floor(cachedTokens)
             this.storage.updateRoomTotalTokens?.(roomId, rounded)
-            this.emitContextStatus(roomId, 'replying', { totalTokens: rounded })
+            this.emitContextStatus(roomId, 'replying', { ...visibilityExtra, totalTokens: rounded })
         } catch (err: any) {
             logger.warn(`[GroupChat] failed to refresh final context estimate room=${roomId} agent=${this.name}: ${err.message}`)
         }

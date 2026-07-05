@@ -101,6 +101,21 @@ describe('group chat visibility policy', () => {
     expect(policy.canReadMessage('gc:room-1:human:bob', agentMessage)).toBe(false)
   })
 
+  it('does not leak private-channel agent-only messages to non-member agents', () => {
+    channels.createChannel({
+      roomId: 'room-1',
+      id: 'private-1',
+      kind: 'private',
+      name: 'Private',
+      createdBy: 'gc:room-1:human:alice',
+      members: [{ actorId: 'gc:room-1:agent:worker', canRead: true, canWrite: true }],
+    })
+    const privateAgentMessage = message({ channelId: 'private-1', visibility: 'agent-only' })
+
+    expect(policy.canReadMessage('gc:room-1:agent:worker', privateAgentMessage)).toBe(true)
+    expect(policy.canReadMessage('gc:room-1:agent:reviewer', privateAgentMessage)).toBe(false)
+  })
+
   it('limits task channels to participants', () => {
     channels.createChannel({
       roomId: 'room-1',
