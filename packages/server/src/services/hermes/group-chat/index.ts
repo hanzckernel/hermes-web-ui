@@ -1149,6 +1149,11 @@ export class GroupChatServer {
         const requestedDescription = typeof data.description === 'string' ? data.description.trim() : ''
         const userName = typeof socketAuthUserId === 'number' ? userInfo.name : requestedName || existingMember?.name || userInfo.name
         const description = typeof socketAuthUserId === 'number' ? userInfo.description : requestedDescription || existingMember?.description || userInfo.description
+        const normalizedUserName = userName.trim().toLowerCase()
+        if (source !== 'agent' && normalizedUserName && this.storage.getRoomAgents(roomId).some(agent => agent.name.trim().toLowerCase() === normalizedUserName)) {
+            ack?.({ error: 'Reserved member identity' })
+            return
+        }
 
         // Update stored user info
         this.userInfoMap.set(userId, { name: userName, description })
@@ -1276,21 +1281,23 @@ export class GroupChatServer {
             return
         }
 
+        const isAgentSocket = member?.source === 'agent'
+        const role = isAgentSocket ? normalizeMessageRole(data.role) : 'user'
         const msg: ChatMessage = {
             id: this.normalizeClientMessageId(data.id) || this.generateId(),
             roomId,
             senderId: userId,
             senderName: userName,
             content: contentToStorageString(data.content),
-            timestamp: this.normalizeMessageTimestamp(data.timestamp, data.role),
-            role: normalizeMessageRole(data.role),
-            tool_call_id: data.tool_call_id ?? null,
-            tool_calls: Array.isArray(data.tool_calls) ? data.tool_calls : null,
-            tool_name: data.tool_name ?? null,
-            finish_reason: data.finish_reason ?? null,
-            reasoning: data.reasoning ?? null,
-            reasoning_details: data.reasoning_details ?? null,
-            reasoning_content: data.reasoning_content ?? null,
+            timestamp: this.normalizeMessageTimestamp(data.timestamp, role),
+            role,
+            tool_call_id: isAgentSocket ? data.tool_call_id ?? null : null,
+            tool_calls: isAgentSocket && Array.isArray(data.tool_calls) ? data.tool_calls : null,
+            tool_name: isAgentSocket ? data.tool_name ?? null : null,
+            finish_reason: isAgentSocket ? data.finish_reason ?? null : null,
+            reasoning: isAgentSocket ? data.reasoning ?? null : null,
+            reasoning_details: isAgentSocket ? data.reasoning_details ?? null : null,
+            reasoning_content: isAgentSocket ? data.reasoning_content ?? null : null,
             channelId,
             threadId: data.threadId ?? null,
             visibility,

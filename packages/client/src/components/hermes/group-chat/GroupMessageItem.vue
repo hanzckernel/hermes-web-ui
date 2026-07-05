@@ -42,7 +42,7 @@ const speech = useGlobalSpeech()
 const voiceSettings = useVoiceSettings()
 const previewUrl = ref<string | null>(null)
 const isAgent = computed(() => {
-    return props.agents.some(a => a.agentId === props.message.senderId || a.name === props.message.senderName)
+    return props.agents.some(a => a.agentId === props.message.senderId)
 })
 
 const isAgentError = computed(() => {
@@ -56,7 +56,7 @@ const isSelf = computed(() => {
 })
 
 const agentInfo = computed(() => {
-    return props.agents.find(a => a.agentId === props.message.senderId || a.name === props.message.senderName)
+    return props.agents.find(a => a.agentId === props.message.senderId)
 })
 
 const timeStr = computed(() => formatChatTimestamp(props.message.timestamp))
