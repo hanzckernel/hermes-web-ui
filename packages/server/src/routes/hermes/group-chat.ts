@@ -42,14 +42,9 @@ const CHANNEL_KINDS = new Set(['public', 'private', 'team', 'agent', 'task', 'ap
 
 async function resolveRequestActor(ctx: any, roomId: string): Promise<string | null> {
     if (!chatServer) return null
-    const storage = chatServer.getStorage()
     const user = ctx.state.user
-    if (user?.id) {
-        return storage.resolveHumanActorId(roomId, `auth:${user.id}`, user.username, user.id)
-    }
-    const queryActorId = typeof ctx.query.actorId === 'string' ? ctx.query.actorId.trim() : ''
-    const bodyActorId = typeof ctx.request.body?.actorId === 'string' ? ctx.request.body.actorId.trim() : ''
-    return queryActorId || bodyActorId || null
+    if (!user?.id) return null
+    return chatServer.getStorage().resolveHumanActorId(roomId, `auth:${user.id}`, user.username, user.id)
 }
 
 function normalizeChannelMembers(members: ChannelInput['members']) {
@@ -267,7 +262,12 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/channels', async (ctx
     const actorId = await resolveRequestActor(ctx, ctx.params.roomId)
     if (!actorId) {
         ctx.status = 403
-        ctx.body = { error: 'actor is required to create a channel' }
+        ctx.body = { error: 'authenticated actor is required to create a channel' }
+        return
+    }
+    if (!chatServer.getStorage().canCreateChannel(actorId, kind)) {
+        ctx.status = 403
+        ctx.body = { error: 'actor cannot create this channel kind' }
         return
     }
     const channel = chatServer.getStorage().createChannel({

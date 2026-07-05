@@ -15,6 +15,13 @@ export interface StoredMessage {
     tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }> | null
     tool_name?: string | null
     finish_reason?: string | null
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
 }
 
 // ─── Compression Config ────────────────────────────────────
@@ -79,6 +86,7 @@ export interface SummaryCacheEntry {
 
 export interface MessageFetcher {
     getMessagesForContext(roomId: string, cutoff?: GroupMessageCursorCutoff): StoredMessage[]
+    getVisibleMessagesForContext?(roomId: string, actorId: string, cutoff?: GroupMessageCursorCutoff): StoredMessage[]
     getContextSnapshot(roomId: string): ContextSnapshot | null
     saveContextSnapshot(roomId: string, summary: string, lastMessageId: string, lastMessageTimestamp: number): void
     deleteContextSnapshot(roomId: string): void
@@ -119,6 +127,7 @@ export interface BuildContextInput {
     agentName: string
     agentDescription: string
     agentSocketId: string
+    actorId?: string
     roomName: string
     memberNames: string[]
     members: MemberInfo[]

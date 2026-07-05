@@ -16,6 +16,7 @@ import {
     resolveMentionTargets,
     stripMentionRoutingTokens,
 } from './mention-routing'
+import { agentActorId } from './identity/actor-ids'
 
 export const GROUP_CHAT_AGENT_SOCKET_SECRET = randomBytes(32).toString('hex')
 
@@ -36,6 +37,13 @@ interface MessageData {
     senderName: string
     content: string
     timestamp: number
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
 }
 
 type MentionMessage = {
@@ -46,6 +54,13 @@ type MentionMessage = {
     timestamp: number
     role?: string
     input?: string | ContentBlock[]
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
     mentionDepth?: number
 }
 
@@ -58,6 +73,13 @@ export function mentionMessageToStoredContextMessage(roomId: string, msg: Mentio
         content: msg.content,
         timestamp: msg.timestamp,
         role: msg.role === 'assistant' ? 'assistant' : 'user',
+        channelId: msg.channelId ?? null,
+        threadId: msg.threadId ?? null,
+        visibility: msg.visibility ?? null,
+        audienceJson: msg.audienceJson ?? null,
+        scope: msg.scope ?? null,
+        originEventId: msg.originEventId ?? null,
+        metadataJson: msg.metadataJson ?? null,
     }
 }
 
@@ -284,7 +306,7 @@ class AgentClient {
         this.emitContextStatus(roomId, 'ready')
     }
 
-    emitMessageStreamStart(roomId: string, messageId: string): void {
+    emitMessageStreamStart(roomId: string, messageId: string, extra: Record<string, unknown> = {}): void {
         this.ensureConnected()
         this.socket!.emit('message_stream_start', {
             roomId,
@@ -292,6 +314,7 @@ class AgentClient {
             senderId: this.socket?.id || this.agentId,
             senderName: this.name,
             timestamp: Date.now(),
+            ...extra,
         })
     }
 
@@ -436,6 +459,8 @@ class AgentClient {
         let totalContent = ''
         let reasoningContent = ''
         let streamStarted = false
+        const visibilityExtra = mentionVisibilityExtra(msg)
+        const actorId = agentActorId(roomId, this.agentId)
         try {
             // Notify room that agent is typing
             this.startTyping(roomId)
@@ -470,6 +495,7 @@ class AgentClient {
                         agentName: this.name,
                         agentDescription: this.description,
                         agentSocketId: this.socket?.id || '',
+                        actorId,
                         roomName: roomId,
                         memberNames,
                         members,
@@ -545,14 +571,15 @@ class AgentClient {
                 },
             )
 
-            this.emitMessageStreamStart(roomId, streamMessageId)
+            this.emitMessageStreamStart(roomId, streamMessageId, visibilityExtra)
             streamStarted = true
             for await (const chunk of bridge.streamOutput(started.run_id, { timeoutMs: 120000 })) {
                 lastChunk = chunk
-                reasoningContent += await this.recordBridgeEvents(roomId, sessionId, instructions, modelContext, chunk, () => streamMessageId, async () => {
+                reasoningContent += await this.recordBridgeEvents(roomId, sessionId, instructions, modelContext, chunk, visibilityExtra, () => streamMessageId, async () => {
                     const toolBaseId = streamMessageId
                     if (currentContent.trim()) {
                         await this.sendMessage(roomId, currentContent, streamMessageId, {
+                            ...visibilityExtra,
                             role: 'assistant',
                             mentionDepth: nextMentionDepth(msg),
                             reasoning: reasoningContent || null,
@@ -564,7 +591,7 @@ class AgentClient {
                     this.emitMessageStreamEnd(roomId, toolBaseId)
                     partIndex += 1
                     streamMessageId = groupMessagePartId(runMessageId, partIndex)
-                    this.emitMessageStreamStart(roomId, streamMessageId)
+                    this.emitMessageStreamStart(roomId, streamMessageId, visibilityExtra)
                     streamStarted = true
                     return toolBaseId
                 })
@@ -593,6 +620,7 @@ class AgentClient {
             if (currentContent) {
                 this.stopTyping(roomId)
                 await this.sendMessage(roomId, currentContent, streamMessageId, {
+                    ...visibilityExtra,
                     role: 'assistant',
                     mentionDepth: nextMentionDepth(msg),
                     reasoning: reasoningContent || null,
@@ -649,6 +677,11 @@ class AgentClient {
     }
 
     private buildRoomEstimateHistory(roomId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+        const actorId = agentActorId(roomId, this.agentId)
+        if (this.storage?.getVisibleMessagesForContext) {
+            const messages: StoredMessage[] = this.storage.getVisibleMessagesForContext(roomId, actorId) || []
+            return messages.map((message: any) => this.mapRoomMessageForEstimate(message))
+        }
         const messages: StoredMessage[] = this.storage?.getMessagesForContext?.(roomId) || []
         const snapshot = this.storage?.getContextSnapshot?.(roomId)
         if (snapshot?.summary) {
@@ -672,6 +705,7 @@ class AgentClient {
         const detail = error instanceof Error ? error.message : String(error || 'Run failed')
         const content = detail.startsWith('Error:') ? detail : `Error: ${detail}`
         await this.sendMessage(roomId, content, messageId, {
+            ...mentionVisibilityExtra(sourceMsg),
             role: 'assistant',
             mentionDepth: nextMentionDepth(sourceMsg),
             finish_reason: 'error',
@@ -686,6 +720,7 @@ class AgentClient {
         instructions: string | undefined,
         modelContext: GroupModelContext,
         chunk: AgentBridgeOutput,
+        visibilityExtra: Record<string, unknown>,
         getCurrentMessageId: () => string,
         beforeToolStarted: () => Promise<string>,
     ): Promise<string> {
@@ -696,9 +731,9 @@ class AgentClient {
                 this.cacheBridgeContext(sessionId, ev as Record<string, unknown>, instructions, modelContext)
             } else if (eventType === 'tool.started') {
                 const toolBaseId = await beforeToolStarted()
-                this.recordToolStarted(roomId, ev as Record<string, unknown>, toolBaseId)
+                this.recordToolStarted(roomId, ev as Record<string, unknown>, toolBaseId, visibilityExtra)
             } else if (eventType === 'tool.completed') {
-                this.recordToolCompleted(roomId, ev as Record<string, unknown>)
+                this.recordToolCompleted(roomId, ev as Record<string, unknown>, visibilityExtra)
             } else if (eventType === 'approval.requested') {
                 this.emitApprovalRequested(roomId, {
                     event: 'approval.requested',
@@ -725,7 +760,7 @@ class AgentClient {
         return reasoning
     }
 
-    private recordToolStarted(roomId: string, ev: Record<string, unknown>, runMessageId: string): void {
+    private recordToolStarted(roomId: string, ev: Record<string, unknown>, runMessageId: string, visibilityExtra: Record<string, unknown>): void {
         const toolName = String(ev.tool_name || ev.tool || ev.name || '')
         const toolCallId = groupToolCallId(ev.tool_call_id, toolName, this.nextToolIndex(roomId, toolName))
         this.trackPendingToolCall(roomId, toolName, toolCallId)
@@ -753,6 +788,7 @@ class AgentClient {
             finish_reason: 'tool_calls',
         }
         this.sendMessage(roomId, '', msg.id, {
+            ...visibilityExtra,
             role: 'assistant',
             tool_calls: msg.tool_calls,
             finish_reason: 'tool_calls',
@@ -760,7 +796,7 @@ class AgentClient {
         }).catch((err: any) => logger.warn(`[AgentClients] failed to record tool call: ${err.message}`))
     }
 
-    private recordToolCompleted(roomId: string, ev: Record<string, unknown>): void {
+    private recordToolCompleted(roomId: string, ev: Record<string, unknown>, visibilityExtra: Record<string, unknown>): void {
         const toolName = String(ev.tool_name || ev.tool || ev.name || '')
         const rawId = String(ev.tool_call_id || '').trim()
         const toolCallId = rawId || this.takePendingToolCall(roomId, toolName) || groupToolCallId(null, toolName, this.nextToolIndex(roomId, toolName))
@@ -780,6 +816,7 @@ class AgentClient {
             tool_name: toolName || null,
         }
         this.sendMessage(roomId, output, msg.id, {
+            ...visibilityExtra,
             role: 'tool',
             tool_call_id: toolCallId,
             tool_name: toolName || null,
@@ -1104,6 +1141,11 @@ export class AgentClients {
     async processMentions(roomId: string, msg: MentionMessage): Promise<void> {
         const agents = this.getAgents(roomId)
         const mentioned = resolveMentionTargets(agents, msg.content, msg.senderId)
+            .filter(agent => !this._storage?.canReadMessage || this._storage.canReadMessage(agentActorId(roomId, agent.agentId), {
+                ...msg,
+                id: msg.messageId || '',
+                roomId,
+            }))
         if (mentioned.length === 0) return
 
         logger.debug(`[AgentClients] ${mentioned.map(a => a.name).join(', ')} mentioned by ${msg.senderName}`)
@@ -1164,6 +1206,16 @@ export class AgentClients {
         const last = queue[queue.length - 1]
         await this._processAgentMention(roomId, last.agent, last.msg)
     }
+}
+
+
+function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {
+    const extra: Record<string, unknown> = {}
+    for (const key of ['channelId', 'threadId', 'visibility', 'audienceJson', 'scope', 'originEventId', 'metadataJson'] as const) {
+        const value = msg[key]
+        if (value !== undefined && value !== null) extra[key] = value
+    }
+    return extra
 }
 
 function nextMentionDepth(msg: MentionMessage): number {

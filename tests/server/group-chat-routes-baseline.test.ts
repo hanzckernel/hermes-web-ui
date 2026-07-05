@@ -165,7 +165,7 @@ describe('group chat REST route baseline', () => {
     expect(body.channels).toEqual([{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
   })
 
-  it('creates a non-public channel for an actor when auth is disabled', async () => {
+  it('rejects request-supplied actor ids when auth is disabled', async () => {
     storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
 
     const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
@@ -175,15 +175,9 @@ describe('group chat REST route baseline', () => {
     })
     const body = await res.json()
 
-    expect(res.status).toBe(200)
-    expect(storage.createChannel).toHaveBeenCalledWith(expect.objectContaining({
-      roomId: 'room-1',
-      id: 'task-1',
-      kind: 'task',
-      name: 'Task 1',
-      createdBy: 'gc:room-1:human:alice',
-    }))
-    expect(body.channel).toMatchObject({ id: 'task-1', kind: 'task' })
+    expect(res.status).toBe(403)
+    expect(storage.createChannel).not.toHaveBeenCalled()
+    expect(body).toEqual({ error: 'authenticated actor is required to create a channel' })
   })
 
   it('rejects duplicate room agent profiles', async () => {

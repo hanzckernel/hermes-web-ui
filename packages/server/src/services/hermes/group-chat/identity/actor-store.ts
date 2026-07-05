@@ -105,6 +105,11 @@ export class ActorStore {
         db.prepare('DELETE FROM gc_actors WHERE roomId = ?').run(roomId)
     }
 
+    canCreateChannel(actorId: string, kind: string): boolean {
+        const actor = this.getActor(actorId)
+        return actor ? this.capabilityPolicy.canCreateChannel(actor, kind) : false
+    }
+
     private ensureActor(input: EnsureActorInput): GroupActor {
         const now = Date.now()
         const metadataJson = JSON.stringify(input.metadata || {})
@@ -139,7 +144,7 @@ export class ActorStore {
         return this.getActor(input.id)!
     }
 
-    private getActor(id: string): GroupActor | null {
+    getActor(id: string): GroupActor | null {
         const row = this.db()?.prepare(
             `SELECT id, roomId, kind, source, displayName, description, profile, agentKind, authUserId,
                     externalPlatform, externalUserId, status, createdAt, updatedAt, metadataJson

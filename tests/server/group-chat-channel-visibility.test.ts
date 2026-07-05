@@ -14,7 +14,9 @@ vi.mock('../../packages/server/src/middleware/user-auth', () => ({
 
 import { initAllHermesTables } from '../../packages/server/src/db/hermes/schemas'
 import { GroupChatServer } from '../../packages/server/src/services/hermes/group-chat'
+import { GROUP_CHAT_AGENT_SOCKET_SECRET } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
 import { groupChatRoutes, setGroupChatServer } from '../../packages/server/src/routes/hermes/group-chat'
+import { authenticateUserToken, isAuthEnabled } from '../../packages/server/src/middleware/user-auth'
 
 function listen(server: HttpServer): Promise<{ baseUrl: string; port: number }> {
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => {
@@ -38,12 +40,12 @@ function emitAck<T = any>(socket: ClientSocket, event: string, payload: unknown,
   })
 }
 
-async function connect(port: number, userId: string, name: string): Promise<ClientSocket> {
+async function connect(port: number, userId: string, name: string, authExtra: Record<string, unknown> = {}): Promise<ClientSocket> {
   const socket = clientIo(`http://127.0.0.1:${port}/group-chat`, {
     transports: ['websocket'],
     forceNew: true,
     reconnection: false,
-    auth: { userId, name },
+    auth: { userId, name, ...authExtra },
   })
   await once(socket, 'connect')
   return socket
@@ -55,6 +57,8 @@ describe('group chat channel visibility runtime', () => {
   beforeEach(() => {
     db = new DatabaseSync(':memory:')
     groupChatDbMock.current = db
+    vi.mocked(isAuthEnabled).mockResolvedValue(false)
+    vi.mocked(authenticateUserToken).mockResolvedValue(null as any)
     initAllHermesTables()
   })
 
@@ -138,8 +142,8 @@ describe('group chat channel visibility runtime', () => {
 
       const aliceDetail = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1?actorId=${encodeURIComponent(alice)}`)
       const aliceBody = await aliceDetail.json()
-      expect(aliceBody.messages.map((m: any) => m.id)).toEqual(['public-msg', 'private-msg'])
-      expect(aliceBody.channels.map((c: any) => c.id)).toEqual(expect.arrayContaining(['public', 'private-1']))
+      expect(aliceBody.messages.map((m: any) => m.id)).toEqual(['public-msg'])
+      expect(aliceBody.channels.map((c: any) => c.id)).toEqual(['public'])
 
       const bobChannels = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels?actorId=${encodeURIComponent(bob)}`)
       expect((await bobChannels.json()).channels.map((c: any) => c.id)).toEqual(['public'])
@@ -148,6 +152,38 @@ describe('group chat channel visibility runtime', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actorId: alice, id: 'task-1', kind: 'task', name: 'Task 1' }),
+      })
+      expect(createRes.status).toBe(403)
+    } finally {
+      server.getIO().close()
+      httpServer.close()
+    }
+  })
+
+
+  it('allows authenticated actors with explicit channel-create capability to create channels', async () => {
+    const app = new Koa()
+    app.use(bodyParser())
+    app.use(async (ctx, next) => {
+      ctx.state.user = { id: 1, username: 'Alice', role: 'user', profiles: [] }
+      await next()
+    })
+    app.use(groupChatRoutes.routes())
+    const httpServer = createServer(app.callback())
+    const server = new GroupChatServer(httpServer)
+    const { baseUrl } = await listen(httpServer)
+    const storage = server.getStorage() as any
+    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
+    const alice = storage.resolveHumanActorId('room-1', 'auth:1', 'Alice', 1)
+    db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)')
+      .run(alice, 'channel.create.task', Date.now())
+    setGroupChatServer(server)
+
+    try {
+      const createRes = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'task-1', kind: 'task', name: 'Task 1' }),
       })
       expect(createRes.status).toBe(200)
       expect((await createRes.json()).channel).toMatchObject({ id: 'task-1', kind: 'task', createdBy: alice })
@@ -161,10 +197,16 @@ describe('group chat channel visibility runtime', () => {
     const httpServer = createServer()
     const server = new GroupChatServer(httpServer)
     const { port } = await listen(httpServer)
+    vi.mocked(isAuthEnabled).mockResolvedValue(true)
+    vi.mocked(authenticateUserToken).mockImplementation(async (token: string) => {
+      if (token === 'alice-token') return { id: 1, username: 'Alice', role: 'user', profiles: [] } as any
+      if (token === 'bob-token') return { id: 2, username: 'Bob', role: 'user', profiles: [] } as any
+      return null as any
+    })
     const storage = server.getStorage() as any
     storage.saveRoom('room-1', 'Room 1', 'ROOM1')
-    const aliceSocket = await connect(port, 'alice', 'Alice')
-    const bobSocket = await connect(port, 'bob', 'Bob')
+    const aliceSocket = await connect(port, 'alice', 'Alice', { token: 'alice-token' })
+    const bobSocket = await connect(port, 'bob', 'Bob', { token: 'bob-token' })
 
     try {
       const aliceJoin = await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
@@ -199,6 +241,21 @@ describe('group chat channel visibility runtime', () => {
       expect((await alicePrivate).id).toBe('private-live')
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(bobSawPrivate).toBe(false)
+
+      let aliceSawBobStream = false
+      aliceSocket.on('message_stream_start', (message: any) => {
+        if (message.id === 'bob-private-stream') aliceSawBobStream = true
+      })
+      bobSocket.emit('message_stream_start', {
+        roomId: 'room-1',
+        id: 'bob-private-stream',
+        content: 'stream leak',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(aliceSawBobStream).toBe(false)
     } finally {
       aliceSocket.disconnect()
       bobSocket.disconnect()
@@ -206,4 +263,56 @@ describe('group chat channel visibility runtime', () => {
       httpServer.close()
     }
   })
+
+  it('does not route private mentions to agents outside the channel audience', async () => {
+    vi.mocked(isAuthEnabled).mockResolvedValue(true)
+    vi.mocked(authenticateUserToken).mockImplementation(async (token: string) => {
+      if (token === 'alice-token') return { id: 1, username: 'Alice', role: 'user', profiles: [] } as any
+      return null as any
+    })
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    const { port } = await listen(httpServer)
+    const storage = server.getStorage() as any
+    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
+    storage.addRoomAgent('room-1', 'agent-worker', 'default', 'Worker', '', 0)
+    const aliceSocket = await connect(port, 'alice', 'Alice', { token: 'alice-token' })
+    const agentSocket = await connect(port, 'agent-worker', 'Worker', {
+      source: 'agent',
+      agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET,
+    })
+
+    try {
+      const aliceJoin = await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(agentSocket, 'join', { roomId: 'room-1' })
+      const alice = aliceJoin.actorId
+      storage.createChannel({
+        roomId: 'room-1',
+        id: 'private-1',
+        kind: 'private',
+        name: 'Alice private',
+        createdBy: alice,
+        members: [{ actorId: alice, canRead: true, canWrite: true }],
+      })
+      const routed = vi.spyOn(server.agentClients as any, '_processAgentMention')
+
+      await emitAck(aliceSocket, 'message', {
+        roomId: 'room-1',
+        id: 'private-mention',
+        content: '@Worker private request',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+      await new Promise(resolve => setTimeout(resolve, 80))
+
+      expect(routed).not.toHaveBeenCalled()
+    } finally {
+      aliceSocket.disconnect()
+      agentSocket.disconnect()
+      server.getIO().close()
+      httpServer.close()
+    }
+  })
+
 })

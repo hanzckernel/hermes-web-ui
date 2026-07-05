@@ -76,9 +76,11 @@ export class ContextEngine {
 
     private async _buildContextImpl(input: BuildContextInput): Promise<CompressedContext> {
         const config = { ...this.config, ...input.compression }
-        const messages = this.messageFetcher.getMessagesForContext(input.roomId, {
-            throughMessageId: input.currentMessage.id,
-        })
+        const cutoff = { throughMessageId: input.currentMessage.id }
+        const actorScoped = Boolean(input.actorId && this.messageFetcher.getVisibleMessagesForContext)
+        const messages = actorScoped
+            ? this.messageFetcher.getVisibleMessagesForContext!(input.roomId, input.actorId!, cutoff)
+            : this.messageFetcher.getMessagesForContext(input.roomId, cutoff)
         const total = messages.length
 
         logger.debug({
@@ -105,7 +107,7 @@ export class ContextEngine {
             summaryTokenEstimate: 0,
         }
 
-        const snapshot = this.messageFetcher.getContextSnapshot(input.roomId)
+        const snapshot = actorScoped ? null : this.messageFetcher.getContextSnapshot(input.roomId)
         logger.debug({
             roomId: input.roomId,
             agentName: input.agentName,
@@ -367,7 +369,9 @@ export class ContextEngine {
             const tail = messages.length > tailMessageCount ? messages.slice(-tailMessageCount) : []
             const lastCompressedMsg = toCompress[toCompress.length - 1]
 
-            this.messageFetcher.saveContextSnapshot(input.roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            if (!actorScoped) {
+                this.messageFetcher.saveContextSnapshot(input.roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            }
 
             meta.summaryTokenEstimate = this.countTokens(result.summary)
             const history = this.buildHistory(result.summary, tail, input.agentId, input.agentSocketId, input.agentName)
