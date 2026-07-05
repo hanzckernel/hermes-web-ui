@@ -8,6 +8,7 @@ import { AgentBridgeClient, type AgentBridgeContextEstimate, type AgentBridgeMes
 import { convertContentBlocksForAgent, isContentBlockArray } from '../run-chat/content-blocks'
 import { resolveBridgeRunModelConfig } from '../run-chat/model-config'
 import type { ContentBlock } from '../run-chat/types'
+import { filterMessagesForContextVisibility } from '../context-engine/compressor'
 import type { StoredMessage } from '../context-engine/types'
 import { buildProjectedGroupChatHistory, projectGroupChatMessage } from './context-projection'
 import { sliceGroupMessagesForSnapshotTail } from './group-message-ordering'
@@ -472,6 +473,7 @@ class AgentClient {
             const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
             const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
             const modelContext = await resolveGroupAgentModelContext(this.profile)
+            const currentContextMessage = mentionMessageToStoredContextMessage(roomId, msg)
 
             if (this.contextEngine && this.storage) {
                 try {
@@ -501,7 +503,7 @@ class AgentClient {
                         members,
                         upstream: '',
                         apiKey: null,
-                        currentMessage: mentionMessageToStoredContextMessage(roomId, msg),
+                        currentMessage: currentContextMessage,
                         compression,
                         profile: this.profile,
                         onProgress: (event: { status: 'compressing'; messageCount: number; tokenCount: number }) => {
@@ -661,7 +663,7 @@ class AgentClient {
     ): Promise<void> {
         if (!this.storage?.getMessagesForContext) return
         try {
-            const history = this.buildRoomEstimateHistory(roomId)
+            const history = this.buildRoomEstimateHistory(roomId, visibilityExtra)
             const cachedTokens = await this.estimateGroupContextTokens(
                 roomId,
                 sessionId,
@@ -682,19 +684,44 @@ class AgentClient {
         }
     }
 
-    private buildRoomEstimateHistory(roomId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+    private buildRoomEstimateHistory(roomId: string, visibilityExtra: Record<string, unknown> = {}): Array<{ role: 'user' | 'assistant'; content: string }> {
+        const visibilityMessage = this.visibilityExtraToStoredContextMessage(roomId, visibilityExtra)
         const actorId = agentActorId(roomId, this.agentId)
         if (this.storage?.getVisibleMessagesForContext) {
             const messages: StoredMessage[] = this.storage.getVisibleMessagesForContext(roomId, actorId) || []
-            return messages.map((message: any) => this.mapRoomMessageForEstimate(message))
+            return filterMessagesForContextVisibility(messages, visibilityMessage)
+                .map((message: any) => this.mapRoomMessageForEstimate(message))
         }
-        const messages: StoredMessage[] = this.storage?.getMessagesForContext?.(roomId) || []
+        const messages: StoredMessage[] = filterMessagesForContextVisibility(
+            this.storage?.getMessagesForContext?.(roomId) || [],
+            visibilityMessage,
+        )
         const snapshot = this.storage?.getContextSnapshot?.(roomId)
         if (snapshot?.summary) {
             const tail = sliceGroupMessagesForSnapshotTail(messages, snapshot.lastMessageId).messages
             return buildProjectedGroupChatHistory(snapshot.summary, tail, { agentId: this.agentId, socketId: this.socket?.id, name: this.name })
         }
         return messages.map((message: any) => this.mapRoomMessageForEstimate(message))
+    }
+
+    private visibilityExtraToStoredContextMessage(roomId: string, visibilityExtra: Record<string, unknown>): StoredMessage {
+        const stringField = (key: string): string | null => typeof visibilityExtra[key] === 'string' ? visibilityExtra[key] as string : null
+        return {
+            id: '',
+            roomId,
+            senderId: agentActorId(roomId, this.agentId),
+            senderName: this.name,
+            content: '',
+            timestamp: Date.now(),
+            role: 'assistant',
+            channelId: stringField('channelId'),
+            threadId: stringField('threadId'),
+            visibility: stringField('visibility'),
+            audienceJson: stringField('audienceJson'),
+            scope: stringField('scope'),
+            originEventId: stringField('originEventId'),
+            metadataJson: stringField('metadataJson'),
+        }
     }
 
     private mapRoomMessageForEstimate(message: any): { role: 'user' | 'assistant'; content: string } {

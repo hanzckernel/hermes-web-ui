@@ -288,12 +288,14 @@ describe('group chat channel visibility runtime', () => {
     const aliceSocket = await connect(port, 'alice', 'Alice', { token: 'alice-token' })
     const bobSocket = await connect(port, 'bob', 'Bob', { token: 'bob-token' })
     let agentSocket: ClientSocket | undefined
+    let agent2Socket: ClientSocket | undefined
 
     try {
       const aliceJoin = await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
       await emitAck<any>(bobSocket, 'join', { roomId: 'room-1' })
       const alice = aliceJoin.actorId
       storage.addRoomAgent('room-1', 'agent-1', 'default', 'Agent', '', 1)
+      storage.addRoomAgent('room-1', 'agent-2', 'default', 'Other Agent', '', 1)
       const agent = `gc:room-1:agent:agent-1`
       storage.createChannel({
         roomId: 'room-1',
@@ -307,7 +309,16 @@ describe('group chat channel visibility runtime', () => {
         ],
       })
       agentSocket = await connect(port, 'agent-1', 'Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
+      agent2Socket = await connect(port, 'agent-2', 'Other Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
       await emitAck<any>(agentSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(agent2Socket, 'join', { roomId: 'room-1' })
+
+      const spoofedStatus = once<any>(aliceSocket, 'context_status')
+      agent2Socket.emit('context_status', { roomId: 'room-1', agentName: 'Agent', status: 'replying' })
+      expect(await spoofedStatus).toMatchObject({ agentName: 'Other Agent', status: 'replying' })
+      const spoofedReady = once<any>(aliceSocket, 'context_status')
+      agent2Socket.emit('context_status', { roomId: 'room-1', agentName: 'Agent', status: 'ready' })
+      expect(await spoofedReady).toMatchObject({ agentName: 'Other Agent', status: 'ready' })
 
       const publicForBob = once<any>(bobSocket, 'message')
       await emitAck(aliceSocket, 'message', { roomId: 'room-1', id: 'public-live', content: 'public live' })
@@ -448,6 +459,7 @@ describe('group chat channel visibility runtime', () => {
     } finally {
       aliceSocket.disconnect()
       agentSocket?.disconnect()
+      agent2Socket?.disconnect()
       bobSocket.disconnect()
       server.getIO().close()
       httpServer.close()

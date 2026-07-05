@@ -1501,16 +1501,20 @@ export class GroupChatServer {
 
     private handleContextStatus(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; status?: string; totalTokens?: number }): void {
         const roomId = data.roomId || 'general'
-        const agentName = data.agentName || ''
+        const room = this.rooms.get(roomId)
+        const member = room?.getOnlineMemberBySocketId(socket.id)
+        const requestedAgentName = typeof data.agentName === 'string' ? data.agentName : ''
+        const agentName = member?.source === 'agent' ? member.name : requestedAgentName
         const status = data.status || ''
 
         if (!agentName) return
+        const statusData = { ...data, agentName }
         let roomStatuses = this.contextStatusState.get(roomId)
         const existingStatus = roomStatuses?.get(agentName)
         const hasIncomingVisibility = this.hasVisibilityEventFields(data)
         const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage && !hasIncomingVisibility
             ? existingStatus.visibilityMessage
-            : this.contextStatusVisibilityMessage(socket, roomId, data)
+            : this.contextStatusVisibilityMessage(socket, roomId, statusData)
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
 
         if (!roomStatuses) {
