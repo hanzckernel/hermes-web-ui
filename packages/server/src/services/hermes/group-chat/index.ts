@@ -928,9 +928,9 @@ export class GroupChatServer {
     private socketActorMap = new Map<string, string>()
     /** Map: socket.id → server-verified actor id allowed to read/write private channels */
     private socketVisibilityActorMap = new Map<string, string>()
-    /** Map: stream message id → visibility metadata inherited by stream deltas/end */
+    /** Map: room/message stream key → visibility metadata inherited by stream deltas/end */
     private streamVisibilityMap = new Map<string, ChatMessage>()
-    /** Map: stream message id → socket.id that owns the stream */
+    /** Map: room/message stream key → socket.id that owns the stream */
     private streamOwnerMap = new Map<string, string>()
     /** Map: room/approval id → visibility metadata for approval events/responses */
     private approvalVisibilityMap = new Map<string, ChatMessage>()
@@ -1356,7 +1356,8 @@ export class GroupChatServer {
         const canWrite = channelId === 'public'
             ? Boolean(actorId)
             : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
-        if (!canWrite || this.streamOwnerMap.has(id)) return
+        const streamKey = this.streamVisibilityKey(roomId, id)
+        if (!canWrite || this.streamOwnerMap.has(streamKey)) return
         const senderId = member?.userId || this.socketUserMap.get(socket.id) || socket.id
         const senderName = member?.name || this.userInfoMap.get(senderId)?.name || `User-${senderId.slice(0, 6)}`
         const payload: ChatMessage = {
@@ -1375,8 +1376,8 @@ export class GroupChatServer {
             scope: normalizeScope(data.scope),
             metadataJson: '{}',
         }
-        this.streamVisibilityMap.set(id, payload)
-        this.streamOwnerMap.set(id, socket.id)
+        this.streamVisibilityMap.set(streamKey, payload)
+        this.streamOwnerMap.set(streamKey, socket.id)
         this.emitVisibleEvent(roomId, payload, 'message_stream_start', payload)
     }
 
@@ -1386,8 +1387,9 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const id = this.normalizeClientMessageId(data.id)
         if (!id || !data.delta) return
-        if (this.streamOwnerMap.get(id) !== socket.id) return
-        const visibility = this.streamVisibilityMap.get(id)
+        const streamKey = this.streamVisibilityKey(roomId, id)
+        if (this.streamOwnerMap.get(streamKey) !== socket.id) return
+        const visibility = this.streamVisibilityMap.get(streamKey)
         if (!visibility || visibility.roomId !== roomId) return
         this.emitVisibleEvent(roomId, visibility, 'message_stream_delta', {
             roomId,
@@ -1402,8 +1404,9 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const id = this.normalizeClientMessageId(data.id)
         if (!id || !data.delta) return
-        if (this.streamOwnerMap.get(id) !== socket.id) return
-        const visibility = this.streamVisibilityMap.get(id)
+        const streamKey = this.streamVisibilityKey(roomId, id)
+        if (this.streamOwnerMap.get(streamKey) !== socket.id) return
+        const visibility = this.streamVisibilityMap.get(streamKey)
         if (!visibility || visibility.roomId !== roomId) return
         this.emitVisibleEvent(roomId, visibility, 'message_reasoning_delta', {
             roomId,
@@ -1418,12 +1421,13 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const id = this.normalizeClientMessageId(data.id)
         if (!id) return
-        if (this.streamOwnerMap.get(id) !== socket.id) return
-        const visibility = this.streamVisibilityMap.get(id)
+        const streamKey = this.streamVisibilityKey(roomId, id)
+        if (this.streamOwnerMap.get(streamKey) !== socket.id) return
+        const visibility = this.streamVisibilityMap.get(streamKey)
         if (!visibility || visibility.roomId !== roomId) return
         this.emitVisibleEvent(roomId, visibility, 'message_stream_end', { roomId, id })
-        this.streamVisibilityMap.delete(id)
-        this.streamOwnerMap.delete(id)
+        this.streamVisibilityMap.delete(streamKey)
+        this.streamOwnerMap.delete(streamKey)
     }
 
     private handleTyping(socket: Socket, data: Partial<ChatMessage> & { roomId?: string }): void {
@@ -1546,6 +1550,10 @@ export class GroupChatServer {
             return
         }
         const interruptVisibilityMessage = this.contextStatusState.get(roomId)?.get(agentName)?.visibilityMessage
+        if (!this.canSocketReadVisibilityMessage(socket, interruptVisibilityMessage)) {
+            ack?.({ error: 'Cannot interrupt invisible agent activity' })
+            return
+        }
         const interruptVisibilityFields = interruptVisibilityMessage ? this.visibilityEventFields(interruptVisibilityMessage) : {}
         try {
             await this.agentClients.interruptAgent(roomId, agentName, interruptVisibilityFields)
@@ -1684,10 +1692,10 @@ export class GroupChatServer {
         this.socketAuthUserIdMap.delete(socketId)
         this.socketActorMap.delete(socketId)
         this.socketVisibilityActorMap.delete(socketId)
-        for (const [messageId, ownerSocketId] of Array.from(this.streamOwnerMap.entries())) {
+        for (const [streamKey, ownerSocketId] of Array.from(this.streamOwnerMap.entries())) {
             if (ownerSocketId === socketId) {
-                this.streamOwnerMap.delete(messageId)
-                this.streamVisibilityMap.delete(messageId)
+                this.streamOwnerMap.delete(streamKey)
+                this.streamVisibilityMap.delete(streamKey)
             }
         }
         // Don't delete userInfoMap — it persists across reconnects
@@ -1703,9 +1711,19 @@ export class GroupChatServer {
         return `${roomId}:${approvalId}`
     }
 
+    private streamVisibilityKey(roomId: string, messageId: string): string {
+        return `${roomId}:${messageId}`
+    }
+
     private hasVisibilityEventFields(data: Partial<ChatMessage>): boolean {
         return ['channelId', 'visibility', 'audienceJson', 'scope', 'threadId', 'originEventId', 'metadataJson']
             .some(key => (data as Record<string, unknown>)[key] !== undefined && (data as Record<string, unknown>)[key] !== null)
+    }
+
+    private canSocketReadVisibilityMessage(socket: Socket, message?: ChatMessage): boolean {
+        if (!message || this.storage.canReadMessage(null, message)) return true
+        const actorId = this.socketVisibilityActorMap.get(socket.id)
+        return Boolean(actorId && this.storage.canReadMessage(actorId, message))
     }
 
     private canSocketWriteTypingEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {

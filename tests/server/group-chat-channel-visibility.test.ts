@@ -422,6 +422,29 @@ describe('group chat channel visibility runtime', () => {
       })
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(aliceSawBobStream).toBe(false)
+
+      bobSawPrivateStatus = false
+      const aliceInterruptStatus = once<any>(aliceSocket, 'context_status')
+      agentSocket.emit('context_status', {
+        roomId: 'room-1',
+        agentName: 'Agent',
+        status: 'replying',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+      expect(await aliceInterruptStatus).toMatchObject({ status: 'replying', channelId: 'private-1' })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(bobSawPrivateStatus).toBe(false)
+
+      const interruptSpy = vi.spyOn(server.agentClients as any, 'interruptAgent').mockResolvedValue(undefined)
+      await expect(emitAck(bobSocket, 'interrupt_agent', { roomId: 'room-1', agentName: 'Agent' })).resolves.toEqual({ error: 'Cannot interrupt invisible agent activity' })
+      expect(interruptSpy).not.toHaveBeenCalled()
+
+      const aliceReadyFromInterrupt = once<any>(aliceSocket, 'context_status')
+      await expect(emitAck(aliceSocket, 'interrupt_agent', { roomId: 'room-1', agentName: 'Agent' })).resolves.toEqual({ ok: true })
+      expect(interruptSpy).toHaveBeenCalledWith('room-1', 'Agent', expect.objectContaining({ channelId: 'private-1', visibility: 'private' }))
+      expect(await aliceReadyFromInterrupt).toMatchObject({ status: 'ready', channelId: 'private-1' })
     } finally {
       aliceSocket.disconnect()
       agentSocket?.disconnect()

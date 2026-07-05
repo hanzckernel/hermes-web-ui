@@ -81,6 +81,27 @@ describe('group chat streaming baseline', () => {
     await expect(leakedDelta).rejects.toThrow('timeout waiting for message_stream_delta')
   })
 
+  it('binds stream ownership by room and stream id', async () => {
+    const { alice, bob } = await joinPair()
+    groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
+    await emitAck(alice, 'join', { roomId: 'room-2' })
+    await emitAck(bob, 'join', { roomId: 'room-2' })
+    await emitAck(alice, 'join', { roomId: 'room-1' })
+    await emitAck(bob, 'join', { roomId: 'room-1' })
+
+    const roomOneStart = once<any>(bob, 'message_stream_start')
+    alice.emit('message_stream_start', { roomId: 'room-1', id: 'shared-stream' })
+    expect(await roomOneStart).toMatchObject({ roomId: 'room-1', id: 'shared-stream' })
+
+    const roomTwoStart = once<any>(bob, 'message_stream_start')
+    alice.emit('message_stream_start', { roomId: 'room-2', id: 'shared-stream' })
+    expect(await roomTwoStart).toMatchObject({ roomId: 'room-2', id: 'shared-stream' })
+
+    const roomTwoDelta = once<any>(bob, 'message_stream_delta')
+    alice.emit('message_stream_delta', { roomId: 'room-2', id: 'shared-stream', delta: 'two' })
+    expect(await roomTwoDelta).toEqual({ roomId: 'room-2', id: 'shared-stream', delta: 'two' })
+  })
+
   it('ignores a representative invalid stream id', async () => {
     const { alice, bob } = await joinPair()
     const unexpected = once<any>(bob, 'message_stream_start', 100)
