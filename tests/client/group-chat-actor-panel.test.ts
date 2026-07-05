@@ -57,6 +57,11 @@ vi.mock('vue-i18n', () => ({
       'groupChat.actorKindSystem': 'System',
       'groupChat.actorBackendHermes': 'Hermes',
       'groupChat.actorCapabilities': 'Capabilities',
+      'groupChat.channels': 'Channels',
+      'groupChat.channelKindPublic': 'Public',
+      'groupChat.channelKindPrivate': 'Private',
+      'groupChat.channelKindTask': 'Task',
+      'groupChat.channelKindAgent': 'Agent',
       'groupChat.you': 'You',
       'groupChat.agents': 'Agents',
       'groupChat.addAgent': 'Add Agent',
@@ -138,5 +143,25 @@ describe('group chat actor summaries', () => {
     expect(wrapper.text()).toContain('Agent')
     expect(wrapper.text()).toContain('Hermes')
     expect(wrapper.text()).toContain('Capabilities')
+  })
+
+  it('renders visible channel tabs', () => {
+    const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
+    const store = useGroupChatStore()
+    store.currentRoomId = 'room-1'
+    store.roomName = 'Room'
+    store.userName = 'Alice'
+    store.channels = [
+      { id: 'public', roomId: 'room-1', kind: 'public', name: 'Public', defaultVisibility: 'public' },
+      { id: 'task-1', roomId: 'room-1', kind: 'task', name: 'Task', defaultVisibility: 'private' },
+    ]
+    store.activeChannelId = 'task-1'
+
+    const wrapper = mount(GroupChatPanel, {
+      global: { plugins: [pinia], stubs: { Transition: false } },
+    })
+
+    expect(wrapper.text()).toContain('Public')
+    expect(wrapper.text()).toContain('Task')
   })
 })

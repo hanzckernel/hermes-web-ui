@@ -47,6 +47,13 @@ export interface ChatMessage {
     reasoning?: string | null
     reasoning_details?: string | null
     reasoning_content?: string | null
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: 'public' | 'private' | 'agent-only' | 'system-only' | 'audit-only' | 'external' | string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
     isStreaming?: boolean
     toolName?: string
     toolCallId?: string
@@ -81,6 +88,19 @@ export interface GroupActor {
     metadata?: Record<string, unknown>
 }
 
+export interface GroupChannel {
+    id: string
+    roomId: string
+    kind: 'public' | 'private' | 'team' | 'agent' | 'task' | 'approval' | 'system' | 'audit' | 'external' | string
+    name: string
+    parentChannelId?: string | null
+    defaultVisibility?: string
+    createdBy?: string
+    createdAt?: number
+    updatedAt?: number
+    metadata?: Record<string, unknown>
+}
+
 export interface JoinResult {
     roomId: string
     roomName: string
@@ -88,6 +108,8 @@ export interface JoinResult {
     messages: ChatMessage[]
     agents?: RoomAgent[]
     actors?: GroupActor[]
+    channels?: GroupChannel[]
+    actorId?: string
     rooms: string[]
 }
 
@@ -183,13 +205,35 @@ export async function listRooms(): Promise<{ rooms: RoomInfo[] }> {
 
 export async function getRoomDetail(
     roomId: string,
-    options: { offset?: number; limit?: number } = {},
-): Promise<{ room: RoomInfo; messages: ChatMessage[]; agents: RoomAgent[]; members: MemberInfo[]; actors?: GroupActor[]; total?: number; offset?: number; limit?: number; hasMore?: boolean }> {
+    options: { offset?: number; limit?: number; actorId?: string } = {},
+): Promise<{ room: RoomInfo; messages: ChatMessage[]; agents: RoomAgent[]; members: MemberInfo[]; actors?: GroupActor[]; channels?: GroupChannel[]; actorId?: string; total?: number; offset?: number; limit?: number; hasMore?: boolean }> {
     const params = new URLSearchParams()
     if (options.offset != null) params.set('offset', String(options.offset))
     if (options.limit != null) params.set('limit', String(options.limit))
+    if (options.actorId) params.set('actorId', options.actorId)
     const query = params.toString()
     return request(`/api/hermes/group-chat/rooms/${roomId}${query ? `?${query}` : ''}`)
+}
+
+export async function listChannels(roomId: string, actorId?: string): Promise<{ channels: GroupChannel[]; actorId?: string }> {
+    const params = new URLSearchParams()
+    if (actorId) params.set('actorId', actorId)
+    const query = params.toString()
+    return request(`/api/hermes/group-chat/rooms/${roomId}/channels${query ? `?${query}` : ''}`)
+}
+
+export async function createChannel(roomId: string, data: {
+    id?: string
+    kind: GroupChannel['kind']
+    name: string
+    members?: Array<string | { actorId?: string; canRead?: boolean; canWrite?: boolean; canInvite?: boolean; canModerate?: boolean }>
+    metadata?: Record<string, unknown>
+}): Promise<{ channel: GroupChannel; channels: GroupChannel[]; actorId?: string }> {
+    return request(`/api/hermes/group-chat/rooms/${roomId}/channels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    })
 }
 
 export async function joinRoomByCode(code: string): Promise<{ room: RoomInfo }> {
