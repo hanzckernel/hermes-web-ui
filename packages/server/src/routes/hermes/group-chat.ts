@@ -70,6 +70,21 @@ function agentConnectFailureBody(profile: string, err: any) {
     }
 }
 
+function normalizeIdentityName(value?: string | null): string {
+    return String(value || '').trim().toLowerCase()
+}
+
+function hasDuplicateIdentityName(values: string[]): boolean {
+    const seen = new Set<string>()
+    for (const value of values) {
+        const normalized = normalizeIdentityName(value)
+        if (!normalized) continue
+        if (seen.has(normalized)) return true
+        seen.add(normalized)
+    }
+    return false
+}
+
 async function connectAndPersistRoomAgent(server: GroupChatServer, roomId: string, input: AgentInput, agentId = generateId()) {
     const profile = input.profile
     const name = input.name || profile
@@ -115,6 +130,16 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms', async (ctx) => {
     if (reservedAgent) {
         ctx.status = 400
         ctx.body = { error: '`all` is reserved for @all mentions' }
+        return
+    }
+    if (hasDuplicateIdentityName((agents || []).map(a => a.profile))) {
+        ctx.status = 409
+        ctx.body = { error: 'Agent already in room' }
+        return
+    }
+    if (hasDuplicateIdentityName((agents || []).map(a => a.name || a.profile))) {
+        ctx.status = 409
+        ctx.body = { error: 'Agent display name already in room' }
         return
     }
 
@@ -349,24 +374,37 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/agents', async (ctx) 
         ctx.body = { error: 'profile is required' }
         return
     }
-    if (isReservedMentionName(name || profile)) {
+    const agentName = name || profile
+    if (isReservedMentionName(agentName)) {
         ctx.status = 400
         ctx.body = { error: '`all` is reserved for @all mentions' }
         return
     }
 
     // Prevent duplicate agent in same room
-    const existing = chatServer.getStorage().getRoomAgents(ctx.params.roomId)
+    const storage = chatServer.getStorage()
+    const existing = storage.getRoomAgents(ctx.params.roomId)
     if (existing.find(a => a.profile === profile)) {
         ctx.status = 409
         ctx.body = { error: 'Agent already in room' }
+        return
+    }
+    const normalizedAgentName = normalizeIdentityName(agentName)
+    if (normalizedAgentName && existing.some(a => normalizeIdentityName(a.name) === normalizedAgentName)) {
+        ctx.status = 409
+        ctx.body = { error: 'Agent display name already in room' }
+        return
+    }
+    if (normalizedAgentName && storage.getRoomMembers(ctx.params.roomId).some(m => normalizeIdentityName(m.name) === normalizedAgentName)) {
+        ctx.status = 409
+        ctx.body = { error: 'Member identity already in room' }
         return
     }
 
     try {
         const agent = await connectAndPersistRoomAgent(chatServer, ctx.params.roomId, {
             profile,
-            name: name || profile,
+            name: agentName,
             description: description || '',
             invited,
         })

@@ -208,6 +208,56 @@ describe('group chat REST route baseline', () => {
     await expect(res.json()).resolves.toEqual({ error: 'Agent already in room' })
   })
 
+  it('rejects duplicate room agent display names', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+    storage.agents.set('room-1', [{ id: 'row-agent', agentId: 'agent-1', profile: 'default', name: 'Worker' }])
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: 'other-profile', name: ' worker ' }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'Agent display name already in room' })
+    expect(agentClients.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('rejects adding an agent with an existing human member display name', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+    storage.members.set('room-1', [{ userId: 'human-worker', name: 'Worker' }])
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: 'default', name: ' worker ' }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'Member identity already in room' })
+    expect(agentClients.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate agent display names when creating a room', async () => {
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Room',
+        inviteCode: 'ROOM1',
+        agents: [
+          { profile: 'default', name: 'Worker' },
+          { profile: 'other-profile', name: ' worker ' },
+        ],
+      }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'Agent display name already in room' })
+    expect(storage.saveRoom).not.toHaveBeenCalled()
+    expect(agentClients.createAgent).not.toHaveBeenCalled()
+  })
+
   it('removes an agent by row id and disconnects runtime by persisted agent id', async () => {
     const agent = { id: 'row-agent', roomId: 'room-1', agentId: 'agent-1', profile: 'default', name: 'Agent' }
     storage.agents.set('room-1', [agent])
