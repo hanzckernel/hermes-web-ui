@@ -108,12 +108,16 @@ describe('group chat visibility policy', () => {
       kind: 'private',
       name: 'Private',
       createdBy: 'gc:room-1:human:alice',
-      members: [{ actorId: 'gc:room-1:agent:worker', canRead: true, canWrite: true }],
+      members: [
+        { actorId: 'gc:room-1:agent:worker', canRead: true, canWrite: true },
+        { actorId: 'gc:room-1:human:bob', canRead: true, canWrite: true },
+      ],
     })
     const privateAgentMessage = message({ channelId: 'private-1', visibility: 'agent-only' })
 
     expect(policy.canReadMessage('gc:room-1:agent:worker', privateAgentMessage)).toBe(true)
     expect(policy.canReadMessage('gc:room-1:agent:reviewer', privateAgentMessage)).toBe(false)
+    expect(policy.canReadMessage('gc:room-1:human:bob', privateAgentMessage)).toBe(false)
   })
 
   it('limits task channels to participants', () => {

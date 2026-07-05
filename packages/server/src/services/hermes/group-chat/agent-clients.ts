@@ -526,7 +526,9 @@ class AgentClient {
                     conversationHistory = ctx.conversationHistory
                     instructions = ctx.instructions
                     if (typeof ctx.meta.contextTokenEstimate === 'number' && Number.isFinite(ctx.meta.contextTokenEstimate)) {
-                        this.storage.updateRoomTotalTokens?.(roomId, ctx.meta.contextTokenEstimate)
+                        if (isPublicVisibilityExtra(visibilityExtra)) {
+                            this.storage.updateRoomTotalTokens?.(roomId, ctx.meta.contextTokenEstimate)
+                        }
                         onStatus?.('replying', { ...visibilityExtra, totalTokens: ctx.meta.contextTokenEstimate })
                     }
                     logger.debug(`[AgentClients] ${this.name}: context built — historyLen=${conversationHistory.length}, meta=%j`, ctx.meta)
@@ -671,7 +673,9 @@ class AgentClient {
             )
             if (cachedTokens == null || cachedTokens <= 0) return
             const rounded = Math.floor(cachedTokens)
-            this.storage.updateRoomTotalTokens?.(roomId, rounded)
+            if (isPublicVisibilityExtra(visibilityExtra)) {
+                this.storage.updateRoomTotalTokens?.(roomId, rounded)
+            }
             this.emitContextStatus(roomId, 'replying', { ...visibilityExtra, totalTokens: rounded })
         } catch (err: any) {
             logger.warn(`[GroupChat] failed to refresh final context estimate room=${roomId} agent=${this.name}: ${err.message}`)
@@ -1212,6 +1216,14 @@ export class AgentClients {
     }
 }
 
+
+
+function isPublicVisibilityExtra(extra: Record<string, unknown>): boolean {
+    const channelId = String(extra.channelId || 'public')
+    const visibility = String(extra.visibility || 'public')
+    const audienceJson = typeof extra.audienceJson === 'string' ? extra.audienceJson.trim() : '[]'
+    return channelId === 'public' && visibility === 'public' && (!audienceJson || audienceJson === '[]')
+}
 
 function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {
     const extra: Record<string, unknown> = {}

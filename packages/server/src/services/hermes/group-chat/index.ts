@@ -527,7 +527,7 @@ class ChatStorage {
             const message = existing && options.preserveExistingTimestamp ? { ...msg, timestamp: existing.timestamp } : msg
             this.upsertMessage(message)
             this.pruneMessages(msg.roomId)
-            const messages = this.getMessagesForContext(msg.roomId)
+            const messages = this.getVisibleMessagesForContext(msg.roomId, null)
             const totalTokens = this.estimateRoomTotalTokens(msg.roomId, messages)
             this.updateRoomTotalTokens(msg.roomId, totalTokens)
             db.exec('COMMIT')
@@ -1497,7 +1497,12 @@ export class GroupChatServer {
 
         if (typeof data.totalTokens === 'number' && Number.isFinite(data.totalTokens) && data.totalTokens >= 0) {
             const totalTokens = Math.floor(data.totalTokens)
-            this.storage.updateRoomTotalTokens(roomId, totalTokens)
+            const publicUpdate = this.isPublicOnlyWrite(
+                normalizeChannelId(visibilityMessage.channelId),
+                normalizeVisibility(visibilityMessage.visibility),
+                typeof visibilityMessage.audienceJson === 'string' ? visibilityMessage.audienceJson : '[]',
+            )
+            if (publicUpdate) this.storage.updateRoomTotalTokens(roomId, totalTokens)
             this.emitVisibleEvent(roomId, visibilityMessage, 'room_updated', { roomId, totalTokens })
         }
     }

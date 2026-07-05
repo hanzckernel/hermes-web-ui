@@ -312,6 +312,8 @@ describe('group chat channel visibility runtime', () => {
       const publicForBob = once<any>(bobSocket, 'message')
       await emitAck(aliceSocket, 'message', { roomId: 'room-1', id: 'public-live', content: 'public live' })
       expect((await publicForBob).id).toBe('public-live')
+      const publicTotalTokens = storage.getRoom('room-1').totalTokens
+      expect(publicTotalTokens).toBeGreaterThan(0)
 
       let bobSawPrivate = false
       bobSocket.on('message', (message: any) => {
@@ -327,6 +329,7 @@ describe('group chat channel visibility runtime', () => {
         audienceJson: JSON.stringify([alice]),
       })
       expect((await alicePrivate).id).toBe('private-live')
+      expect(storage.getRoom('room-1').totalTokens).toBe(publicTotalTokens)
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(bobSawPrivate).toBe(false)
 
@@ -370,6 +373,7 @@ describe('group chat channel visibility runtime', () => {
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(bobSawPrivateStatus).toBe(false)
       expect(bobSawPrivateRoomUpdate).toBe(false)
+      expect(storage.getRoom('room-1').totalTokens).toBe(publicTotalTokens)
 
       let aliceSawBobStream = false
       aliceSocket.on('message_stream_start', (message: any) => {
