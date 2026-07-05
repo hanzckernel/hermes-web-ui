@@ -6,7 +6,6 @@ export interface GroupPrivateFact {
     actorId: string
     factType: string
     content: string
-    visibility: 'private' | 'shared'
     createdBy: string
     createdAt: number
     expiresAt?: number | null
@@ -34,7 +33,6 @@ export class PrivateFactsStore {
             actorId: input.actorId,
             factType: input.factType,
             content: input.content,
-            visibility: 'private',
             createdBy: input.createdBy,
             createdAt: Date.now(),
             expiresAt: input.expiresAt ?? null,
@@ -42,15 +40,14 @@ export class PrivateFactsStore {
         }
         this.db()?.prepare(
             `INSERT INTO gc_actor_private_facts
-                (id, roomId, actorId, factType, content, visibility, createdBy, createdAt, expiresAt, metadataJson)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                (id, roomId, actorId, factType, content, createdBy, createdAt, expiresAt, metadataJson)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
             fact.id,
             fact.roomId,
             fact.actorId,
             fact.factType,
             fact.content,
-            fact.visibility,
             fact.createdBy,
             fact.createdAt,
             fact.expiresAt ?? null,
@@ -61,7 +58,7 @@ export class PrivateFactsStore {
 
     listPrivateFacts(roomId: string, actorId: string): GroupPrivateFact[] {
         const rows = (this.db()?.prepare(
-            `SELECT id, roomId, actorId, factType, content, visibility, createdBy, createdAt, expiresAt, metadataJson
+            `SELECT id, roomId, actorId, factType, content, createdBy, createdAt, expiresAt, metadataJson
              FROM gc_actor_private_facts
              WHERE roomId = ?
                AND actorId = ?
@@ -69,6 +66,13 @@ export class PrivateFactsStore {
              ORDER BY createdAt, id`
         ).all(roomId, actorId, Date.now()) || []) as FactRow[]
         return rows.map(row => this.mapFact(row))
+    }
+
+    revokePrivateFact(roomId: string, actorId: string, factId: string): boolean {
+        const result = this.db()?.prepare(
+            'DELETE FROM gc_actor_private_facts WHERE roomId = ? AND actorId = ? AND id = ?'
+        ).run(roomId, actorId, factId)
+        return Boolean(result?.changes)
     }
 
     private mapFact(row: FactRow): GroupPrivateFact {

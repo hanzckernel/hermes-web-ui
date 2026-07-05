@@ -98,6 +98,22 @@ describe('group chat approval and context baseline', () => {
     })
   })
 
+  it('rejects messages and stream starts from actors without message.write', async () => {
+    const { agent, human } = await joinPair()
+    harness.db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 0, ?)')
+      .run('gc:room-1:human:human-1', 'message.write', Date.now())
+
+    await expect(emitAck(human, 'message', { roomId: 'room-1', content: 'blocked' })).resolves.toEqual({ error: 'Cannot write to channel' })
+    expect(groupServer.getStorage().getMessagesForContext('room-1')).toEqual([])
+
+    harness.db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 0, ?)')
+      .run('gc:room-1:agent:agent-1', 'message.write', Date.now())
+    const started = once<any>(human, 'message_stream_start', 100)
+    agent.emit('message_stream_start', { roomId: 'room-1', id: 'blocked-stream' })
+
+    await expect(started).rejects.toThrow('timeout waiting for message_stream_start')
+  })
+
   it('does not relay approval requests from agents without request capability', async () => {
     const { agent, human } = await joinPair()
     harness.db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 0, ?)')

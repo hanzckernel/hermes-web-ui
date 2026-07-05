@@ -14,10 +14,13 @@ import { config } from '../../../config'
 import { createSocketIoCorsOrigin, shouldRejectUpgradeOrigin } from '../../../security'
 import { paginateRecentGroupMessagesCanonical, sliceGroupMessagesCanonical, sliceGroupMessagesForSnapshotTail, type GroupMessageCursorCutoff } from './group-message-ordering'
 import { ActorStore } from './identity/actor-store'
+import { PrivateFactsStore } from './identity/private-facts'
 import { agentActorId, humanActorId, systemActorId } from './identity/actor-ids'
 import { ChannelStore } from './visibility/channel-store'
 import { VisibilityPolicy } from './visibility/visibility-policy'
+import { extractGroupTransferCards, type GroupTransferCard, type GroupTransferCardType } from './transfer-protocol'
 import { normalizeChannelId, normalizeScope, normalizeVisibility } from './visibility/types'
+import { audienceFingerprint, normalizeAudienceJsonInput } from './visibility/audience'
 import type { GroupChannel, GroupChannelKind, GroupMessageVisibility, VisibleGroupMessage } from './visibility/types'
 
 // ─── Types ────────────────────────────────────────────────────
@@ -162,15 +165,6 @@ function normalizeMessageRole(role: unknown): string {
     return ['user', 'assistant', 'tool', 'command'].includes(value) ? value : 'user'
 }
 
-function normalizeAudienceJsonInput(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    if (typeof value === 'string') return value
-    try {
-        return JSON.stringify(value)
-    } catch {
-        return 'null'
-    }
-}
 
 function normalizeMentionDepth(depth: unknown): number {
     const value = Number(depth)
@@ -187,6 +181,7 @@ class ChatStorage {
     private db() { return getDb() }
     private readonly actorStore = new ActorStore()
     private readonly channelStore = new ChannelStore()
+    private readonly privateFactsStore = new PrivateFactsStore()
     private readonly visibilityPolicy = new VisibilityPolicy(this.channelStore)
 
     private mapStoredMessageRow(row: any): ChatMessage {
@@ -234,6 +229,8 @@ class ChatStorage {
         try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_gc_room_members_unique ON gc_room_members(roomId, userId)') } catch { /* ignore */ }
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_pending_session_deletes_profile ON gc_pending_session_deletes(profile_name, status, next_attempt_at, created_at)') } catch { /* ignore */ }
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_session_profiles_profile ON gc_session_profiles(profile_name, created_at)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_scoped_context_snapshots_room ON gc_scoped_context_snapshots(roomId)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_scoped_context_snapshots_actor ON gc_scoped_context_snapshots(roomId, actorId)') } catch { /* ignore */ }
         _tablesEnsured = true
     }
 
@@ -621,8 +618,75 @@ class ChatStorage {
         ).run(roomId, summary, lastMessageId, lastMessageTimestamp, Date.now())
     }
 
+    getScopedContextSnapshot(contextKey: string): { contextKey: string; roomId: string; summary: string; lastMessageId: string; lastMessageTimestamp: number; updatedAt: number } | null {
+        return (this.db()?.prepare(
+            'SELECT contextKey, roomId, summary, lastMessageId, lastMessageTimestamp, updatedAt FROM gc_scoped_context_snapshots WHERE contextKey = ?'
+        ).get(contextKey) as any) ?? null
+    }
+
+    saveScopedContextSnapshot(contextKey: string, roomId: string, actorId: string, currentMessage: ChatMessage, summary: string, lastMessageId: string, lastMessageTimestamp: number): void {
+        const now = Date.now()
+        this.db()?.prepare(
+            `INSERT INTO gc_scoped_context_snapshots (
+                contextKey, roomId, actorId, channelId, threadId, visibility, audienceFingerprint, scope,
+                summary, lastMessageId, lastMessageTimestamp, updatedAt
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(contextKey) DO UPDATE SET
+                actorId = excluded.actorId,
+                channelId = excluded.channelId,
+                threadId = excluded.threadId,
+                visibility = excluded.visibility,
+                audienceFingerprint = excluded.audienceFingerprint,
+                scope = excluded.scope,
+                summary = excluded.summary,
+                lastMessageId = excluded.lastMessageId,
+                lastMessageTimestamp = excluded.lastMessageTimestamp,
+                updatedAt = excluded.updatedAt`
+        ).run(
+            contextKey,
+            roomId,
+            actorId,
+            normalizeChannelId(currentMessage.channelId),
+            currentMessage.threadId ?? null,
+            normalizeVisibility(currentMessage.visibility),
+            audienceFingerprint(currentMessage.audienceJson),
+            normalizeScope(currentMessage.scope),
+            summary,
+            lastMessageId,
+            lastMessageTimestamp,
+            now,
+        )
+    }
+
     deleteContextSnapshot(roomId: string): void {
         this.db()?.prepare('DELETE FROM gc_context_snapshots WHERE roomId = ?').run(roomId)
+    }
+
+    deleteScopedContextSnapshots(roomId: string): void {
+        this.db()?.prepare('DELETE FROM gc_scoped_context_snapshots WHERE roomId = ?').run(roomId)
+    }
+
+    getActorContextProjection(roomId: string, actorId: string): { privateFacts: Array<{ id: string; factType: string; content: string }>; allowedActions: string[] } {
+        const actor = this.actorStore.getActor(actorId)
+        return {
+            privateFacts: this.privateFactsStore.listPrivateFacts(roomId, actorId).map(fact => ({ id: fact.id, factType: fact.factType, content: fact.content })),
+            allowedActions: actor?.capabilities || [],
+        }
+    }
+
+    createPrivateFact(roomId: string, actorId: string, input: { factType: string; content: string; createdBy: string; metadata?: Record<string, unknown> }) {
+        return this.privateFactsStore.createPrivateFact({
+            roomId,
+            actorId,
+            factType: input.factType,
+            content: input.content,
+            createdBy: input.createdBy,
+            metadata: input.metadata,
+        })
+    }
+
+    revokePrivateFact(roomId: string, actorId: string, factId: string): boolean {
+        return this.privateFactsStore.revokePrivateFact(roomId, actorId, factId)
     }
 
     deleteRoom(roomId: string): void {
@@ -737,7 +801,7 @@ class ChatStorage {
 
     getActors(roomId: string) {
         this.ensureActorsForRoom(roomId)
-        return this.actorStore.listActors(roomId).map(({ authUserId: _authUserId, externalUserId: _externalUserId, ...actor }) => actor)
+        return this.actorStore.listActors(roomId).map(({ authUserId: _authUserId, ...actor }) => actor)
     }
 
     private actorExists(actorId: string): boolean {
@@ -1258,9 +1322,70 @@ export class GroupChatServer {
         logger.debug(`[GroupChat] ${userName} (user=${userId}) joined room: ${roomId}`)
     }
 
-    private isPublicOnlyWrite(channelId: string, visibility: string, audienceJson: unknown): boolean {
-        const audience = normalizeAudienceJsonInput(audienceJson).trim()
+    private mergeMessageMetadata(metadataJson: unknown, transferCards: Array<GroupTransferCard & { status: 'accepted' | 'denied'; reason?: string }>): string {
+        let metadata: Record<string, unknown> = {}
+        if (typeof metadataJson === 'string' && metadataJson.trim()) {
+            try {
+                const parsed = JSON.parse(metadataJson)
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed
+            } catch {
+                metadata = {}
+            }
+        }
+        if (transferCards.length) metadata.transferCards = transferCards
+        return JSON.stringify(metadata)
+    }
+
+    private transferCapability(type: GroupTransferCardType): string | null {
+        if (type === 'handoff') return 'agent.handoff'
+        if (type === 'publish_request') return 'artifact.publish'
+        if (type === 'artifact_reference') return 'artifact.create'
+        if (type === 'private_fact_create') return 'private_fact.create'
+        if (type === 'private_fact_revoke') return 'private_fact.revoke'
+        if (type === 'approval') return 'approval.request'
+        return null
+    }
+
+    private applyTransferCards(roomId: string, actorId: string | null | undefined, cards: GroupTransferCard[]): Array<GroupTransferCard & { status: 'accepted' | 'denied'; reason?: string }> {
+        if (!cards.length) return []
+        return cards.map(card => {
+            if (!actorId) return { ...card, status: 'denied' as const, reason: 'missing_actor' }
+            const capability = this.transferCapability(card.type)
+            if (capability && !this.storage.canActor(actorId, capability)) {
+                return { ...card, status: 'denied' as const, reason: 'capability_denied' }
+            }
+            if (card.type === 'private_fact_create') {
+                const targetActorId = card.targetActorId || actorId
+                if (targetActorId !== actorId) return { ...card, status: 'denied' as const, reason: 'target_actor_denied' }
+                const fact = this.storage.createPrivateFact(roomId, targetActorId, {
+                    factType: card.factType || 'note',
+                    content: card.content || '',
+                    createdBy: actorId,
+                    metadata: card.metadata,
+                })
+                return { ...card, targetActorId, factId: fact.id, status: 'accepted' as const }
+            }
+            if (card.type === 'private_fact_revoke') {
+                const targetActorId = card.targetActorId || actorId
+                if (targetActorId !== actorId) return { ...card, status: 'denied' as const, reason: 'target_actor_denied' }
+                const revoked = this.storage.revokePrivateFact(roomId, targetActorId, card.factId || '')
+                return { ...card, targetActorId, status: revoked ? 'accepted' as const : 'denied' as const, reason: revoked ? undefined : 'fact_not_found' }
+            }
+            return { ...card, status: 'accepted' as const }
+        })
+    }
+
+    private isPublicOnlyWrite(channelId: string | null | undefined, visibility: string | null | undefined, audienceJson?: string | null): boolean {
+        const audience = normalizeAudienceJsonInput(audienceJson)
         return channelId === 'public' && visibility === 'public' && (!audience || audience === '[]')
+    }
+
+    private canWriteMessageEnvelope(actorId: string | undefined, visibilityActorId: string | undefined, roomId: string, channelId: string, visibility: string, audienceJson: string): boolean {
+        if (!actorId || !this.storage.canActor(actorId, 'message.write')) return false
+        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
+        return channelId === 'public'
+            ? true
+            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
     }
 
     private handleMessage(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; content: string | Array<Record<string, unknown>>; id?: string; mentionDepth?: number }, ack?: (res: any) => void): void {
@@ -1281,26 +1406,22 @@ export class GroupChatServer {
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
         const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) {
-            ack?.({ error: 'Cannot write to channel' })
-            return
-        }
-        const canWrite = channelId === 'public'
-            ? Boolean(actorId)
-            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
-        if (!canWrite) {
+        if (!this.canWriteMessageEnvelope(actorId, visibilityActorId, roomId, channelId, visibility, audienceJson)) {
             ack?.({ error: 'Cannot write to channel' })
             return
         }
 
         const isAgentSocket = member?.source === 'agent'
         const role = isAgentSocket ? normalizeMessageRole(data.role) : 'user'
+        const storedContent = contentToStorageString(data.content)
+        const transferCards = this.applyTransferCards(roomId, actorId, extractGroupTransferCards(storedContent))
+        const metadataJson = this.mergeMessageMetadata(data.metadataJson, transferCards)
         const msg: ChatMessage = {
             id: this.normalizeClientMessageId(data.id) || this.generateId(),
             roomId,
             senderId: userId,
             senderName: userName,
-            content: contentToStorageString(data.content),
+            content: storedContent,
             timestamp: this.normalizeMessageTimestamp(data.timestamp, role),
             role,
             tool_call_id: isAgentSocket ? data.tool_call_id ?? null : null,
@@ -1316,7 +1437,7 @@ export class GroupChatServer {
             audienceJson,
             scope: normalizeScope(data.scope),
             originEventId: data.originEventId ?? null,
-            metadataJson: typeof data.metadataJson === 'string' ? data.metadataJson : '{}',
+            metadataJson,
         }
 
         const saved = this.storage.saveMessageAndRefreshRoom(msg)
@@ -1325,6 +1446,15 @@ export class GroupChatServer {
 
         this.emitVisibleMessage(roomId, savedMsg)
         this.emitVisibleEvent(roomId, savedMsg, 'room_updated', { roomId, totalTokens })
+        for (const card of transferCards) {
+            this.emitVisibleEvent(roomId, savedMsg, 'transfer.card', {
+                event: 'transfer.card',
+                roomId,
+                messageId: savedMsg.id,
+                card,
+                ...this.visibilityEventFields(savedMsg),
+            })
+        }
         ack?.({ id: savedMsg.id })
 
         const mentionDepth = normalizeMentionDepth(data.mentionDepth)
@@ -1372,10 +1502,7 @@ export class GroupChatServer {
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
         const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return
-        const canWrite = channelId === 'public'
-            ? Boolean(actorId)
-            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
+        const canWrite = this.canWriteMessageEnvelope(actorId, visibilityActorId, roomId, channelId, visibility, audienceJson)
         const streamKey = this.streamVisibilityKey(roomId, id)
         if (!canWrite || this.streamOwnerMap.has(streamKey)) return
         const senderId = member?.userId || this.socketUserMap.get(socket.id) || socket.id

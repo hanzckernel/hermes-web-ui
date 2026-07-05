@@ -1,5 +1,6 @@
 import { systemActorId } from '../identity/actor-ids'
 import { ChannelStore } from './channel-store'
+import { normalizeAudienceJsonInput } from './audience'
 import { normalizeChannelId, normalizeScope, normalizeVisibility, type VisibleGroupMessage } from './types'
 
 interface ParsedAudience {
@@ -19,15 +20,6 @@ interface NormalizedVisibleMessage extends VisibleGroupMessage {
     metadataJson: string
 }
 
-function normalizeAudienceJsonInput(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    if (typeof value === 'string') return value
-    try {
-        return JSON.stringify(value)
-    } catch {
-        return 'null'
-    }
-}
 
 export class VisibilityPolicy {
     constructor(private readonly channels = new ChannelStore()) {}

@@ -5,7 +5,7 @@ import {
   groupBridgeReasoningDeltaFromEvent,
   groupContextTokensWithFixedOverhead,
 } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
-import { ContextEngine, filterMessagesForContextVisibility } from '../../packages/server/src/services/hermes/context-engine/compressor'
+import { buildGroupContextKey, ContextEngine, filterMessagesForContextVisibility } from '../../packages/server/src/services/hermes/context-engine/compressor'
 import type {
   GatewayCaller,
   MessageFetcher,
@@ -319,6 +319,104 @@ describe('group chat actor-scoped reply context visibility', () => {
     samePrivate.threadId = 'thread-1'
     expect(filterMessagesForContextVisibility([publicMessage, samePrivate, otherThreadPrivate, otherPrivate], currentPrivate).map(message => message.id))
       .toEqual(['public', 'same-private'])
+  })
+
+
+  it('adds current scope, allowed actions, and private facts to the actual model instructions', async () => {
+    const currentPrivate = makeMessage({
+      id: 'current-private',
+      content: '@Worker private question',
+      timestamp: 5,
+      channelId: 'private-1',
+      threadId: 'thread-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'task',
+    })
+    const fetcher: MessageFetcher = {
+      getMessagesForContext: vi.fn(() => []),
+      getVisibleMessagesForContext: vi.fn(() => [currentPrivate]),
+      getContextSnapshot: vi.fn(() => null),
+      saveContextSnapshot: vi.fn(),
+      deleteContextSnapshot: vi.fn(),
+      getActorContextProjection: vi.fn(() => ({
+        allowedActions: ['message.read', 'private_fact.create'],
+        privateFacts: [{ id: 'fact-1', factType: 'preference', content: 'Prefer terse answers' }],
+      })),
+    }
+    const { engine } = makeEngine(fetcher)
+    const estimate = vi.fn().mockResolvedValue(42)
+
+    const result = await engine.buildContext({
+      roomId: 'room-1',
+      agentId: 'agent-1',
+      agentName: 'Worker',
+      agentDescription: '',
+      agentSocketId: 'agent-socket',
+      actorId: 'gc:room-1:agent:agent-1',
+      roomName: 'general',
+      memberNames: ['Alice'],
+      members: [{ userId: 'user-1', name: 'Alice', description: '' }],
+      upstream: '',
+      apiKey: null,
+      currentMessage: currentPrivate,
+      contextTokenEstimator: estimate,
+    })
+
+    expect(result.instructions).toContain('[Scoped group-chat context]')
+    expect(result.instructions).toContain('channel: private-1')
+    expect(result.instructions).toContain('thread: thread-1')
+    expect(result.instructions).toContain('scope: task')
+    expect(result.instructions).toContain('allowed_actions: message.read, private_fact.create')
+    expect(result.instructions).toContain('preference: Prefer terse answers')
+    expect(estimate.mock.calls[0][1]).toBe(result.instructions)
+  })
+
+  it('saves compressed actor-scoped summaries under a context key instead of the room snapshot key', async () => {
+    const messages = [
+      makeMessage({ id: 'm1', content: 'older private context', timestamp: 1, channelId: 'private-1', visibility: 'private', audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']) }),
+      makeMessage({ id: 'm2', content: '@Worker private question', timestamp: 2, channelId: 'private-1', visibility: 'private', audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']) }),
+    ]
+    const fetcher: MessageFetcher = {
+      getMessagesForContext: vi.fn(() => []),
+      getVisibleMessagesForContext: vi.fn(() => messages),
+      getContextSnapshot: vi.fn(() => null),
+      saveContextSnapshot: vi.fn(),
+      deleteContextSnapshot: vi.fn(),
+      getScopedContextSnapshot: vi.fn(() => null),
+      saveScopedContextSnapshot: vi.fn(),
+      deleteScopedContextSnapshots: vi.fn(),
+      getActorContextProjection: vi.fn(() => ({ allowedActions: [], privateFacts: [] })),
+    }
+    const gatewayCaller: GatewayCaller = {
+      summarize: vi.fn().mockResolvedValue({ summary: 'Scoped summary', sessionId: 'summary-session' }),
+    }
+    const engine = new ContextEngine({
+      config: { triggerTokens: 1, maxHistoryTokens: 32_000, tailMessageCount: 1, charsPerToken: 4, summarizationTimeoutMs: 30_000 },
+      messageFetcher: fetcher,
+      gatewayCaller,
+    })
+    const contextKey = buildGroupContextKey('room-1', 'gc:room-1:agent:agent-1', messages[1])
+
+    await engine.buildContext({
+      roomId: 'room-1',
+      agentId: 'agent-1',
+      agentName: 'Worker',
+      agentDescription: '',
+      agentSocketId: 'agent-socket',
+      actorId: 'gc:room-1:agent:agent-1',
+      roomName: 'general',
+      memberNames: ['Alice'],
+      members: [{ userId: 'user-1', name: 'Alice', description: '' }],
+      upstream: '',
+      apiKey: null,
+      currentMessage: messages[1],
+      contextTokenEstimator: vi.fn().mockResolvedValue(999),
+    })
+
+    expect(fetcher.getScopedContextSnapshot).toHaveBeenCalledWith(contextKey)
+    expect(fetcher.saveScopedContextSnapshot).toHaveBeenCalledWith(contextKey, 'room-1', 'gc:room-1:agent:agent-1', messages[1], 'Scoped summary', 'm1', 1)
+    expect(fetcher.saveContextSnapshot).not.toHaveBeenCalled()
   })
 })
 

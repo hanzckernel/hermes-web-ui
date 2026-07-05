@@ -18,6 +18,7 @@ import {
     stripMentionRoutingTokens,
 } from './mention-routing'
 import { agentActorId } from './identity/actor-ids'
+import { canonicalAudience, normalizeAudienceJsonInput } from './visibility/audience'
 
 export const GROUP_CHAT_AGENT_SOCKET_SECRET = randomBytes(32).toString('hex')
 
@@ -946,27 +947,6 @@ function groupBridgeVisibilitySessionKey(visibilityExtra: Record<string, unknown
     return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
 }
 
-function canonicalAudience(value: unknown): string[] {
-    if (value == null || value === '') return []
-    let parsed: unknown = value
-    if (typeof value === 'string') {
-        try {
-            parsed = JSON.parse(value)
-        } catch {
-            return [value.trim()].filter(Boolean)
-        }
-    }
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const record = parsed as Record<string, unknown>
-        parsed = record.actorIds || record.audienceActorIds || record.actors
-    }
-    if (!Array.isArray(parsed)) return []
-    return [...new Set(parsed
-        .filter((actor): actor is string => typeof actor === 'string' && actor.trim().length > 0)
-        .map(actor => actor.trim())
-        .sort())]
-}
-
 function groupMessageId(roomId: string, profile: string, name: string): string {
     const raw = `gcmsg_${safeId(roomId)}_${safeId(profile)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 160)
@@ -1288,18 +1268,8 @@ export class AgentClients {
 function isPublicVisibilityExtra(extra: Record<string, unknown>): boolean {
     const channelId = String(extra.channelId || 'public')
     const visibility = String(extra.visibility || 'public')
-    const audienceJson = normalizeAudienceJsonExtra(extra.audienceJson).trim()
+    const audienceJson = normalizeAudienceJsonInput(extra.audienceJson).trim()
     return channelId === 'public' && visibility === 'public' && (!audienceJson || audienceJson === '[]')
-}
-
-function normalizeAudienceJsonExtra(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    if (typeof value === 'string') return value
-    try {
-        return JSON.stringify(value)
-    } catch {
-        return 'null'
-    }
 }
 
 function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {

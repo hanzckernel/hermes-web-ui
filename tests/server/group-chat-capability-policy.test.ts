@@ -8,7 +8,6 @@ vi.mock('../../packages/server/src/db/index', () => ({ getDb: () => groupChatDbM
 import { initAllHermesTables } from '../../packages/server/src/db/hermes/schemas'
 import { ActorStore } from '../../packages/server/src/services/hermes/group-chat/identity/actor-store'
 import { CapabilityPolicy } from '../../packages/server/src/services/hermes/group-chat/identity/capability-policy'
-import type { GroupActor } from '../../packages/server/src/services/hermes/group-chat/identity/types'
 
 describe('group chat capability policy', () => {
   let db: DatabaseSync
@@ -34,6 +33,8 @@ describe('group chat capability policy', () => {
     expect(policy.can(human, 'message.read')).toBe(true)
     expect(policy.can(human, 'message.write')).toBe(true)
     expect(policy.can(human, 'approval.respond')).toBe(true)
+    expect(policy.can(human, 'private_fact.create')).toBe(true)
+    expect(policy.can(human, 'private_fact.revoke')).toBe(true)
     expect(policy.canCreateChannel(human, 'private')).toBe(false)
     expect(policy.canCreateChannel(human, 'task')).toBe(false)
     expect(policy.canCreateChannel(human, 'public')).toBe(false)
@@ -54,6 +55,8 @@ describe('group chat capability policy', () => {
     expect(policy.can(agent, 'message.write')).toBe(true)
     expect(policy.can(agent, 'agent.handoff')).toBe(false)
     expect(policy.can(agent, 'approval.request')).toBe(true)
+    expect(policy.can(agent, 'private_fact.create')).toBe(true)
+    expect(policy.can(agent, 'private_fact.revoke')).toBe(true)
     expect(policy.can(agent, 'artifact.create')).toBe(false)
     expect(policy.can(agent, 'channel.create.private')).toBe(false)
 
@@ -61,28 +64,16 @@ describe('group chat capability policy', () => {
     expect(policy.can(agent, 'agent.handoff')).toBe(true)
   })
 
-  it('keeps system and tool read/write explicit while reserving public channel creation for system', () => {
+  it('keeps system messaging explicit while reserving public channel creation for system', () => {
     const system = actorStore.ensureSystemActor('room-1')
-    const tool: GroupActor = {
-      id: 'gc:room-1:tool:search',
-      roomId: 'room-1',
-      kind: 'tool',
-      source: 'system',
-      displayName: 'search',
-      description: '',
-      status: 'active',
-      metadata: {},
-      createdAt: 1,
-      updatedAt: 1,
-    }
 
     expect(policy.can(system, 'message.read')).toBe(false)
+    expect(policy.can(system, 'message.write')).toBe(false)
     expect(policy.canCreateChannel(system, 'public')).toBe(true)
     expect(policy.canCreateChannel(system, 'audit')).toBe(true)
-    expect(policy.can(tool, 'message.write')).toBe(false)
 
-    db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)').run(tool.id, 'message.write', 1)
-    expect(policy.can(tool, 'message.write')).toBe(true)
+    db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)').run(system.id, 'message.write', 1)
+    expect(policy.can(system, 'message.write')).toBe(true)
   })
 
   it('lets a disabled explicit capability override default allows', () => {

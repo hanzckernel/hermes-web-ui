@@ -570,6 +570,8 @@ const currentUserAvatar = ref('')
             pendingApprovals.value = new Map(pendingApprovals.value)
         })
 
+
+
         socket.on('room_updated', (data: { roomId: string; totalTokens: number }) => {
             const room = rooms.value.find(r => r.id === data.roomId)
             if (room) room.totalTokens = data.totalTokens
@@ -644,7 +646,7 @@ const currentUserAvatar = ref('')
         isLoadingOlderMessages.value = true
         try {
             const limit = Math.min(GROUP_CHAT_MESSAGE_PAGE_SIZE, GROUP_CHAT_MAX_DISPLAY_MESSAGES - offset)
-            const res = await getRoomDetail(roomId, { offset, limit, actorId: currentActorId.value || undefined })
+            const res = await getRoomDetail(roomId, { offset, limit })
             const existingIds = new Set(messages.value.map(message => message.id))
             const olderMessages = res.messages.filter(message => !existingIds.has(message.id))
             messages.value = [...olderMessages, ...messages.value]

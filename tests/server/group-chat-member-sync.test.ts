@@ -366,6 +366,7 @@ describe('Group Chat member/agent identity sync', () => {
     server.agentClients = { processMentions: vi.fn(async () => undefined) }
     server.storage = {
       canReadMessage: vi.fn(() => true),
+      canActor: vi.fn(() => true),
       canWriteChannel: vi.fn(() => true),
       saveMessageAndRefreshRoom: vi.fn((msg: any) => ({ message: msg, totalTokens: 123 })),
     }

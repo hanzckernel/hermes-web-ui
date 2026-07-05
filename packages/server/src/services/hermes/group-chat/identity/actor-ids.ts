@@ -15,7 +15,3 @@ export function agentActorId(roomId: string, agentId: string): string {
 export function systemActorId(roomId: string): string {
     return `gc:${roomId}:system`
 }
-
-export function toolActorId(roomId: string, toolName: string): string {
-    return `gc:${roomId}:tool:${toolName || 'unknown'}`
-}

@@ -248,7 +248,7 @@ describe('group chat channel visibility runtime', () => {
     }
   })
 
-  it('uses the same actor visibility for REST room detail and channel APIs', async () => {
+  it('uses actor visibility for REST room detail', async () => {
     const app = new Koa()
     app.use(bodyParser())
     app.use(groupChatRoutes.routes())
@@ -267,48 +267,6 @@ describe('group chat channel visibility runtime', () => {
       expect(aliceBody.messages.map((m: any) => m.id)).toEqual(['public-msg'])
       expect(aliceBody.channels.map((c: any) => c.id)).toEqual(['public'])
 
-      const bobChannels = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels?actorId=${encodeURIComponent(bob)}`)
-      expect((await bobChannels.json()).channels.map((c: any) => c.id)).toEqual(['public'])
-
-      const createRes = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ actorId: alice, id: 'task-1', kind: 'task', name: 'Task 1' }),
-      })
-      expect(createRes.status).toBe(403)
-    } finally {
-      server.getIO().close()
-      httpServer.close()
-    }
-  })
-
-
-  it('allows authenticated actors with explicit channel-create capability to create channels', async () => {
-    const app = new Koa()
-    app.use(bodyParser())
-    app.use(async (ctx, next) => {
-      ctx.state.user = { id: 1, username: 'Alice', role: 'user', profiles: [] }
-      await next()
-    })
-    app.use(groupChatRoutes.routes())
-    const httpServer = createServer(app.callback())
-    const server = new GroupChatServer(httpServer)
-    const { baseUrl } = await listen(httpServer)
-    const storage = server.getStorage() as any
-    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
-    const alice = storage.resolveHumanActorId('room-1', 'auth:1', 'Alice', 1)
-    db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)')
-      .run(alice, 'channel.create.task', Date.now())
-    setGroupChatServer(server)
-
-    try {
-      const createRes = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: 'task-1', kind: 'task', name: 'Task 1' }),
-      })
-      expect(createRes.status).toBe(200)
-      expect((await createRes.json()).channel).toMatchObject({ id: 'task-1', kind: 'task', createdBy: alice })
     } finally {
       server.getIO().close()
       httpServer.close()

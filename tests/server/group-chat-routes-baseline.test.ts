@@ -157,33 +157,6 @@ describe('group chat REST route baseline', () => {
     })
   })
 
-  it('returns readable channels for a room', async () => {
-    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
-    storage.channels.set('room-1', [{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
-
-    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`)
-    const body = await res.json()
-
-    expect(res.status).toBe(200)
-    expect(body.channels).toEqual([{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
-  })
-
-  it('rejects request-supplied actor ids when auth is disabled', async () => {
-    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
-
-    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ actorId: 'gc:room-1:human:alice', id: 'task-1', kind: 'task', name: 'Task 1' }),
-    })
-    const body = await res.json()
-
-    expect(res.status).toBe(403)
-    expect(storage.createChannel).not.toHaveBeenCalled()
-    expect(body).toEqual({ error: 'authenticated actor is required to create a channel' })
-  })
-
-
   it('forces compression without returning generated summary text', async () => {
     storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
 

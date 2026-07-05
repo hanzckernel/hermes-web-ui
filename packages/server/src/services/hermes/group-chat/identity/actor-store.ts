@@ -81,7 +81,7 @@ export class ActorStore {
     listActors(roomId: string): GroupActor[] {
         const rows = (this.db()?.prepare(
             `SELECT id, roomId, kind, source, displayName, description, profile, agentKind, authUserId,
-                    externalPlatform, externalUserId, status, createdAt, updatedAt, metadataJson
+                    status, createdAt, updatedAt, metadataJson
              FROM gc_actors
              WHERE roomId = ?
              ORDER BY createdAt, rowid`
@@ -116,8 +116,8 @@ export class ActorStore {
         this.db()?.prepare(
             `INSERT INTO gc_actors (
                 id, roomId, kind, source, displayName, description, profile, agentKind, authUserId,
-                externalPlatform, externalUserId, status, createdAt, updatedAt, metadataJson
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'active', ?, ?, ?)
+                status, createdAt, updatedAt, metadataJson
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 displayName = excluded.displayName,
                 description = excluded.description,
@@ -147,7 +147,7 @@ export class ActorStore {
     getActor(id: string): GroupActor | null {
         const row = this.db()?.prepare(
             `SELECT id, roomId, kind, source, displayName, description, profile, agentKind, authUserId,
-                    externalPlatform, externalUserId, status, createdAt, updatedAt, metadataJson
+                    status, createdAt, updatedAt, metadataJson
              FROM gc_actors
              WHERE id = ?`
         ).get(id) as ActorRow | undefined
@@ -157,7 +157,7 @@ export class ActorStore {
     private getHumanActorByAuthUserId(roomId: string, authUserId: number): GroupActor | null {
         const row = this.db()?.prepare(
             `SELECT id, roomId, kind, source, displayName, description, profile, agentKind, authUserId,
-                    externalPlatform, externalUserId, status, createdAt, updatedAt, metadataJson
+                    status, createdAt, updatedAt, metadataJson
              FROM gc_actors
              WHERE roomId = ? AND kind = 'human' AND authUserId = ?
              ORDER BY createdAt, rowid

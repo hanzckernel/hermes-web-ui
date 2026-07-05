@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import type {
     StoredMessage,
     CompressionConfig,
@@ -13,30 +14,8 @@ import { buildAgentInstructions, buildSummarizationSystemPrompt } from './prompt
 import { logger } from '../../../services/logger'
 import { buildProjectedGroupChatHistory, projectGroupChatMessage } from '../group-chat/context-projection'
 import { sliceGroupMessagesForSnapshotTail } from '../group-chat/group-message-ordering'
+import { audienceFingerprint } from '../group-chat/visibility/audience'
 import { normalizeChannelId, normalizeScope, normalizeVisibility } from '../group-chat/visibility/types'
-
-function audienceFingerprint(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    let parsed = value
-    if (typeof value === 'string') {
-        try {
-            parsed = JSON.parse(value)
-        } catch {
-            return value.trim()
-        }
-    }
-    const actors = Array.isArray(parsed)
-        ? parsed
-        : parsed && typeof parsed === 'object'
-            ? (parsed as Record<string, unknown>).actorIds || (parsed as Record<string, unknown>).audienceActorIds || (parsed as Record<string, unknown>).actors
-            : null
-    if (!Array.isArray(actors)) return String(value).trim()
-    const normalized = actors
-        .filter((actor): actor is string => typeof actor === 'string' && actor.trim().length > 0)
-        .map(actor => actor.trim())
-        .sort()
-    return JSON.stringify([...new Set(normalized)])
-}
 
 function isPublicContextMessage(message: StoredMessage): boolean {
     return normalizeChannelId(message.channelId) === 'public'
@@ -50,6 +29,47 @@ function hasSameContextVisibilityEnvelope(message: StoredMessage, currentMessage
         && normalizeScope(message.scope) === normalizeScope(currentMessage.scope)
         && String(message.threadId ?? '') === String(currentMessage.threadId ?? '')
         && audienceFingerprint(message.audienceJson) === audienceFingerprint(currentMessage.audienceJson)
+}
+
+
+export function buildGroupContextKey(roomId: string, actorId: string, currentMessage: StoredMessage): string {
+    const envelope = JSON.stringify({
+        roomId,
+        actorId,
+        channelId: normalizeChannelId(currentMessage.channelId),
+        threadId: currentMessage.threadId ?? null,
+        visibility: normalizeVisibility(currentMessage.visibility),
+        scope: normalizeScope(currentMessage.scope),
+        audience: audienceFingerprint(currentMessage.audienceJson),
+    })
+    return `gcctx_${createHash('sha256').update(envelope).digest('hex').slice(0, 24)}`
+}
+
+function scopedContextHeader(input: BuildContextInput, projection?: { privateFacts?: Array<{ id: string; factType: string; content: string }>; allowedActions?: string[] }): string {
+    const lines = [
+        '[Scoped group-chat context]',
+        `channel: ${normalizeChannelId(input.currentMessage.channelId)}`,
+        `thread: ${input.currentMessage.threadId || '(none)'}`,
+        `visibility: ${normalizeVisibility(input.currentMessage.visibility)}`,
+        `scope: ${normalizeScope(input.currentMessage.scope)}`,
+        `allowed_actions: ${(projection?.allowedActions || []).join(', ') || '(none)'}`,
+    ]
+    const privateFacts = projection?.privateFacts || []
+    if (privateFacts.length) {
+        lines.push('private_facts:')
+        for (const fact of privateFacts) {
+            lines.push(`- ${fact.factType}: ${fact.content}`)
+        }
+    } else {
+        lines.push('private_facts: (none)')
+    }
+    return lines.join('\n')
+}
+
+function withScopedContextInstructions(instructions: string, input: BuildContextInput, projection?: { privateFacts?: Array<{ id: string; factType: string; content: string }>; allowedActions?: string[] }): string {
+    return `${instructions}
+
+${scopedContextHeader(input, projection)}`
 }
 
 export function filterMessagesForContextVisibility<T extends StoredMessage>(messages: T[], currentMessage: StoredMessage): T[] {
@@ -120,6 +140,7 @@ export class ContextEngine {
         const config = { ...this.config, ...input.compression }
         const cutoff = { throughMessageId: input.currentMessage.id }
         const actorScoped = Boolean(input.actorId && this.messageFetcher.getVisibleMessagesForContext)
+        const contextKey = actorScoped ? buildGroupContextKey(input.roomId, input.actorId!, input.currentMessage) : input.roomId
         const fetchedMessages = actorScoped
             ? this.messageFetcher.getVisibleMessagesForContext!(input.roomId, input.actorId!, cutoff)
             : this.messageFetcher.getMessagesForContext(input.roomId, cutoff)
@@ -127,6 +148,9 @@ export class ContextEngine {
             ? filterMessagesForContextVisibility(fetchedMessages, input.currentMessage)
             : fetchedMessages
         const total = messages.length
+        const actorProjection = actorScoped
+            ? this.messageFetcher.getActorContextProjection?.(input.roomId, input.actorId!)
+            : undefined
 
         logger.debug({
             roomId: input.roomId,
@@ -136,13 +160,16 @@ export class ContextEngine {
             throughMessageId: input.currentMessage.id,
         }, '[ContextEngine] buildContext start')
 
-        const instructions = buildAgentInstructions({
+        const baseInstructions = buildAgentInstructions({
             agentName: input.agentName,
             roomName: input.roomName,
             agentDescription: input.agentDescription,
             memberNames: input.memberNames,
             members: input.members,
         })
+        const instructions = actorScoped
+            ? withScopedContextInstructions(baseInstructions, input, actorProjection)
+            : baseInstructions
 
         const meta: CompressedContext['meta'] = {
             totalMessages: total,
@@ -150,9 +177,12 @@ export class ContextEngine {
             hadSnapshot: false,
             compressed: false,
             summaryTokenEstimate: 0,
+            contextKey,
         }
 
-        const snapshot = actorScoped ? null : this.messageFetcher.getContextSnapshot(input.roomId)
+        const snapshot = actorScoped
+            ? this.messageFetcher.getScopedContextSnapshot?.(contextKey) ?? null
+            : this.messageFetcher.getContextSnapshot(input.roomId)
         logger.debug({
             roomId: input.roomId,
             agentName: input.agentName,
@@ -296,7 +326,7 @@ export class ContextEngine {
 
             if (result.summary) {
                 const lastMsg = newMessages[newMessages.length - 1]
-                this.messageFetcher.saveContextSnapshot(input.roomId, result.summary, lastMsg.id, lastMsg.timestamp)
+                this.saveContextSnapshot(actorScoped, contextKey, input, result.summary, lastMsg.id, lastMsg.timestamp)
 
                 meta.summaryTokenEstimate = this.countTokens(result.summary)
                 const history = this.buildHistory(result.summary, newMessages, input.agentId, input.agentSocketId, input.agentName)
@@ -414,9 +444,7 @@ export class ContextEngine {
             const tail = messages.length > tailMessageCount ? messages.slice(-tailMessageCount) : []
             const lastCompressedMsg = toCompress[toCompress.length - 1]
 
-            if (!actorScoped) {
-                this.messageFetcher.saveContextSnapshot(input.roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
-            }
+            this.saveContextSnapshot(actorScoped, contextKey, input, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
 
             meta.summaryTokenEstimate = this.countTokens(result.summary)
             const history = this.buildHistory(result.summary, tail, input.agentId, input.agentSocketId, input.agentName)
@@ -459,6 +487,16 @@ export class ContextEngine {
 
     invalidateRoom(roomId: string): void {
         this.messageFetcher.deleteContextSnapshot(roomId)
+        this.messageFetcher.deleteScopedContextSnapshots?.(roomId)
+    }
+
+
+    private saveContextSnapshot(actorScoped: boolean, contextKey: string, input: BuildContextInput, summary: string, lastMessageId: string, lastMessageTimestamp: number): void {
+        if (actorScoped && input.actorId) {
+            this.messageFetcher.saveScopedContextSnapshot?.(contextKey, input.roomId, input.actorId, input.currentMessage, summary, lastMessageId, lastMessageTimestamp)
+            return
+        }
+        this.messageFetcher.saveContextSnapshot(input.roomId, summary, lastMessageId, lastMessageTimestamp)
     }
 
     /**
