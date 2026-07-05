@@ -375,6 +375,16 @@ describe('group chat channel visibility runtime', () => {
       expect(bobSawPrivateRoomUpdate).toBe(false)
       expect(storage.getRoom('room-1').totalTokens).toBe(publicTotalTokens)
 
+      const aliceReady = once<any>(aliceSocket, 'context_status')
+      agentSocket.emit('context_status', {
+        roomId: 'room-1',
+        agentName: 'Agent',
+        status: 'ready',
+      })
+      expect(await aliceReady).toMatchObject({ status: 'ready', channelId: 'private-1' })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(bobSawPrivateStatus).toBe(false)
+
       let aliceSawBobStream = false
       aliceSocket.on('message_stream_start', (message: any) => {
         if (message.id === 'bob-private-stream') aliceSawBobStream = true

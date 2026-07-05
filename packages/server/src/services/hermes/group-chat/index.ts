@@ -1472,10 +1472,15 @@ export class GroupChatServer {
         const status = data.status || ''
 
         if (!agentName) return
-        const visibilityMessage = this.contextStatusVisibilityMessage(socket, roomId, data)
+        let roomStatuses = this.contextStatusState.get(roomId)
+        const existingStatus = roomStatuses?.get(agentName)
+        const hasIncomingVisibility = ['channelId', 'visibility', 'audienceJson', 'scope', 'threadId', 'originEventId', 'metadataJson']
+            .some(key => (data as Record<string, unknown>)[key] !== undefined && (data as Record<string, unknown>)[key] !== null)
+        const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage && !hasIncomingVisibility
+            ? existingStatus.visibilityMessage
+            : this.contextStatusVisibilityMessage(socket, roomId, data)
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
 
-        let roomStatuses = this.contextStatusState.get(roomId)
         if (!roomStatuses) {
             roomStatuses = new Map()
             this.contextStatusState.set(roomId, roomStatuses)
@@ -1519,17 +1524,17 @@ export class GroupChatServer {
             ack?.({ error: 'Not in room' })
             return
         }
+        const interruptVisibilityMessage = this.contextStatusState.get(roomId)?.get(agentName)?.visibilityMessage
         try {
             await this.agentClients.interruptAgent(roomId, agentName)
             const roomStatuses = this.contextStatusState.get(roomId)
-            const existingStatus = roomStatuses?.get(agentName)
             roomStatuses?.delete(agentName)
             if (roomStatuses?.size === 0) this.contextStatusState.delete(roomId)
-            this.emitVisibleEvent(roomId, existingStatus?.visibilityMessage, 'context_status', {
+            this.emitVisibleEvent(roomId, interruptVisibilityMessage, 'context_status', {
                 roomId,
                 agentName,
                 status: 'ready',
-                ...(existingStatus?.visibilityMessage ? this.visibilityEventFields(existingStatus.visibilityMessage) : {}),
+                ...(interruptVisibilityMessage ? this.visibilityEventFields(interruptVisibilityMessage) : {}),
             })
             ack?.({ ok: true })
         } catch (err: any) {
