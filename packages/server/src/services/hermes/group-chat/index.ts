@@ -1516,7 +1516,16 @@ export class GroupChatServer {
         }
         try {
             await this.agentClients.interruptAgent(roomId, agentName)
-            this.nsp.to(roomId).emit('context_status', { roomId, agentName, status: 'ready' })
+            const roomStatuses = this.contextStatusState.get(roomId)
+            const existingStatus = roomStatuses?.get(agentName)
+            roomStatuses?.delete(agentName)
+            if (roomStatuses?.size === 0) this.contextStatusState.delete(roomId)
+            this.emitVisibleEvent(roomId, existingStatus?.visibilityMessage, 'context_status', {
+                roomId,
+                agentName,
+                status: 'ready',
+                ...(existingStatus?.visibilityMessage ? this.visibilityEventFields(existingStatus.visibilityMessage) : {}),
+            })
             ack?.({ ok: true })
         } catch (err: any) {
             logger.warn(`[GroupChat] failed to interrupt agent ${agentName} in room ${roomId}: ${err.message}`)
