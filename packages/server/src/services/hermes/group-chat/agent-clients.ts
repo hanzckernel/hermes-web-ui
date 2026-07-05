@@ -273,14 +273,14 @@ class AgentClient {
         })
     }
 
-    startTyping(roomId: string): void {
+    startTyping(roomId: string, extra: Record<string, unknown> = {}): void {
         this.ensureConnected()
-        this.socket!.emit('typing', { roomId })
+        this.socket!.emit('typing', { roomId, ...extra })
     }
 
-    stopTyping(roomId: string): void {
+    stopTyping(roomId: string, extra: Record<string, unknown> = {}): void {
         this.ensureConnected()
-        this.socket!.emit('stop_typing', { roomId })
+        this.socket!.emit('stop_typing', { roomId, ...extra })
     }
 
     emitContextStatus(roomId: string, status: 'compressing' | 'replying' | 'ready', extra?: Record<string, unknown>): void {
@@ -463,7 +463,7 @@ class AgentClient {
         const actorId = agentActorId(roomId, this.agentId)
         try {
             // Notify room that agent is typing
-            this.startTyping(roomId)
+            this.startTyping(roomId, visibilityExtra)
 
             // Build compressed context if context engine is available
             let conversationHistory: Array<{ role: string; content: string }> = []
@@ -609,7 +609,7 @@ class AgentClient {
                 logger.error(`[AgentClients] ${this.name}: bridge response failed: ${lastChunk.error || 'unknown error'}`)
                 await this.sendAgentErrorMessage(roomId, streamMessageId, lastChunk.error || 'Run failed', msg, reasoningContent)
                 this.emitMessageStreamEnd(roomId, streamMessageId)
-                this.stopTyping(roomId)
+                this.stopTyping(roomId, visibilityExtra)
                 onStatus?.('ready', visibilityExtra)
                 return
             }
@@ -621,7 +621,7 @@ class AgentClient {
             recordBridgeUsage(roomId, this.profile, lastChunk?.result)
             logger.debug(`[AgentClients] ${this.name}: bridge response completed, content length=${totalContent.length}`)
             if (currentContent) {
-                this.stopTyping(roomId)
+                this.stopTyping(roomId, visibilityExtra)
                 await this.sendMessage(roomId, currentContent, streamMessageId, {
                     ...visibilityExtra,
                     role: 'assistant',
@@ -636,7 +636,7 @@ class AgentClient {
             }
             logger.warn(`[AgentClients] ${this.name}: bridge response completed without content`)
             this.emitMessageStreamEnd(roomId, streamMessageId)
-            this.stopTyping(roomId)
+            this.stopTyping(roomId, visibilityExtra)
             onStatus?.('ready', visibilityExtra)
         } catch (err: any) {
             logger.error(`[AgentClients] ${this.name}: error handling message: ${err.message}`)
@@ -646,7 +646,7 @@ class AgentClient {
             } catch (sendErr: any) {
                 logger.warn(`[AgentClients] ${this.name}: failed to send error message: ${sendErr.message}`)
             }
-            this.stopTyping(roomId)
+            this.stopTyping(roomId, visibilityExtra)
             onStatus?.('ready', visibilityExtra)
         }
     }

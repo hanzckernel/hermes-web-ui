@@ -353,12 +353,35 @@ describe('group chat channel visibility runtime', () => {
 
       let bobSawPrivateStatus = false
       let bobSawPrivateRoomUpdate = false
+      let bobSawPrivateTyping = false
       bobSocket.on('context_status', (message: any) => {
         if (message.channelId === 'private-1') bobSawPrivateStatus = true
       })
       bobSocket.on('room_updated', (message: any) => {
         if (message.totalTokens === 321) bobSawPrivateRoomUpdate = true
       })
+      bobSocket.on('typing', (message: any) => {
+        if (message.channelId === 'private-1') bobSawPrivateTyping = true
+      })
+      bobSocket.on('stop_typing', (message: any) => {
+        if (message.channelId === 'private-1') bobSawPrivateTyping = true
+      })
+      const aliceTyping = once<any>(aliceSocket, 'typing')
+      agentSocket.emit('typing', {
+        roomId: 'room-1',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+      expect(await aliceTyping).toMatchObject({ channelId: 'private-1' })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(bobSawPrivateTyping).toBe(false)
+      const aliceStopTyping = once<any>(aliceSocket, 'stop_typing')
+      agentSocket.emit('stop_typing', { roomId: 'room-1' })
+      expect(await aliceStopTyping).toMatchObject({ channelId: 'private-1' })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(bobSawPrivateTyping).toBe(false)
+
       const aliceStatus = once<any>(aliceSocket, 'context_status')
       agentSocket.emit('context_status', {
         roomId: 'room-1',

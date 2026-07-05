@@ -934,11 +934,13 @@ export class GroupChatServer {
     private streamOwnerMap = new Map<string, string>()
     /** Map: room/approval id → visibility metadata for approval events/responses */
     private approvalVisibilityMap = new Map<string, ChatMessage>()
+    /** Map: room/approval id → choices advertised by the approval request */
+    private approvalChoicesMap = new Map<string, Set<string>>()
     readonly agentClients = new AgentClients()
     private _contextEngine: ContextEngine | null = null
     private _restoreScheduled = false
-    /** roomId -> (userId -> { userName, timer }) */
-    private typingState = new Map<string, Map<string, { userName: string; timer: ReturnType<typeof setTimeout> }>>()
+    /** roomId -> (userId -> { userName, timer, visibilityMessage }) */
+    private typingState = new Map<string, Map<string, { userName: string; timer: ReturnType<typeof setTimeout>; visibilityMessage?: ChatMessage }>>()
     /** roomId -> (agentName -> status plus its visibility envelope) */
     private contextStatusState = new Map<string, Map<string, { agentName: string; status: string; visibilityMessage?: ChatMessage }>>()
 
@@ -1230,7 +1232,7 @@ export class GroupChatServer {
             channels,
             actorId: visibilityActorId,
             rooms: this.getRoomIds(),
-            typingUsers: this.getTypingUsers(roomId),
+            typingUsers: this.getTypingUsers(roomId, visibilityActorId),
             contextStatuses: this.getContextStatuses(roomId, visibilityActorId),
         })
 
@@ -1419,10 +1421,14 @@ export class GroupChatServer {
         this.streamOwnerMap.delete(id)
     }
 
-    private handleTyping(socket: Socket, data: { roomId?: string }): void {
+    private handleTyping(socket: Socket, data: Partial<ChatMessage> & { roomId?: string }): void {
         const roomId = data.roomId || 'general'
         const userId = this.socketUserMap.get(socket.id) || socket.id
         const userName = this.userInfoMap.get(userId)?.name || `User-${socket.id.slice(0, 6)}`
+        const visibilityMessage = this.hasVisibilityEventFields(data)
+            ? this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
+            : undefined
+        if (visibilityMessage && !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
 
         // Track typing state for rejoin recovery
         let roomTyping = this.typingState.get(roomId)
@@ -1434,35 +1440,42 @@ export class GroupChatServer {
         if (existing) clearTimeout(existing.timer)
         roomTyping.set(userId, {
             userName,
+            visibilityMessage,
             timer: setTimeout(() => {
                 roomTyping!.delete(userId)
                 if (roomTyping!.size === 0) this.typingState.delete(roomId)
             }, 30000),
         })
 
-        socket.to(roomId).emit('typing', {
+        this.emitVisibleEvent(roomId, visibilityMessage, 'typing', {
             roomId,
             userId,
             userName,
+            ...(visibilityMessage ? this.visibilityEventFields(visibilityMessage) : {}),
         })
     }
 
-    private handleStopTyping(socket: Socket, data: { roomId?: string }): void {
+    private handleStopTyping(socket: Socket, data: Partial<ChatMessage> & { roomId?: string }): void {
         const roomId = data.roomId || 'general'
         const userId = this.socketUserMap.get(socket.id) || socket.id
 
         // Remove from typing state
         const roomTyping = this.typingState.get(roomId)
+        const existing = roomTyping?.get(userId)
+        const visibilityMessage = this.hasVisibilityEventFields(data)
+            ? this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
+            : existing?.visibilityMessage
+        if (visibilityMessage && !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
         if (roomTyping) {
-            const entry = roomTyping.get(userId)
-            if (entry) clearTimeout(entry.timer)
+            if (existing) clearTimeout(existing.timer)
             roomTyping.delete(userId)
             if (roomTyping.size === 0) this.typingState.delete(roomId)
         }
 
-        socket.to(roomId).emit('stop_typing', {
+        this.emitVisibleEvent(roomId, visibilityMessage, 'stop_typing', {
             roomId,
             userId,
+            ...(visibilityMessage ? this.visibilityEventFields(visibilityMessage) : {}),
         })
     }
 
@@ -1474,8 +1487,7 @@ export class GroupChatServer {
         if (!agentName) return
         let roomStatuses = this.contextStatusState.get(roomId)
         const existingStatus = roomStatuses?.get(agentName)
-        const hasIncomingVisibility = ['channelId', 'visibility', 'audienceJson', 'scope', 'threadId', 'originEventId', 'metadataJson']
-            .some(key => (data as Record<string, unknown>)[key] !== undefined && (data as Record<string, unknown>)[key] !== null)
+        const hasIncomingVisibility = this.hasVisibilityEventFields(data)
         const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage && !hasIncomingVisibility
             ? existingStatus.visibilityMessage
             : this.contextStatusVisibilityMessage(socket, roomId, data)
@@ -1552,7 +1564,12 @@ export class GroupChatServer {
         const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
         const key = this.approvalVisibilityKey(roomId, data.approval_id)
         if (this.approvalVisibilityMap.has(key)) return
+        const choices = Array.isArray(data.choices) && data.choices.length
+            ? data.choices.map(choice => String(choice || '').trim().toLowerCase()).filter(Boolean)
+            : ['once', 'session', 'deny']
+        if (choices.length === 0) choices.push('once', 'session', 'deny')
         this.approvalVisibilityMap.set(key, visibilityMessage)
+        this.approvalChoicesMap.set(key, new Set(choices))
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.requested', {
             event: 'approval.requested',
             roomId,
@@ -1560,7 +1577,7 @@ export class GroupChatServer {
             approval_id: data.approval_id,
             command: data.command || '',
             description: data.description || '',
-            choices: Array.isArray(data.choices) ? data.choices : ['once', 'session', 'deny'],
+            choices,
             allow_permanent: Boolean(data.allow_permanent),
             ...this.visibilityEventFields(visibilityMessage),
         })
@@ -1582,6 +1599,7 @@ export class GroupChatServer {
             ...this.visibilityEventFields(visibilityMessage),
         })
         this.approvalVisibilityMap.delete(key)
+        this.approvalChoicesMap.delete(key)
     }
 
     private async handleApprovalRespond(socket: Socket, data: { roomId?: string; approval_id?: string; choice?: string }, ack?: (response?: unknown) => void): Promise<void> {
@@ -1614,8 +1632,14 @@ export class GroupChatServer {
             ack?.({ error: 'Cannot respond to approval' })
             return
         }
+        const choice = String(data.choice || 'deny').trim().toLowerCase()
+        const allowedChoices = this.approvalChoicesMap.get(this.approvalVisibilityKey(roomId, data.approval_id)) || new Set(['once', 'session', 'deny'])
+        if (!allowedChoices.has(choice)) {
+            ack?.({ error: 'Approval choice not allowed' })
+            return
+        }
         try {
-            const result = await new AgentBridgeClient().approvalRespond(data.approval_id, data.choice || 'deny')
+            const result = await new AgentBridgeClient().approvalRespond(data.approval_id, choice)
             ack?.({ ok: true, resolved: Boolean((result as any)?.resolved) })
         } catch (err: any) {
             logger.warn(`[GroupChat] failed to respond approval ${data.approval_id}: ${err.message}`)
@@ -1663,6 +1687,11 @@ export class GroupChatServer {
 
     private approvalVisibilityKey(roomId: string, approvalId: string): string {
         return `${roomId}:${approvalId}`
+    }
+
+    private hasVisibilityEventFields(data: Partial<ChatMessage>): boolean {
+        return ['channelId', 'visibility', 'audienceJson', 'scope', 'threadId', 'originEventId', 'metadataJson']
+            .some(key => (data as Record<string, unknown>)[key] !== undefined && (data as Record<string, unknown>)[key] !== null)
     }
 
     private canSocketWriteVisibilityEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {
@@ -1728,10 +1757,12 @@ export class GroupChatServer {
         }
     }
 
-    private getTypingUsers(roomId: string): Array<{ userId: string; userName: string }> {
+    private getTypingUsers(roomId: string, actorId?: string | null): Array<{ userId: string; userName: string }> {
         const roomTyping = this.typingState.get(roomId)
         if (!roomTyping) return []
-        return Array.from(roomTyping.entries()).map(([userId, entry]) => ({ userId, userName: entry.userName }))
+        return Array.from(roomTyping.entries())
+            .filter(([, entry]) => !entry.visibilityMessage || this.storage.canReadMessage(actorId, entry.visibilityMessage))
+            .map(([userId, entry]) => ({ userId, userName: entry.userName }))
     }
 
     private getContextStatuses(roomId: string, actorId?: string | null): Array<{ agentName: string; status: string }> {

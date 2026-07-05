@@ -136,6 +136,20 @@ describe('group chat approval and context baseline', () => {
     await expect(emitAck(agent, 'approval.respond', { roomId: 'room-1', approval_id: 'approval-agent-denied', choice: 'once' })).resolves.toEqual({ error: 'Cannot respond to approval' })
   })
 
+  it('rejects approval responses outside the advertised choices', async () => {
+    const { agent, human } = await joinPair()
+    agent.emit('approval.requested', {
+      roomId: 'room-1',
+      agentName: 'Agent',
+      approval_id: 'approval-no-always',
+      choices: ['once', 'session', 'deny'],
+      allow_permanent: false,
+    })
+    await once<any>(human, 'approval.requested')
+
+    await expect(emitAck(human, 'approval.respond', { roomId: 'room-1', approval_id: 'approval-no-always', choice: 'always' })).resolves.toEqual({ error: 'Approval choice not allowed' })
+  })
+
   it('only lets the requesting agent resolve its approval', async () => {
     const { agent, human } = await joinPair()
     groupServer.getStorage().addRoomAgent('room-1', 'agent-2', 'default', 'Other Agent', '', 1)
