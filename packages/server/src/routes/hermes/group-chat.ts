@@ -498,8 +498,8 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/compress', async (ctx
     }
 
     try {
-        const result = await engine.forceCompress(roomId)
-        ctx.body = { success: true, summary: result }
+        await engine.forceCompress(roomId)
+        ctx.body = { success: true }
     } catch (err: any) {
         ctx.status = 500
         ctx.body = { error: err.message }

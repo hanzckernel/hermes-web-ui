@@ -736,6 +736,7 @@ class AgentClient {
                 this.recordToolCompleted(roomId, ev as Record<string, unknown>, visibilityExtra)
             } else if (eventType === 'approval.requested') {
                 this.emitApprovalRequested(roomId, {
+                    ...visibilityExtra,
                     event: 'approval.requested',
                     approval_id: (ev as any).approval_id,
                     command: (ev as any).command,
@@ -745,6 +746,7 @@ class AgentClient {
                 })
             } else if (eventType === 'approval.resolved') {
                 this.emitApprovalResolved(roomId, {
+                    ...visibilityExtra,
                     event: 'approval.resolved',
                     approval_id: (ev as any).approval_id,
                     choice: (ev as any).choice,

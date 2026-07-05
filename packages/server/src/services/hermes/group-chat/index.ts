@@ -927,6 +927,8 @@ export class GroupChatServer {
     private streamVisibilityMap = new Map<string, ChatMessage>()
     /** Map: stream message id → socket.id that owns the stream */
     private streamOwnerMap = new Map<string, string>()
+    /** Map: room/approval id → visibility metadata for approval events/responses */
+    private approvalVisibilityMap = new Map<string, ChatMessage>()
     readonly agentClients = new AgentClients()
     private _contextEngine: ContextEngine | null = null
     private _restoreScheduled = false
@@ -1084,9 +1086,7 @@ export class GroupChatServer {
         const auth = socket.handshake.auth as { userId?: string; name?: string; description?: string; source?: string; agentSocketSecret?: string; authUserId?: number }
         const requestedSource = auth.source === 'agent' && auth.agentSocketSecret === GROUP_CHAT_AGENT_SOCKET_SECRET ? 'agent' : 'human'
         const authenticatedUser = socket.data.authUser as AuthenticatedUser | undefined
-        const authUserId = requestedSource === 'human'
-            ? authenticatedUser?.id ?? (typeof auth.authUserId === 'number' && auth.authUserId > 0 ? auth.authUserId : undefined)
-            : undefined
+        const authUserId = requestedSource === 'human' ? authenticatedUser?.id : undefined
         const userId = authUserId ? authenticatedGroupUserId(authUserId) : auth.userId || socket.id
         const userName = auth.name || authenticatedUser?.username || `User-${userId.slice(0, 6)}`
         const description = auth.description || ''
@@ -1110,8 +1110,8 @@ export class GroupChatServer {
         socket.on('stop_typing', (data: { roomId?: string }) => this.handleStopTyping(socket, data))
         socket.on('context_status', (data: { roomId?: string; agentName?: string; status?: string }) => this.handleContextStatus(socket, data))
         socket.on('interrupt_agent', (data: { roomId?: string; agentName?: string }, ack?: (response?: unknown) => void) => this.handleInterruptAgent(socket, data, ack))
-        socket.on('approval.requested', (data: { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }) => this.handleApprovalRequested(socket, data))
-        socket.on('approval.resolved', (data: { roomId?: string; agentName?: string; approval_id?: string; choice?: string }) => this.handleApprovalResolved(socket, data))
+        socket.on('approval.requested', (data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }) => this.handleApprovalRequested(socket, data))
+        socket.on('approval.resolved', (data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; choice?: string }) => this.handleApprovalResolved(socket, data))
         socket.on('approval.respond', (data: { roomId?: string; approval_id?: string; choice?: string }, ack?: (response?: unknown) => void) => this.handleApprovalRespond(socket, data, ack))
         socket.on('disconnect', () => this.handleDisconnect(socket))
     }
@@ -1500,10 +1500,12 @@ export class GroupChatServer {
         }
     }
 
-    private handleApprovalRequested(socket: Socket, data: { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }): void {
+    private handleApprovalRequested(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }): void {
         const roomId = data.roomId
         if (!roomId || !data.approval_id) return
-        this.nsp.to(roomId).emit('approval.requested', {
+        const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
+        this.approvalVisibilityMap.set(this.approvalVisibilityKey(roomId, data.approval_id), visibilityMessage)
+        this.emitVisibleEvent(roomId, visibilityMessage, 'approval.requested', {
             event: 'approval.requested',
             roomId,
             agentName: data.agentName || '',
@@ -1512,19 +1514,24 @@ export class GroupChatServer {
             description: data.description || '',
             choices: Array.isArray(data.choices) ? data.choices : ['once', 'session', 'deny'],
             allow_permanent: Boolean(data.allow_permanent),
+            ...this.visibilityEventFields(visibilityMessage),
         })
     }
 
-    private handleApprovalResolved(socket: Socket, data: { roomId?: string; agentName?: string; approval_id?: string; choice?: string }): void {
+    private handleApprovalResolved(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; choice?: string }): void {
         const roomId = data.roomId
         if (!roomId || !data.approval_id) return
-        this.nsp.to(roomId).emit('approval.resolved', {
+        const key = this.approvalVisibilityKey(roomId, data.approval_id)
+        const visibilityMessage = this.approvalVisibilityMap.get(key) || this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
+        this.emitVisibleEvent(roomId, visibilityMessage, 'approval.resolved', {
             event: 'approval.resolved',
             roomId,
             agentName: data.agentName || '',
             approval_id: data.approval_id,
             choice: data.choice || '',
+            ...this.visibilityEventFields(visibilityMessage),
         })
+        this.approvalVisibilityMap.delete(key)
     }
 
     private async handleApprovalRespond(socket: Socket, data: { roomId?: string; approval_id?: string; choice?: string }, ack?: (response?: unknown) => void): Promise<void> {
@@ -1536,6 +1543,11 @@ export class GroupChatServer {
         const room = this.rooms.get(roomId)
         if (!room?.hasOnlineMember(socket.id)) {
             ack?.({ error: 'Not in room' })
+            return
+        }
+        const visibilityMessage = this.approvalVisibilityMap.get(this.approvalVisibilityKey(roomId, data.approval_id))
+        if (visibilityMessage && !this.storage.canReadMessage(this.socketVisibilityActorMap.get(socket.id), visibilityMessage)) {
+            ack?.({ error: 'Approval not visible' })
             return
         }
         try {
@@ -1583,6 +1595,39 @@ export class GroupChatServer {
 
     private emitVisibleMessage(roomId: string, message: ChatMessage): void {
         this.emitVisibleEvent(roomId, message, 'message', message)
+    }
+
+    private approvalVisibilityKey(roomId: string, approvalId: string): string {
+        return `${roomId}:${approvalId}`
+    }
+
+    private approvalVisibilityMessage(socket: Socket, roomId: string, approvalId: string, data: Partial<ChatMessage> & { command?: string; description?: string; agentName?: string }): ChatMessage {
+        const senderId = this.socketActorMap.get(socket.id) || socket.id
+        return {
+            id: `approval:${approvalId}`,
+            roomId,
+            senderId,
+            senderName: data.agentName || senderId,
+            content: data.description || data.command || '',
+            timestamp: Date.now(),
+            role: 'assistant',
+            channelId: data.channelId ?? null,
+            threadId: data.threadId ?? null,
+            visibility: data.visibility ?? null,
+            audienceJson: data.audienceJson ?? null,
+            scope: data.scope ?? null,
+            originEventId: data.originEventId ?? null,
+            metadataJson: data.metadataJson ?? null,
+        }
+    }
+
+    private visibilityEventFields(data: Partial<ChatMessage>): Record<string, unknown> {
+        const fields: Record<string, unknown> = {}
+        for (const key of ['channelId', 'threadId', 'visibility', 'audienceJson', 'scope', 'originEventId', 'metadataJson'] as const) {
+            const value = data[key]
+            if (value !== undefined && value !== null) fields[key] = value
+        }
+        return fields
     }
 
     private emitVisibleEvent(roomId: string, visibilityMessage: ChatMessage | undefined, event: string, payload: unknown): void {

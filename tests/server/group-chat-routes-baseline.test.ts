@@ -17,6 +17,7 @@ describe('group chat REST route baseline', () => {
   let baseUrl: string
   let storage: any
   let agentClients: any
+  let contextEngine: any
   let clearRoomRuntimeState: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
@@ -70,8 +71,9 @@ describe('group chat REST route baseline', () => {
       removeAgentFromRoom: vi.fn(),
       disconnectRoom: vi.fn(),
     }
+    contextEngine = { forceCompress: vi.fn(async () => 'private summary') }
     clearRoomRuntimeState = vi.fn()
-    setGroupChatServer({ getStorage: () => storage, agentClients, clearRoomRuntimeState } as any)
+    setGroupChatServer({ getStorage: () => storage, getContextEngine: () => contextEngine, agentClients, clearRoomRuntimeState } as any)
     const app = new Koa()
     app.use(bodyParser())
     app.use(groupChatRoutes.routes())
@@ -178,6 +180,18 @@ describe('group chat REST route baseline', () => {
     expect(res.status).toBe(403)
     expect(storage.createChannel).not.toHaveBeenCalled()
     expect(body).toEqual({ error: 'authenticated actor is required to create a channel' })
+  })
+
+
+  it('forces compression without returning generated summary text', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/compress`, { method: 'POST' })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(contextEngine.forceCompress).toHaveBeenCalledWith('room-1')
+    expect(body).toEqual({ success: true })
   })
 
   it('rejects duplicate room agent profiles', async () => {

@@ -193,6 +193,65 @@ describe('group chat channel visibility runtime', () => {
     }
   })
 
+
+  it('ignores socket-supplied authUserId when auth is disabled', async () => {
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    const { port } = await listen(httpServer)
+    const storage = server.getStorage() as any
+    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
+    storage.saveMessageAndRefreshRoom({
+      id: 'public-msg',
+      roomId: 'room-1',
+      senderId: 'alice',
+      senderName: 'Alice',
+      content: 'public hello',
+      timestamp: 1,
+      role: 'user',
+    })
+    const authActor = storage.resolveHumanActorId('room-1', 'auth:1', 'Alice', 1)
+    storage.createChannel({
+      roomId: 'room-1',
+      id: 'private-1',
+      kind: 'private',
+      name: 'Auth private',
+      createdBy: authActor,
+      members: [{ actorId: authActor, canRead: true, canWrite: true }],
+    })
+    storage.saveMessageAndRefreshRoom({
+      id: 'private-msg',
+      roomId: 'room-1',
+      senderId: authActor,
+      senderName: 'Alice',
+      content: 'private hello',
+      timestamp: 2,
+      role: 'user',
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify([authActor]),
+    })
+    const socket = await connect(port, 'guest', 'Guest', { authUserId: 1 })
+
+    try {
+      const joined = await emitAck<any>(socket, 'join', { roomId: 'room-1' })
+      expect(joined.actorId).toBeNull()
+      expect(joined.messages.map((m: any) => m.id)).toEqual(['public-msg'])
+      expect(joined.channels.map((c: any) => c.id)).toEqual(['public'])
+      await expect(emitAck(socket, 'message', {
+        roomId: 'room-1',
+        id: 'spoof-private',
+        content: 'spoof',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([authActor]),
+      })).resolves.toEqual({ error: 'Cannot write to channel' })
+    } finally {
+      socket.disconnect()
+      server.getIO().close()
+      httpServer.close()
+    }
+  })
+
   it('filters Socket.IO message delivery for private channels', async () => {
     const httpServer = createServer()
     const server = new GroupChatServer(httpServer)
@@ -241,6 +300,24 @@ describe('group chat channel visibility runtime', () => {
       expect((await alicePrivate).id).toBe('private-live')
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(bobSawPrivate).toBe(false)
+
+      let bobSawApproval = false
+      bobSocket.on('approval.requested', (message: any) => {
+        if (message.approval_id === 'private-approval') bobSawApproval = true
+      })
+      const aliceApproval = once<any>(aliceSocket, 'approval.requested')
+      aliceSocket.emit('approval.requested', {
+        roomId: 'room-1',
+        approval_id: 'private-approval',
+        command: 'secret command',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+      expect(await aliceApproval).toMatchObject({ approval_id: 'private-approval', channelId: 'private-1', visibility: 'private' })
+      await new Promise(resolve => setTimeout(resolve, 80))
+      expect(bobSawApproval).toBe(false)
+      await expect(emitAck(bobSocket, 'approval.respond', { roomId: 'room-1', approval_id: 'private-approval', choice: 'once' })).resolves.toEqual({ error: 'Approval not visible' })
 
       let aliceSawBobStream = false
       aliceSocket.on('message_stream_start', (message: any) => {
