@@ -24,17 +24,12 @@ const HUMAN_DEFAULTS = new Set<GroupCapability>([
     'message.read',
     'message.write',
     'approval.respond',
-    'channel.create.private',
-    'channel.create.task',
-    'channel.moderate.own',
 ])
 
 const AGENT_DEFAULTS = new Set<GroupCapability>([
     'message.read',
     'message.write',
-    'agent.handoff',
     'approval.request',
-    'artifact.create',
 ])
 
 export class CapabilityPolicy {

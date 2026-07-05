@@ -28,18 +28,21 @@ describe('group chat capability policy', () => {
     groupChatDbMock.current = null
   })
 
-  it('allows active humans to message, respond to approvals, and create private/task channels', () => {
+  it('allows active humans to message and respond to approvals without default channel creation', () => {
     const human = actorStore.ensureHumanActor({ roomId: 'room-1', userId: 'user-1', displayName: 'Alice' })
 
     expect(policy.can(human, 'message.read')).toBe(true)
     expect(policy.can(human, 'message.write')).toBe(true)
     expect(policy.can(human, 'approval.respond')).toBe(true)
-    expect(policy.canCreateChannel(human, 'private')).toBe(true)
-    expect(policy.canCreateChannel(human, 'task')).toBe(true)
+    expect(policy.canCreateChannel(human, 'private')).toBe(false)
+    expect(policy.canCreateChannel(human, 'task')).toBe(false)
     expect(policy.canCreateChannel(human, 'public')).toBe(false)
+
+    db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)').run(human.id, 'channel.create.private', 1)
+    expect(policy.canCreateChannel(human, 'private')).toBe(true)
   })
 
-  it('allows agents to message, hand off, request approvals, and create artifacts', () => {
+  it('allows agents to message and request approvals without default handoff/artifact grants', () => {
     const agent = actorStore.ensureAgentActor({
       roomId: 'room-1',
       agentId: 'agent-1',
@@ -49,10 +52,13 @@ describe('group chat capability policy', () => {
 
     expect(policy.can(agent, 'message.read')).toBe(true)
     expect(policy.can(agent, 'message.write')).toBe(true)
-    expect(policy.can(agent, 'agent.handoff')).toBe(true)
+    expect(policy.can(agent, 'agent.handoff')).toBe(false)
     expect(policy.can(agent, 'approval.request')).toBe(true)
-    expect(policy.can(agent, 'artifact.create')).toBe(true)
+    expect(policy.can(agent, 'artifact.create')).toBe(false)
     expect(policy.can(agent, 'channel.create.private')).toBe(false)
+
+    db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)').run(agent.id, 'agent.handoff', 1)
+    expect(policy.can(agent, 'agent.handoff')).toBe(true)
   })
 
   it('keeps system and tool read/write explicit while reserving public channel creation for system', () => {

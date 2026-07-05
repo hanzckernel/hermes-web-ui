@@ -76,7 +76,6 @@ export interface GroupActor {
     description?: string | null
     profile?: string | null
     agentKind?: string | null
-    authUserId?: number | null
     status?: string
     capabilities?: string[]
     metadata?: Record<string, unknown>

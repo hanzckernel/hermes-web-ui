@@ -14,7 +14,7 @@ import { config } from '../../../config'
 import { createSocketIoCorsOrigin, shouldRejectUpgradeOrigin } from '../../../security'
 import { paginateRecentGroupMessagesCanonical, sliceGroupMessagesCanonical, sliceGroupMessagesForSnapshotTail, type GroupMessageCursorCutoff } from './group-message-ordering'
 import { ActorStore } from './identity/actor-store'
-import { agentActorId } from './identity/actor-ids'
+import { agentActorId, authenticatedHumanActorId, humanActorId } from './identity/actor-ids'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -656,7 +656,48 @@ class ChatStorage {
     }
 
     getActors(roomId: string) {
-        return this.actorStore.listActors(roomId)
+        this.ensureActorsForRoom(roomId)
+        return this.actorStore.listActors(roomId).map(({ authUserId: _authUserId, externalUserId: _externalUserId, ...actor }) => actor)
+    }
+
+    private actorExists(actorId: string): boolean {
+        return Boolean(this.db()?.prepare('SELECT 1 FROM gc_actors WHERE id = ?').get(actorId))
+    }
+
+    private ensureActorsForRoom(roomId: string): void {
+        const db = this.db()
+        if (!db) return
+        const members = (db.prepare(
+            `SELECT m.userId, m.userName as name, m.description, m.authUserId
+             FROM gc_room_members m
+             WHERE m.roomId = ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM gc_room_agents a
+                 WHERE a.roomId = m.roomId
+                   AND (a.agentId = m.userId OR (m.userId NOT GLOB '????????-????-????-????-????????????' AND COALESCE(m.description, '') = '' AND a.name = m.userName))
+               )`
+        ).all(roomId) || []) as unknown as Array<{ userId: string; name: string; description: string; authUserId?: number | null }>
+        for (const member of members) {
+            const authFromUserId = /^auth:(\d+)$/.exec(member.userId)?.[1]
+            const authUserId = typeof member.authUserId === 'number' && member.authUserId > 0
+                ? member.authUserId
+                : authFromUserId ? Number(authFromUserId) : null
+            const actorId = typeof authUserId === 'number' && authUserId > 0
+                ? authenticatedHumanActorId(roomId, authUserId)
+                : humanActorId(roomId, member.userId)
+            if (!this.actorExists(actorId)) {
+                this.actorStore.ensureHumanActor({
+                    roomId,
+                    userId: member.userId,
+                    displayName: member.name,
+                    description: member.description || '',
+                    authUserId,
+                })
+            }
+        }
+        for (const agent of this.getRoomAgents(roomId)) {
+            if (!this.actorExists(agentActorId(roomId, agent.agentId))) this.ensureAgentActor(agent)
+        }
     }
 
     getMemberByUserId(roomId: string, userId: string): Member | null {

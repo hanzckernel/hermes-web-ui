@@ -111,8 +111,54 @@ describe('group chat actor identity', () => {
     expect(human).toMatchObject({ id: 'gc:room-1:human:user-1', kind: 'human', source: 'web-ui' })
     expect(human.capabilities).toEqual(expect.arrayContaining(['message.read', 'message.write']))
     expect(agent).toMatchObject({ id: 'gc:room-1:agent:agent-1', kind: 'agent', agentKind: 'hermes' })
-    expect(agent.capabilities).toEqual(expect.arrayContaining(['message.read', 'agent.handoff']))
+    expect(agent.capabilities).toEqual(expect.arrayContaining(['message.read', 'message.write', 'approval.request']))
+    expect(agent.capabilities).not.toContain('agent.handoff')
     expect(store.listActors('room-1').map(a => a.id)).toEqual([human.id, agent.id])
+  })
+
+  it('does not expose numeric auth user ids in public actor summaries', () => {
+    initAllHermesTables()
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    const storage = server.getStorage()
+    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
+    storage.addRoomMember('room-1', 'auth:42', 'Alice', '', '', 42)
+
+    try {
+      const actors = storage.getActors('room-1') as any[]
+      const human = actors.find(actor => actor.kind === 'human')
+      expect(human.id).toMatch(/^gc:room-1:human:auth:[a-f0-9]{16}$/)
+      expect(human.id).not.toContain('42')
+      expect(human).not.toHaveProperty('authUserId')
+      expect(human).not.toHaveProperty('externalUserId')
+    } finally {
+      server.getIO().close()
+      httpServer.close()
+    }
+  })
+
+  it('backfills actor summaries for legacy persisted members and agents', () => {
+    initAllHermesTables()
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    const storage = server.getStorage()
+    storage.saveRoom('legacy-room', 'Legacy Room', 'LEGACY')
+    db.prepare('INSERT INTO gc_room_members (id, roomId, userId, userName, description, joinedAt, updatedAt, avatar, authUserId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('member-1', 'legacy-room', 'auth:42', 'Alice', '', 1, 1, '', 42)
+    db.prepare('INSERT INTO gc_room_agents (id, roomId, agentId, profile, name, description, invited) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('agent-row-1', 'legacy-room', 'agent-1', 'default', 'Worker', '', 0)
+
+    try {
+      const actors = storage.getActors('legacy-room') as any[]
+      expect(actors).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: expect.stringMatching(/^gc:legacy-room:human:auth:[a-f0-9]{16}$/), kind: 'human', displayName: 'Alice' }),
+        expect.objectContaining({ id: 'gc:legacy-room:agent:agent-1', kind: 'agent', displayName: 'Worker' }),
+      ]))
+      expect(actors.every(actor => !('authUserId' in actor) && !('externalUserId' in actor))).toBe(true)
+    } finally {
+      server.getIO().close()
+      httpServer.close()
+    }
   })
 
   it('updates repeated ensures without changing actor ids', () => {
