@@ -1,18 +1,16 @@
-export type GroupChannelKind = 'public' | 'private' | 'team' | 'agent' | 'task' | 'approval' | 'system' | 'audit' | 'external'
-export type GroupMessageVisibility = 'public' | 'private' | 'shared' | 'agent-only' | 'system-only' | 'audit-only' | 'external'
-export type GroupMessageScope = 'conversation' | 'task' | 'private_fact' | 'approval' | 'tool' | 'artifact' | 'system_notice'
+export type GroupChannelKind = 'public' | 'private' | 'agent' | 'task'
+export type GroupMessageVisibility = 'public' | 'private' | 'agent-only' | 'system-only'
+export type GroupMessageScope = 'conversation' | 'task' | 'private_fact' | 'approval' | 'tool'
 
 export interface GroupChannel {
     id: string
     roomId: string
     kind: GroupChannelKind
     name: string
-    parentChannelId?: string | null
     defaultVisibility: GroupMessageVisibility
     createdBy: string
     createdAt: number
     updatedAt: number
-    metadata: Record<string, unknown>
 }
 
 export interface GroupChannelMember {
@@ -21,8 +19,6 @@ export interface GroupChannelMember {
     actorId: string
     canRead: boolean
     canWrite: boolean
-    canInvite: boolean
-    canModerate: boolean
     updatedAt: number
 }
 
@@ -36,9 +32,9 @@ export interface VisibleGroupMessage {
     role?: string
     channelId?: string | null
     threadId?: string | null
-    visibility?: GroupMessageVisibility | string | null
+    visibility?: GroupMessageVisibility | null
     audienceJson?: string | null
-    scope?: GroupMessageScope | string | null
+    scope?: GroupMessageScope | null
     originEventId?: string | null
     metadataJson?: string | null
 }
@@ -49,11 +45,14 @@ export function normalizeChannelId(channelId: string | null | undefined): string
 }
 
 export function normalizeVisibility(visibility: string | null | undefined): GroupMessageVisibility {
-    const value = String(visibility || '').trim() as GroupMessageVisibility
-    return value || 'public'
+    const value = String(visibility || '').trim()
+    if (!value) return 'public'
+    if (value === 'public' || value === 'private' || value === 'agent-only' || value === 'system-only') return value
+    return 'private'
 }
 
 export function normalizeScope(scope: string | null | undefined): GroupMessageScope {
-    const value = String(scope || '').trim() as GroupMessageScope
-    return value || 'conversation'
+    const value = String(scope || '').trim()
+    if (value === 'task' || value === 'private_fact' || value === 'approval' || value === 'tool') return value
+    return 'conversation'
 }

@@ -1,4 +1,5 @@
 import type { StoredMessage } from '../context-engine/types'
+import { stripAllMentionRoutingTokens } from './mention-routing'
 
 export type GroupHistoryMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -44,14 +45,14 @@ export function projectGroupChatMessage(
         return {
             role: isOwnAgent ? 'assistant' : 'user',
             content: content
-                ? `${formatAttributedContent(senderName, content)}\n${formatAttributionPrefix(senderName)}${toolsInfo}`
+                ? `${formatAttributedContent(senderName, content, ownAgent.name)}\n${formatAttributionPrefix(senderName)}${toolsInfo}`
                 : `${formatAttributionPrefix(senderName)}${toolsInfo}`,
         }
     }
 
     return {
         role: isOwnAgent ? 'assistant' : 'user',
-        content: formatAttributedContent(senderName, String(message.content || '')),
+        content: formatAttributedContent(senderName, String(message.content || ''), ownAgent.name),
     }
 }
 
@@ -73,15 +74,14 @@ export function buildProjectedGroupChatHistory(
     return history
 }
 
-export function stripMentionsForContextProjection(content: string): string {
-    return String(content || '')
-        .replace(/@([^\s@]+)/g, '')
-        .replace(/[ \t]{2,}/g, ' ')
-        .replace(/^\s+/, '')
+export function stripMentionsForContextProjection(content: string, ownAgentName = ''): string {
+    const text = String(content || '')
+    if (!ownAgentName.trim()) return text
+    return stripAllMentionRoutingTokens(text)
 }
 
-function formatAttributedContent(senderName: string, content: string): string {
-    return `${formatAttributionPrefix(senderName)}${stripMentionsForContextProjection(content)}`
+function formatAttributedContent(senderName: string, content: string, ownAgentName: string): string {
+    return `${formatAttributionPrefix(senderName)}${stripMentionsForContextProjection(content, ownAgentName)}`
 }
 
 function formatAttributionPrefix(senderName: string): string {

@@ -234,7 +234,6 @@ describe('Group Chat member/agent identity sync', () => {
       success: true,
       agents: [],
       members: [{ id: 'member-1', userId: 'human-1', name: 'Han', description: '', joinedAt: 1 }],
-      actors: [],
     })
   })
 

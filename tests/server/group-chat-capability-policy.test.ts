@@ -61,7 +61,7 @@ describe('group chat capability policy', () => {
     expect(policy.can(agent, 'channel.create.private')).toBe(false)
 
     db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 1, ?)').run(agent.id, 'agent.handoff', 1)
-    expect(policy.can(agent, 'agent.handoff')).toBe(true)
+    expect(policy.can(agent, 'agent.handoff')).toBe(false)
   })
 
   it('keeps system messaging explicit while reserving public channel creation for system', () => {

@@ -16,6 +16,7 @@ import {
   sliceGroupMessagesForSnapshotTail,
   sortGroupMessagesCanonical,
 } from '../../packages/server/src/services/hermes/group-chat/group-message-ordering'
+import { buildProjectedGroupChatHistory } from '../../packages/server/src/services/hermes/group-chat/context-projection'
 
 function makeMessage(overrides: Partial<StoredMessage>): StoredMessage {
   return {
@@ -273,6 +274,16 @@ describe('group chat actor-scoped reply context visibility', () => {
     expect(contextText).toContain('public context')
     expect(contextText).toContain('public question')
     expect(contextText).not.toContain('private context must not reach public prompt')
+  })
+
+  it('strips only parsed routing mentions from projected model input', () => {
+    const projected = buildProjectedGroupChatHistory('', [
+      makeMessage({ id: 'm1', senderName: 'Alice', content: '@Worker please check alice@example.com and literal @not-a-target', timestamp: 1 }),
+    ], { agentId: 'agent-1', name: 'Worker' })
+
+    expect(projected[0].content).toContain('please check alice@example.com')
+    expect(projected[0].content).toContain('@not-a-target')
+    expect(projected[0].content).not.toContain('@Worker')
   })
 
   it('keeps only public and matching private envelopes for scoped token estimates', () => {

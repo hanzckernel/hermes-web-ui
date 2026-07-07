@@ -576,8 +576,6 @@ export const GC_ACTOR_PRIVATE_FACTS_SCHEMA: Record<string, string> = {
   content: 'TEXT NOT NULL',
   createdBy: 'TEXT NOT NULL',
   createdAt: 'INTEGER NOT NULL',
-  expiresAt: 'INTEGER',
-  metadataJson: "TEXT NOT NULL DEFAULT '{}'",
 }
 
 export const GC_ACTOR_INDEXES = {
@@ -593,7 +591,6 @@ export const GC_ACTOR_CAPABILITY_INDEXES = {
 
 export const GC_ACTOR_PRIVATE_FACT_INDEXES = {
   idx_gc_actor_private_facts_room_actor: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_private_facts_room_actor ON gc_actor_private_facts(roomId, actorId)',
-  idx_gc_actor_private_facts_expiry: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_private_facts_expiry ON gc_actor_private_facts(expiresAt)',
 }
 
 export const GC_MESSAGES_VISIBILITY_INDEXES = {
@@ -608,12 +605,10 @@ export const GC_CHANNELS_SCHEMA: Record<string, string> = {
   roomId: 'TEXT NOT NULL',
   kind: 'TEXT NOT NULL',
   name: 'TEXT NOT NULL',
-  parentChannelId: 'TEXT',
   defaultVisibility: "TEXT NOT NULL DEFAULT 'public'",
   createdBy: 'TEXT NOT NULL',
   createdAt: 'INTEGER NOT NULL',
   updatedAt: 'INTEGER NOT NULL',
-  metadataJson: "TEXT NOT NULL DEFAULT '{}'",
 }
 
 export const GC_CHANNEL_MEMBERS_TABLE = 'gc_channel_members'
@@ -624,8 +619,6 @@ export const GC_CHANNEL_MEMBERS_SCHEMA: Record<string, string> = {
   actorId: 'TEXT NOT NULL',
   canRead: 'INTEGER NOT NULL DEFAULT 1',
   canWrite: 'INTEGER NOT NULL DEFAULT 0',
-  canInvite: 'INTEGER NOT NULL DEFAULT 0',
-  canModerate: 'INTEGER NOT NULL DEFAULT 0',
   updatedAt: 'INTEGER NOT NULL',
 }
 

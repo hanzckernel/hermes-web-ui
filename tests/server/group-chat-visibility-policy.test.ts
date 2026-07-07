@@ -54,6 +54,16 @@ describe('group chat visibility policy', () => {
     expect(policy.canWriteChannel('gc:room-1:human:bob', 'room-1', 'public')).toBe(true)
   })
 
+  it('fails closed for unsupported legacy visibility values on the public channel', () => {
+    const legacyExternal = message({ visibility: 'external' as any, audienceJson: '[]' })
+    const legacyAudit = message({ visibility: 'audit-only' as any, audienceJson: '[]' })
+
+    expect(policy.canReadMessage('gc:room-1:human:alice', legacyExternal)).toBe(true)
+    expect(policy.canReadMessage(systemActorId('room-1'), legacyExternal)).toBe(true)
+    expect(policy.canReadMessage('gc:room-1:human:bob', legacyExternal)).toBe(false)
+    expect(policy.canReadMessage('gc:room-1:human:bob', legacyAudit)).toBe(false)
+  })
+
   it('shows public messages to every room actor', () => {
     expect(policy.canReadMessage('gc:room-1:human:bob', message())).toBe(true)
     expect(policy.canReadMessage('gc:room-1:agent:worker', message())).toBe(true)

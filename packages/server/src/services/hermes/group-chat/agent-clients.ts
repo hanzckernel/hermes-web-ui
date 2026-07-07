@@ -1196,11 +1196,7 @@ export class AgentClients {
     async processMentions(roomId: string, msg: MentionMessage): Promise<void> {
         const agents = this.getAgents(roomId)
         const mentioned = resolveMentionTargets(agents, msg.content, msg.senderId)
-            .filter(agent => !this._storage?.canReadMessage || this._storage.canReadMessage(agentActorId(roomId, agent.agentId), {
-                ...msg,
-                id: msg.messageId || '',
-                roomId,
-            }))
+            .filter(agent => this.canAgentProcessMention(roomId, agent, msg))
         if (mentioned.length === 0) return
 
         logger.debug(`[AgentClients] ${mentioned.map(a => a.name).join(', ')} mentioned by ${msg.senderName}`)
@@ -1212,6 +1208,17 @@ export class AgentClients {
         }
     }
 
+    private canAgentProcessMention(roomId: string, agent: AgentClient, msg: MentionMessage): boolean {
+        const actorId = agentActorId(roomId, agent.agentId)
+        if (typeof this._storage?.canActor === 'function' && !this._storage.canActor(actorId, 'message.write')) return false
+        if (typeof this._storage?.canReadMessage === 'function' && !this._storage.canReadMessage(actorId, {
+            ...msg,
+            id: msg.messageId || '',
+            roomId,
+        })) return false
+        return true
+    }
+
     /**
      * Process a single agent mention with status reporting and queue drain.
      */
@@ -1220,6 +1227,7 @@ export class AgentClients {
         agent: AgentClient,
         msg: MentionMessage,
     ): Promise<void> {
+        if (!this.canAgentProcessMention(roomId, agent, msg)) return
         const agentKey = `${roomId}:${agent.name}`
         if (this._processingRooms.has(agentKey)) {
             // Queue for this specific agent

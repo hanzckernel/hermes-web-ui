@@ -46,31 +46,6 @@ describe('group chat private facts', () => {
     expect(facts.listPrivateFacts('room-1', bob.id)).toEqual([])
   })
 
-  it('excludes expired private facts', () => {
-    const alice = actorStore.ensureHumanActor({ roomId: 'room-1', userId: 'alice', displayName: 'Alice' })
-
-    facts.createPrivateFact({
-      id: 'old-fact',
-      roomId: 'room-1',
-      actorId: alice.id,
-      factType: 'note',
-      content: 'old',
-      createdBy: alice.id,
-      expiresAt: 1,
-    })
-    facts.createPrivateFact({
-      id: 'fresh-fact',
-      roomId: 'room-1',
-      actorId: alice.id,
-      factType: 'note',
-      content: 'fresh',
-      createdBy: alice.id,
-      expiresAt: Date.now() + 60_000,
-    })
-
-    expect(facts.listPrivateFacts('room-1', alice.id).map(f => f.id)).toEqual(['fresh-fact'])
-  })
-
   it('does not write private facts into group chat messages', () => {
     const alice = actorStore.ensureHumanActor({ roomId: 'room-1', userId: 'alice', displayName: 'Alice' })
 

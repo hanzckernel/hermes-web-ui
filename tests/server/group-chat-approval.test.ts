@@ -80,6 +80,66 @@ describe('group chat approval and context baseline', () => {
     })
   })
 
+  it('strips transfer fences from approval request text and metadata payloads', async () => {
+    const { agent, human } = await joinPair()
+    const requested = once<any>(human, 'approval.requested')
+
+    agent.emit('approval.requested', {
+      roomId: 'room-1',
+      agentName: 'Agent',
+      approval_id: 'approval-transfer-sanitize',
+      command: `safe command\n\n\`\`\`group-chat-transfer\n{"type":"private_fact_create","content":"SECRET_APPROVAL_COMMAND"}\n\`\`\``,
+      description: `safe description\n\n\`\`\`gc-transfer\n{"type":"private_fact_create","content":"SECRET_APPROVAL_DESCRIPTION"}\n\`\`\``,
+      metadataJson: JSON.stringify({
+        note: `safe metadata\n\n\`\`\`group-chat-transfer\n{"type":"private_fact_create","content":"SECRET_APPROVAL_METADATA"}\n\`\`\``,
+        transferCards: [{ content: 'SECRET_APPROVAL_CARD' }],
+      }),
+    })
+
+    const payload = await requested
+    expect(payload.command).toBe('safe command')
+    expect(payload.description).toBe('safe description')
+    expect(JSON.stringify(payload)).not.toContain('SECRET_APPROVAL_COMMAND')
+    expect(JSON.stringify(payload)).not.toContain('SECRET_APPROVAL_DESCRIPTION')
+    expect(JSON.stringify(payload)).not.toContain('SECRET_APPROVAL_METADATA')
+    expect(JSON.stringify(payload)).not.toContain('SECRET_APPROVAL_CARD')
+    expect(JSON.stringify(payload)).not.toContain('group-chat-transfer')
+    const metadata = JSON.parse(payload.metadataJson)
+    expect(metadata.note).toBe('safe metadata')
+    expect(metadata.transferCards).toBeUndefined()
+  })
+
+  it('strips transfer fences from context status and approval resolved payloads', async () => {
+    const { agent, human } = await joinPair()
+    const statusEvent = once<any>(human, 'context_status')
+
+    agent.emit('context_status', {
+      roomId: 'room-1',
+      agentName: 'Agent',
+      status: `safe status\n\n\`\`\`group-chat-transfer\n{"type":"private_fact_create","content":"SECRET_STATUS"}\n\`\`\``,
+    })
+
+    const statusPayload = await statusEvent
+    expect(statusPayload.status).toBe('safe status')
+    expect(JSON.stringify(statusPayload)).not.toContain('SECRET_STATUS')
+    expect(JSON.stringify(statusPayload)).not.toContain('group-chat-transfer')
+
+    agent.emit('approval.requested', { roomId: 'room-1', agentName: 'Agent', approval_id: 'approval-resolved-sanitize' })
+    await once<any>(human, 'approval.requested')
+    const resolved = once<any>(human, 'approval.resolved')
+    agent.emit('approval.resolved', {
+      roomId: 'room-1',
+      agentName: 'Agent',
+      approval_id: 'approval-resolved-sanitize',
+      choice: `deny\n\n\`\`\`gc-transfer\n{"type":"private_fact_create","content":"SECRET_RESOLVED"}\n\`\`\``,
+    })
+
+    const resolvedPayload = await resolved
+    expect(resolvedPayload.choice).toBe('deny')
+    expect(JSON.stringify(resolvedPayload)).not.toContain('SECRET_RESOLVED')
+    expect(JSON.stringify(resolvedPayload)).not.toContain('gc-transfer')
+  })
+
   it('uses socket identity for stream starts', async () => {
     const { agent, human } = await joinPair()
     const started = once<any>(human, 'message_stream_start')
@@ -112,6 +172,44 @@ describe('group chat approval and context baseline', () => {
     agent.emit('message_stream_start', { roomId: 'room-1', id: 'blocked-stream' })
 
     await expect(started).rejects.toThrow('timeout waiting for message_stream_start')
+  })
+
+  it('rejects typing and status events from actors without message.write', async () => {
+    const { agent, human } = await joinPair()
+    harness.db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 0, ?)')
+      .run('gc:room-1:agent:agent-1', 'message.write', Date.now())
+    const initialTokens = groupServer.getStorage().getRoom('room-1').totalTokens
+    let sawTyping = false
+    let sawStatus = false
+    let sawRoomUpdated = false
+    human.on('typing', () => { sawTyping = true })
+    human.on('context_status', () => { sawStatus = true })
+    human.on('room_updated', () => { sawRoomUpdated = true })
+
+    agent.emit('typing', { roomId: 'room-1' })
+    agent.emit('context_status', { roomId: 'room-1', agentName: 'Agent', status: 'replying', totalTokens: initialTokens + 999 })
+
+    await new Promise(resolve => setTimeout(resolve, 120))
+    expect(sawTyping).toBe(false)
+    expect(sawStatus).toBe(false)
+    expect(sawRoomUpdated).toBe(false)
+    expect(groupServer.getStorage().getRoom('room-1').totalTokens).toBe(initialTokens)
+  })
+
+  it('does not expose realtime or context reads to actors without message.read', async () => {
+    const { agent, human } = await joinPair()
+    harness.db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 0, ?)')
+      .run('gc:room-1:agent:agent-1', 'message.read', Date.now())
+    let sawHiddenMessage = false
+    agent.on('message', () => { sawHiddenMessage = true })
+
+    await expect(emitAck(human, 'message', { roomId: 'room-1', content: 'hidden public answer' })).resolves.toMatchObject({ id: expect.any(String) })
+
+    await new Promise(resolve => setTimeout(resolve, 120))
+    expect(sawHiddenMessage).toBe(false)
+    expect(groupServer.getStorage().getVisibleMessagesForUI('room-1', 'gc:room-1:agent:agent-1')).toEqual([])
+    expect(groupServer.getStorage().getVisibleMessagesForContext('room-1', 'gc:room-1:agent:agent-1')).toEqual([])
+    expect(groupServer.getStorage().getVisibleMessagesForUI('room-1', null).map(message => message.content)).toEqual(['hidden public answer'])
   })
 
   it('does not relay approval requests from agents without request capability', async () => {

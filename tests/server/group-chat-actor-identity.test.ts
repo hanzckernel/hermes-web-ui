@@ -214,11 +214,12 @@ describe('group chat actor identity', () => {
 
   it('uses authenticated profile identity over client-supplied display names', async () => {
     vi.mocked(isAuthEnabled).mockResolvedValue(true)
-    vi.mocked(authenticateUserToken).mockResolvedValue({ id: 42, username: 'Alice Auth', role: 'user', profiles: [] } as any)
+    vi.mocked(authenticateUserToken).mockResolvedValue({ id: 42, username: 'Alice Auth', role: 'user', profiles: ['default'] } as any)
     initAllHermesTables()
     const httpServer = createServer()
     const server = new GroupChatServer(httpServer)
     server.getStorage().saveRoom('room-1', 'Room 1', 'ROOM1')
+    server.getStorage().addRoomAgent('room-1', 'agent-1', 'default', 'Agent', '', 1)
     const { port } = await listen(httpServer)
     const socket = clientIo(`http://127.0.0.1:${port}/group-chat`, {
       transports: ['websocket'],
@@ -232,7 +233,7 @@ describe('group chat actor identity', () => {
       const joined = await emitAck<any>(socket, 'join', { roomId: 'room-1', name: 'Eve' })
 
       expect(joined.members[0].name).toBe('Alice Auth')
-      expect(joined.actors.find((actor: any) => actor.kind === 'human')).toMatchObject({ displayName: 'Alice Auth' })
+      expect(server.getStorage().getActors('room-1').find((actor: any) => actor.kind === 'human')).toMatchObject({ displayName: 'Alice Auth' })
     } finally {
       socket.disconnect()
       server.getIO().close()
@@ -258,9 +259,6 @@ describe('group chat actor identity', () => {
       const joined = await emitAck<any>(socket, 'join', { roomId: 'room-1' })
 
       expect(joined).toMatchObject({ roomId: 'room-1' })
-      expect(joined.actors).toEqual(expect.arrayContaining([
-        expect.objectContaining({ id: 'gc:room-1:human:user-1', kind: 'human', displayName: 'Alice' }),
-      ]))
       expect(server.getStorage().getActors('room-1')).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: 'gc:room-1:human:user-1', kind: 'human', displayName: 'Alice' }),
       ]))

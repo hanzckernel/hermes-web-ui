@@ -471,11 +471,20 @@
                   "account": {
                     "type": "string"
                   },
+                  "device_code": {
+                    "type": "string"
+                  },
                   "id": {
                     "type": "string"
                   },
                   "password": {
                     "type": "string"
+                  },
+                  "relayMode": {
+                    "type": "string"
+                  },
+                  "remote": {
+                    "type": "boolean"
                   },
                   "token": {
                     "type": "string"

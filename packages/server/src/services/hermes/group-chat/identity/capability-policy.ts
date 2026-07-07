@@ -4,18 +4,10 @@ import type { GroupActor } from './types'
 export type GroupCapability =
     | 'message.read'
     | 'message.write'
-    | 'channel.join'
-    | 'channel.create.private'
-    | 'channel.create.task'
-    | 'channel.moderate.own'
-    | 'agent.invoke'
-    | 'agent.handoff'
     | 'approval.request'
     | 'approval.respond'
     | 'private_fact.create'
     | 'private_fact.revoke'
-    | 'artifact.create'
-    | 'artifact.publish'
 
 const HUMAN_DEFAULTS = new Set<GroupCapability>([
     'message.read',
@@ -33,11 +25,17 @@ const AGENT_DEFAULTS = new Set<GroupCapability>([
     'private_fact.revoke',
 ])
 
+const SUPPORTED_CAPABILITIES = new Set<string>([
+    ...HUMAN_DEFAULTS,
+    ...AGENT_DEFAULTS,
+])
+
 export class CapabilityPolicy {
     private db() { return getDb() }
 
     can(actor: GroupActor, capability: GroupCapability | string): boolean {
         if (actor.status !== 'active') return false
+        if (!SUPPORTED_CAPABILITIES.has(capability)) return false
         const explicit = this.explicitCapability(actor.id, capability)
         if (explicit != null) return explicit
         if (actor.kind === 'human') return HUMAN_DEFAULTS.has(capability as GroupCapability)

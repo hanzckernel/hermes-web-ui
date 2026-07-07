@@ -90,7 +90,7 @@ describe('group chat channel visibility schema and store', () => {
     expect(otherRoom).toMatchObject({ roomId: 'room-2', id: 'public' })
   })
 
-  it('creates private task and agent channels with members and metadata', () => {
+  it('creates private task and agent channels with read/write members', () => {
     initAllHermesTables()
     const store = new ChannelStore()
     store.ensureDefaultPublicChannel('room-1')
@@ -102,16 +102,15 @@ describe('group chat channel visibility schema and store', () => {
       name: 'Task 1',
       createdBy: 'gc:room-1:human:alice',
       members: [
-        { actorId: 'gc:room-1:human:alice', canRead: true, canWrite: true, canInvite: true },
+        { actorId: 'gc:room-1:human:alice', canRead: true, canWrite: true },
         { actorId: 'gc:room-1:agent:worker', canRead: true, canWrite: true },
       ],
-      metadata: { ticket: 123 },
     })
 
-    expect(channel).toMatchObject({ id: 'task-1', roomId: 'room-1', kind: 'task', defaultVisibility: 'private', metadata: { ticket: 123 } })
+    expect(channel).toMatchObject({ id: 'task-1', roomId: 'room-1', kind: 'task', defaultVisibility: 'private' })
     expect(store.listChannelMembers('room-1', 'task-1')).toEqual([
-      expect.objectContaining({ actorId: 'gc:room-1:agent:worker', canRead: true, canWrite: true, canInvite: false }),
-      expect.objectContaining({ actorId: 'gc:room-1:human:alice', canRead: true, canWrite: true, canInvite: true }),
+      expect.objectContaining({ actorId: 'gc:room-1:agent:worker', canRead: true, canWrite: true }),
+      expect.objectContaining({ actorId: 'gc:room-1:human:alice', canRead: true, canWrite: true }),
     ])
   })
 
