@@ -75,6 +75,7 @@ describe('Group Chat member/agent identity sync', () => {
     const chatServer = {
       getStorage: () => ({
         getRoomAgents: vi.fn(() => []),
+        getRoomMembers: vi.fn(() => []),
         addRoomAgent,
       }),
       agentClients: {
@@ -107,6 +108,7 @@ describe('Group Chat member/agent identity sync', () => {
     const chatServer = {
       getStorage: () => ({
         getRoomAgents: vi.fn(() => []),
+        getRoomMembers: vi.fn(() => []),
         addRoomAgent,
       }),
       agentClients: {
@@ -143,6 +145,7 @@ describe('Group Chat member/agent identity sync', () => {
     const chatServer = {
       getStorage: () => ({
         getRoomAgents: vi.fn(() => []),
+        getRoomMembers: vi.fn(() => []),
         addRoomAgent,
       }),
       agentClients: {
