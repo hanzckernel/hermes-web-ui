@@ -17,6 +17,7 @@ describe('group chat REST route baseline', () => {
   let baseUrl: string
   let storage: any
   let agentClients: any
+  let contextEngine: any
   let clearRoomRuntimeState: ReturnType<typeof vi.fn>
 
   beforeEach(async () => {
@@ -26,15 +27,29 @@ describe('group chat REST route baseline', () => {
       messages: new Map<string, any[]>(),
       members: new Map<string, any[]>(),
       actors: new Map<string, any[]>(),
+      channels: new Map<string, any[]>(),
       saveRoom: vi.fn((id, name, inviteCode, config) => storage.rooms.set(id, { id, name, inviteCode, totalTokens: 0, sessionSeed: '0', ...config })),
       getRoom: vi.fn((id) => storage.rooms.get(id)),
       getAllRooms: vi.fn(() => [...storage.rooms.values()]),
       getRoomsForProfiles: vi.fn(() => [...storage.rooms.values()]),
       getRecentMessagesForUI: vi.fn((roomId, limit = 150, offset = 0) => (storage.messages.get(roomId) || []).slice(offset, offset + limit)),
+      getVisibleMessagesForUI: vi.fn((roomId, _actorId, limit = 150, offset = 0) => (storage.messages.get(roomId) || []).slice(offset, offset + limit)),
       getMessageCount: vi.fn((roomId) => (storage.messages.get(roomId) || []).length),
+      getVisibleMessageCount: vi.fn((roomId) => (storage.messages.get(roomId) || []).length),
       getRoomAgents: vi.fn((roomId) => storage.agents.get(roomId) || []),
       getRoomMembers: vi.fn((roomId) => storage.members.get(roomId) || []),
       getActors: vi.fn((roomId) => storage.actors.get(roomId) || []),
+      getChannels: vi.fn((roomId) => storage.channels.get(roomId) || [{ id: 'public', roomId, kind: 'public', name: 'Public' }]),
+      ensureDefaultPublicChannel: vi.fn((roomId) => {
+        const channel = { id: 'public', roomId, kind: 'public', name: 'Public' }
+        storage.channels.set(roomId, [channel])
+        return channel
+      }),
+      createChannel: vi.fn((input) => {
+        const channel = { id: input.id || `${input.kind}-1`, roomId: input.roomId, kind: input.kind, name: input.name, createdBy: input.createdBy }
+        storage.channels.set(input.roomId, [...(storage.channels.get(input.roomId) || []), channel])
+        return channel
+      }),
       getRoomByInviteCode: vi.fn((code) => [...storage.rooms.values()].find((r: any) => r.inviteCode === code)),
       addRoomAgent: vi.fn((roomId, agentId, profile, name, description, invited) => {
         const row = { id: `row-${agentId}`, roomId, agentId, profile, name, description, invited }
@@ -56,8 +71,9 @@ describe('group chat REST route baseline', () => {
       removeAgentFromRoom: vi.fn(),
       disconnectRoom: vi.fn(),
     }
+    contextEngine = { forceCompress: vi.fn(async () => 'private summary') }
     clearRoomRuntimeState = vi.fn()
-    setGroupChatServer({ getStorage: () => storage, agentClients, clearRoomRuntimeState } as any)
+    setGroupChatServer({ getStorage: () => storage, getContextEngine: () => contextEngine, agentClients, clearRoomRuntimeState } as any)
     const app = new Koa()
     app.use(bodyParser())
     app.use(groupChatRoutes.routes())
@@ -140,6 +156,44 @@ describe('group chat REST route baseline', () => {
     })
   })
 
+  it('returns readable channels for a room', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+    storage.channels.set('room-1', [{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`)
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.channels).toEqual([{ id: 'public', roomId: 'room-1', kind: 'public', name: 'Public' }])
+  })
+
+  it('rejects request-supplied actor ids when auth is disabled', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actorId: 'gc:room-1:human:alice', id: 'task-1', kind: 'task', name: 'Task 1' }),
+    })
+    const body = await res.json()
+
+    expect(res.status).toBe(403)
+    expect(storage.createChannel).not.toHaveBeenCalled()
+    expect(body).toEqual({ error: 'authenticated actor is required to create a channel' })
+  })
+
+
+  it('forces compression without returning generated summary text', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/compress`, { method: 'POST' })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(contextEngine.forceCompress).toHaveBeenCalledWith('room-1', undefined, null)
+    expect(body).toEqual({ success: true })
+  })
+
   it('rejects duplicate room agent profiles', async () => {
     storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
     storage.agents.set('room-1', [{ id: 'row-agent', agentId: 'agent-1', profile: 'default', name: 'Agent' }])
@@ -152,6 +206,56 @@ describe('group chat REST route baseline', () => {
 
     expect(res.status).toBe(409)
     await expect(res.json()).resolves.toEqual({ error: 'Agent already in room' })
+  })
+
+  it('rejects duplicate room agent display names', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+    storage.agents.set('room-1', [{ id: 'row-agent', agentId: 'agent-1', profile: 'default', name: 'Worker' }])
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: 'other-profile', name: ' worker ' }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'Agent display name already in room' })
+    expect(agentClients.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('rejects adding an agent with an existing human member display name', async () => {
+    storage.rooms.set('room-1', { id: 'room-1', name: 'Room', inviteCode: 'ROOM1' })
+    storage.members.set('room-1', [{ userId: 'human-worker', name: 'Worker' }])
+
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: 'default', name: ' worker ' }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'Member identity already in room' })
+    expect(agentClients.createAgent).not.toHaveBeenCalled()
+  })
+
+  it('rejects duplicate agent display names when creating a room', async () => {
+    const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Room',
+        inviteCode: 'ROOM1',
+        agents: [
+          { profile: 'default', name: 'Worker' },
+          { profile: 'other-profile', name: ' worker ' },
+        ],
+      }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({ error: 'Agent display name already in room' })
+    expect(storage.saveRoom).not.toHaveBeenCalled()
+    expect(agentClients.createAgent).not.toHaveBeenCalled()
   })
 
   it('removes an agent by row id and disconnects runtime by persisted agent id', async () => {

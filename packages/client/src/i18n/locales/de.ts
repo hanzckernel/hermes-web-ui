@@ -199,7 +199,7 @@ export default {
     performance: 'Leistung',
     journey: 'Lernverlauf',
     skillsUsage: 'Skill-Nutzung',
-    channels: 'Kanale',
+    channels: 'Kanäle',
     terminal: 'Konsole',
     singleChat: 'Chat',
     globalAgent: 'Global Agent',

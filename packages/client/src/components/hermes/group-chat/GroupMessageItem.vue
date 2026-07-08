@@ -42,7 +42,7 @@ const speech = useGlobalSpeech()
 const voiceSettings = useVoiceSettings()
 const previewUrl = ref<string | null>(null)
 const isAgent = computed(() => {
-    return props.agents.some(a => a.agentId === props.message.senderId || a.name === props.message.senderName)
+    return props.agents.some(a => a.agentId === props.message.senderId)
 })
 
 const isAgentError = computed(() => {
@@ -56,7 +56,7 @@ const isSelf = computed(() => {
 })
 
 const agentInfo = computed(() => {
-    return props.agents.find(a => a.agentId === props.message.senderId || a.name === props.message.senderName)
+    return props.agents.find(a => a.agentId === props.message.senderId)
 })
 
 const timeStr = computed(() => formatChatTimestamp(props.message.timestamp))
@@ -96,6 +96,15 @@ const currentAvatar = computed(() => {
 const avatarDisplayName = computed(() => {
     if (isAgent.value) return avatarProfileName.value
     return props.message.senderName || props.message.senderId || 'user'
+})
+
+const channelBadgeText = computed(() => {
+    const channelId = (props.message.channelId || 'public').trim() || 'public'
+    const visibility = (props.message.visibility || 'public').trim() || 'public'
+    if (channelId === 'public' && visibility === 'public') return ''
+    const parts = [`#${channelId}`]
+    if (visibility !== 'public') parts.push(visibility)
+    return parts.join(' · ')
 })
 
 const mentionNames = computed(() => ['all', ...props.agents.map(a => a.name).filter(Boolean)])
@@ -488,6 +497,7 @@ onBeforeUnmount(() => {
         <div class="msg-body">
             <div class="msg-header">
                 <span class="sender-name">{{ message.senderName }}</span>
+                <span v-if="channelBadgeText" class="channel-badge">{{ channelBadgeText }}</span>
                 <span v-if="isAgent && agentInfo?.description" class="agent-desc">{{ agentInfo.description }}</span>
             </div>
             <div class="tool-line" :class="{ expandable: hasToolDetails }" @click="hasToolDetails && (toolExpanded = !toolExpanded)">
@@ -534,6 +544,7 @@ onBeforeUnmount(() => {
         <div class="msg-body">
             <div class="msg-header">
                 <span class="sender-name">{{ message.senderName }}</span>
+                <span v-if="channelBadgeText" class="channel-badge">{{ channelBadgeText }}</span>
                 <span v-if="isAgent && agentInfo?.description" class="agent-desc">{{ agentInfo.description }}</span>
             </div>
             <div
@@ -747,6 +758,23 @@ onBeforeUnmount(() => {
     border-radius: 3px;
     line-height: 14px;
     margin-left: 4px;
+}
+
+.channel-badge {
+    display: inline-flex;
+    align-items: center;
+    max-width: 180px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(var(--accent-primary-rgb), 0.18);
+    background: rgba(var(--accent-primary-rgb), 0.07);
+    color: $text-secondary;
+    font-size: 10px;
+    line-height: 15px;
+    font-family: $font-code;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tool-details {

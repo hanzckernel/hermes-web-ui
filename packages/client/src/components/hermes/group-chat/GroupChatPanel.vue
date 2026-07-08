@@ -57,6 +57,14 @@ function agentAvatarName(agent: RoomAgent): string {
 
 const hasRoom = computed(() => !!store.currentRoomId)
 
+function channelKindLabel(kind?: string): string {
+    if (kind === 'public') return t('groupChat.channelKindPublic')
+    if (kind === 'private') return t('groupChat.channelKindPrivate')
+    if (kind === 'task') return t('groupChat.channelKindTask')
+    if (kind === 'agent') return t('groupChat.channelKindAgent')
+    return kind || t('groupChat.channelKindPrivate')
+}
+
 /** Resolve the current user's custom avatar — first from the member list, then from the cached current-user value. */
 const userMemberAvatar = computed(() => {
     // Prefer the live member list (populated when a room is active)
@@ -567,6 +575,21 @@ async function handleApproval(choice: 'once' | 'session' | 'always' | 'deny') {
             </div>
 
             <div v-if="hasRoom" class="group-chat-surface">
+                <div v-if="store.channels.length > 1" class="channel-tabs" role="tablist" :aria-label="t('groupChat.channels')">
+                    <button
+                        v-for="channel in store.channels"
+                        :key="channel.id"
+                        type="button"
+                        class="channel-tab"
+                        :class="{ active: store.activeChannelId === channel.id }"
+                        role="tab"
+                        :aria-selected="store.activeChannelId === channel.id"
+                        @click="store.selectChannel(channel.id)"
+                    >
+                        <span class="channel-tab-name">{{ channel.name || channel.id }}</span>
+                        <span class="channel-tab-kind">{{ channelKindLabel(channel.kind) }}</span>
+                    </button>
+                </div>
                 <div class="group-message-shell">
                     <GroupMessageList />
                     <Transition name="approval-float">
@@ -793,6 +816,55 @@ export default defineComponent({ components: { CreateRoomForm } })
     flex: 1;
     min-height: 0;
     display: flex;
+}
+
+.channel-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    padding: 8px 14px 0;
+    overflow-x: auto;
+    border-top: 1px solid rgba(var(--accent-primary-rgb), 0.06);
+}
+
+.channel-tab {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    max-width: 180px;
+    border: 1px solid $border-color;
+    border-radius: 999px;
+    background: transparent;
+    color: $text-secondary;
+    padding: 0 10px;
+    cursor: pointer;
+    transition: background-color $transition-fast, color $transition-fast, border-color $transition-fast;
+
+    &:hover,
+    &.active {
+        color: $text-primary;
+        background: rgba(var(--accent-primary-rgb), 0.08);
+        border-color: rgba(var(--accent-primary-rgb), 0.22);
+    }
+}
+
+.channel-tab-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.channel-tab-kind {
+    flex: 0 0 auto;
+    font-size: 10px;
+    color: $text-muted;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 @media (max-width: $breakpoint-mobile) {

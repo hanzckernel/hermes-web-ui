@@ -16,6 +16,7 @@ import {
     resolveMentionTargets,
     stripMentionRoutingTokens,
 } from './mention-routing'
+import { agentActorId } from './identity/actor-ids'
 
 export const GROUP_CHAT_AGENT_SOCKET_SECRET = randomBytes(32).toString('hex')
 
@@ -36,6 +37,13 @@ interface MessageData {
     senderName: string
     content: string
     timestamp: number
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
 }
 
 type MentionMessage = {
@@ -46,6 +54,13 @@ type MentionMessage = {
     timestamp: number
     role?: string
     input?: string | ContentBlock[]
+    channelId?: string | null
+    threadId?: string | null
+    visibility?: string | null
+    audienceJson?: string | null
+    scope?: string | null
+    originEventId?: string | null
+    metadataJson?: string | null
     mentionDepth?: number
 }
 
@@ -58,6 +73,13 @@ export function mentionMessageToStoredContextMessage(roomId: string, msg: Mentio
         content: msg.content,
         timestamp: msg.timestamp,
         role: msg.role === 'assistant' ? 'assistant' : 'user',
+        channelId: msg.channelId ?? null,
+        threadId: msg.threadId ?? null,
+        visibility: msg.visibility ?? null,
+        audienceJson: msg.audienceJson ?? null,
+        scope: msg.scope ?? null,
+        originEventId: msg.originEventId ?? null,
+        metadataJson: msg.metadataJson ?? null,
     }
 }
 
@@ -251,14 +273,14 @@ class AgentClient {
         })
     }
 
-    startTyping(roomId: string): void {
+    startTyping(roomId: string, extra: Record<string, unknown> = {}): void {
         this.ensureConnected()
-        this.socket!.emit('typing', { roomId })
+        this.socket!.emit('typing', { roomId, ...extra })
     }
 
-    stopTyping(roomId: string): void {
+    stopTyping(roomId: string, extra: Record<string, unknown> = {}): void {
         this.ensureConnected()
-        this.socket!.emit('stop_typing', { roomId })
+        this.socket!.emit('stop_typing', { roomId, ...extra })
     }
 
     emitContextStatus(roomId: string, status: 'compressing' | 'replying' | 'ready', extra?: Record<string, unknown>): void {
@@ -276,15 +298,15 @@ class AgentClient {
         this.socket!.emit('approval.resolved', { roomId, agentName: this.name, ...payload })
     }
 
-    async interrupt(roomId: string): Promise<void> {
+    async interrupt(roomId: string, extra: Record<string, unknown> = {}): Promise<void> {
         const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
         const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
         await new AgentBridgeClient().interrupt(sessionId, 'Interrupted by group chat user', this.profile)
-        this.stopTyping(roomId)
-        this.emitContextStatus(roomId, 'ready')
+        this.stopTyping(roomId, extra)
+        this.emitContextStatus(roomId, 'ready', extra)
     }
 
-    emitMessageStreamStart(roomId: string, messageId: string): void {
+    emitMessageStreamStart(roomId: string, messageId: string, extra: Record<string, unknown> = {}): void {
         this.ensureConnected()
         this.socket!.emit('message_stream_start', {
             roomId,
@@ -292,6 +314,7 @@ class AgentClient {
             senderId: this.socket?.id || this.agentId,
             senderName: this.name,
             timestamp: Date.now(),
+            ...extra,
         })
     }
 
@@ -436,9 +459,11 @@ class AgentClient {
         let totalContent = ''
         let reasoningContent = ''
         let streamStarted = false
+        const visibilityExtra = mentionVisibilityExtra(msg)
+        const actorId = agentActorId(roomId, this.agentId)
         try {
             // Notify room that agent is typing
-            this.startTyping(roomId)
+            this.startTyping(roomId, visibilityExtra)
 
             // Build compressed context if context engine is available
             let conversationHistory: Array<{ role: string; content: string }> = []
@@ -470,6 +495,7 @@ class AgentClient {
                         agentName: this.name,
                         agentDescription: this.description,
                         agentSocketId: this.socket?.id || '',
+                        actorId,
                         roomName: roomId,
                         memberNames,
                         members,
@@ -480,6 +506,7 @@ class AgentClient {
                         profile: this.profile,
                         onProgress: (event: { status: 'compressing'; messageCount: number; tokenCount: number }) => {
                             onStatus?.('compressing', {
+                                ...visibilityExtra,
                                 messageCount: event.messageCount,
                                 totalTokens: event.tokenCount,
                             })
@@ -499,14 +526,16 @@ class AgentClient {
                     conversationHistory = ctx.conversationHistory
                     instructions = ctx.instructions
                     if (typeof ctx.meta.contextTokenEstimate === 'number' && Number.isFinite(ctx.meta.contextTokenEstimate)) {
-                        this.storage.updateRoomTotalTokens?.(roomId, ctx.meta.contextTokenEstimate)
-                        onStatus?.('replying', { totalTokens: ctx.meta.contextTokenEstimate })
+                        if (isPublicVisibilityExtra(visibilityExtra)) {
+                            this.storage.updateRoomTotalTokens?.(roomId, ctx.meta.contextTokenEstimate)
+                        }
+                        onStatus?.('replying', { ...visibilityExtra, totalTokens: ctx.meta.contextTokenEstimate })
                     }
                     logger.debug(`[AgentClients] ${this.name}: context built — historyLen=${conversationHistory.length}, meta=%j`, ctx.meta)
-                    onStatus?.('replying')
+                    onStatus?.('replying', visibilityExtra)
                 } catch (err: any) {
                     logger.warn(`[AgentClients] ${this.name}: context engine failed: ${err.message}`)
-                    onStatus?.('replying')
+                    onStatus?.('replying', visibilityExtra)
                     // Degrade: continue without context
                 }
             }
@@ -545,14 +574,15 @@ class AgentClient {
                 },
             )
 
-            this.emitMessageStreamStart(roomId, streamMessageId)
+            this.emitMessageStreamStart(roomId, streamMessageId, visibilityExtra)
             streamStarted = true
             for await (const chunk of bridge.streamOutput(started.run_id, { timeoutMs: 120000 })) {
                 lastChunk = chunk
-                reasoningContent += await this.recordBridgeEvents(roomId, sessionId, instructions, modelContext, chunk, () => streamMessageId, async () => {
+                reasoningContent += await this.recordBridgeEvents(roomId, sessionId, instructions, modelContext, chunk, visibilityExtra, () => streamMessageId, async () => {
                     const toolBaseId = streamMessageId
                     if (currentContent.trim()) {
                         await this.sendMessage(roomId, currentContent, streamMessageId, {
+                            ...visibilityExtra,
                             role: 'assistant',
                             mentionDepth: nextMentionDepth(msg),
                             reasoning: reasoningContent || null,
@@ -564,7 +594,7 @@ class AgentClient {
                     this.emitMessageStreamEnd(roomId, toolBaseId)
                     partIndex += 1
                     streamMessageId = groupMessagePartId(runMessageId, partIndex)
-                    this.emitMessageStreamStart(roomId, streamMessageId)
+                    this.emitMessageStreamStart(roomId, streamMessageId, visibilityExtra)
                     streamStarted = true
                     return toolBaseId
                 })
@@ -579,8 +609,8 @@ class AgentClient {
                 logger.error(`[AgentClients] ${this.name}: bridge response failed: ${lastChunk.error || 'unknown error'}`)
                 await this.sendAgentErrorMessage(roomId, streamMessageId, lastChunk.error || 'Run failed', msg, reasoningContent)
                 this.emitMessageStreamEnd(roomId, streamMessageId)
-                this.stopTyping(roomId)
-                onStatus?.('ready')
+                this.stopTyping(roomId, visibilityExtra)
+                onStatus?.('ready', visibilityExtra)
                 return
             }
 
@@ -591,22 +621,23 @@ class AgentClient {
             recordBridgeUsage(roomId, this.profile, lastChunk?.result)
             logger.debug(`[AgentClients] ${this.name}: bridge response completed, content length=${totalContent.length}`)
             if (currentContent) {
-                this.stopTyping(roomId)
+                this.stopTyping(roomId, visibilityExtra)
                 await this.sendMessage(roomId, currentContent, streamMessageId, {
+                    ...visibilityExtra,
                     role: 'assistant',
                     mentionDepth: nextMentionDepth(msg),
                     reasoning: reasoningContent || null,
                     reasoning_content: reasoningContent || null,
                 })
                 this.emitMessageStreamEnd(roomId, streamMessageId)
-                await this.refreshRoomFullContextEstimate(roomId, sessionId, bridge, instructions, modelContext)
-                onStatus?.('ready')
+                await this.refreshRoomFullContextEstimate(roomId, sessionId, bridge, instructions, modelContext, visibilityExtra)
+                onStatus?.('ready', visibilityExtra)
                 return
             }
             logger.warn(`[AgentClients] ${this.name}: bridge response completed without content`)
             this.emitMessageStreamEnd(roomId, streamMessageId)
-            this.stopTyping(roomId)
-            onStatus?.('ready')
+            this.stopTyping(roomId, visibilityExtra)
+            onStatus?.('ready', visibilityExtra)
         } catch (err: any) {
             logger.error(`[AgentClients] ${this.name}: error handling message: ${err.message}`)
             try {
@@ -615,8 +646,8 @@ class AgentClient {
             } catch (sendErr: any) {
                 logger.warn(`[AgentClients] ${this.name}: failed to send error message: ${sendErr.message}`)
             }
-            this.stopTyping(roomId)
-            onStatus?.('ready')
+            this.stopTyping(roomId, visibilityExtra)
+            onStatus?.('ready', visibilityExtra)
         }
     }
 
@@ -626,6 +657,7 @@ class AgentClient {
         bridge: AgentBridgeClient,
         instructions?: string,
         modelContext: GroupModelContext = { model: '', provider: '' },
+        visibilityExtra: Record<string, unknown> = {},
     ): Promise<void> {
         if (!this.storage?.getMessagesForContext) return
         try {
@@ -641,14 +673,21 @@ class AgentClient {
             )
             if (cachedTokens == null || cachedTokens <= 0) return
             const rounded = Math.floor(cachedTokens)
-            this.storage.updateRoomTotalTokens?.(roomId, rounded)
-            this.emitContextStatus(roomId, 'replying', { totalTokens: rounded })
+            if (isPublicVisibilityExtra(visibilityExtra)) {
+                this.storage.updateRoomTotalTokens?.(roomId, rounded)
+            }
+            this.emitContextStatus(roomId, 'replying', { ...visibilityExtra, totalTokens: rounded })
         } catch (err: any) {
             logger.warn(`[GroupChat] failed to refresh final context estimate room=${roomId} agent=${this.name}: ${err.message}`)
         }
     }
 
     private buildRoomEstimateHistory(roomId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+        const actorId = agentActorId(roomId, this.agentId)
+        if (this.storage?.getVisibleMessagesForContext) {
+            const messages: StoredMessage[] = this.storage.getVisibleMessagesForContext(roomId, actorId) || []
+            return messages.map((message: any) => this.mapRoomMessageForEstimate(message))
+        }
         const messages: StoredMessage[] = this.storage?.getMessagesForContext?.(roomId) || []
         const snapshot = this.storage?.getContextSnapshot?.(roomId)
         if (snapshot?.summary) {
@@ -672,6 +711,7 @@ class AgentClient {
         const detail = error instanceof Error ? error.message : String(error || 'Run failed')
         const content = detail.startsWith('Error:') ? detail : `Error: ${detail}`
         await this.sendMessage(roomId, content, messageId, {
+            ...mentionVisibilityExtra(sourceMsg),
             role: 'assistant',
             mentionDepth: nextMentionDepth(sourceMsg),
             finish_reason: 'error',
@@ -686,6 +726,7 @@ class AgentClient {
         instructions: string | undefined,
         modelContext: GroupModelContext,
         chunk: AgentBridgeOutput,
+        visibilityExtra: Record<string, unknown>,
         getCurrentMessageId: () => string,
         beforeToolStarted: () => Promise<string>,
     ): Promise<string> {
@@ -696,11 +737,12 @@ class AgentClient {
                 this.cacheBridgeContext(sessionId, ev as Record<string, unknown>, instructions, modelContext)
             } else if (eventType === 'tool.started') {
                 const toolBaseId = await beforeToolStarted()
-                this.recordToolStarted(roomId, ev as Record<string, unknown>, toolBaseId)
+                this.recordToolStarted(roomId, ev as Record<string, unknown>, toolBaseId, visibilityExtra)
             } else if (eventType === 'tool.completed') {
-                this.recordToolCompleted(roomId, ev as Record<string, unknown>)
+                this.recordToolCompleted(roomId, ev as Record<string, unknown>, visibilityExtra)
             } else if (eventType === 'approval.requested') {
                 this.emitApprovalRequested(roomId, {
+                    ...visibilityExtra,
                     event: 'approval.requested',
                     approval_id: (ev as any).approval_id,
                     command: (ev as any).command,
@@ -710,6 +752,7 @@ class AgentClient {
                 })
             } else if (eventType === 'approval.resolved') {
                 this.emitApprovalResolved(roomId, {
+                    ...visibilityExtra,
                     event: 'approval.resolved',
                     approval_id: (ev as any).approval_id,
                     choice: (ev as any).choice,
@@ -725,7 +768,7 @@ class AgentClient {
         return reasoning
     }
 
-    private recordToolStarted(roomId: string, ev: Record<string, unknown>, runMessageId: string): void {
+    private recordToolStarted(roomId: string, ev: Record<string, unknown>, runMessageId: string, visibilityExtra: Record<string, unknown>): void {
         const toolName = String(ev.tool_name || ev.tool || ev.name || '')
         const toolCallId = groupToolCallId(ev.tool_call_id, toolName, this.nextToolIndex(roomId, toolName))
         this.trackPendingToolCall(roomId, toolName, toolCallId)
@@ -753,6 +796,7 @@ class AgentClient {
             finish_reason: 'tool_calls',
         }
         this.sendMessage(roomId, '', msg.id, {
+            ...visibilityExtra,
             role: 'assistant',
             tool_calls: msg.tool_calls,
             finish_reason: 'tool_calls',
@@ -760,7 +804,7 @@ class AgentClient {
         }).catch((err: any) => logger.warn(`[AgentClients] failed to record tool call: ${err.message}`))
     }
 
-    private recordToolCompleted(roomId: string, ev: Record<string, unknown>): void {
+    private recordToolCompleted(roomId: string, ev: Record<string, unknown>, visibilityExtra: Record<string, unknown>): void {
         const toolName = String(ev.tool_name || ev.tool || ev.name || '')
         const rawId = String(ev.tool_call_id || '').trim()
         const toolCallId = rawId || this.takePendingToolCall(roomId, toolName) || groupToolCallId(null, toolName, this.nextToolIndex(roomId, toolName))
@@ -780,6 +824,7 @@ class AgentClient {
             tool_name: toolName || null,
         }
         this.sendMessage(roomId, output, msg.id, {
+            ...visibilityExtra,
             role: 'tool',
             tool_call_id: toolCallId,
             tool_name: toolName || null,
@@ -1028,11 +1073,11 @@ export class AgentClients {
         return Promise.all(agents.map((agent) => agent.sendMessage(roomId, content)))
     }
 
-    async interruptAgent(roomId: string, agentName: string): Promise<void> {
+    async interruptAgent(roomId: string, agentName: string, extra: Record<string, unknown> = {}): Promise<void> {
         const agent = this.getAgents(roomId).find(a => a.name === agentName)
         if (!agent) throw new Error(`Agent "${agentName}" not found in room "${roomId}"`)
         this._mentionQueue.delete(`${roomId}:${agent.name}`)
-        await agent.interrupt(roomId)
+        await agent.interrupt(roomId, extra)
     }
 
     /**
@@ -1104,6 +1149,11 @@ export class AgentClients {
     async processMentions(roomId: string, msg: MentionMessage): Promise<void> {
         const agents = this.getAgents(roomId)
         const mentioned = resolveMentionTargets(agents, msg.content, msg.senderId)
+            .filter(agent => !this._storage?.canReadMessage || this._storage.canReadMessage(agentActorId(roomId, agent.agentId), {
+                ...msg,
+                id: msg.messageId || '',
+                roomId,
+            }))
         if (mentioned.length === 0) return
 
         logger.debug(`[AgentClients] ${mentioned.map(a => a.name).join(', ')} mentioned by ${msg.senderName}`)
@@ -1164,6 +1214,24 @@ export class AgentClients {
         const last = queue[queue.length - 1]
         await this._processAgentMention(roomId, last.agent, last.msg)
     }
+}
+
+
+
+function isPublicVisibilityExtra(extra: Record<string, unknown>): boolean {
+    const channelId = String(extra.channelId || 'public')
+    const visibility = String(extra.visibility || 'public')
+    const audienceJson = typeof extra.audienceJson === 'string' ? extra.audienceJson.trim() : '[]'
+    return channelId === 'public' && visibility === 'public' && (!audienceJson || audienceJson === '[]')
+}
+
+function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {
+    const extra: Record<string, unknown> = {}
+    for (const key of ['channelId', 'threadId', 'visibility', 'audienceJson', 'scope', 'originEventId', 'metadataJson'] as const) {
+        const value = msg[key]
+        if (value !== undefined && value !== null) extra[key] = value
+    }
+    return extra
 }
 
 function nextMentionDepth(msg: MentionMessage): number {

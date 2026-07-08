@@ -29,6 +29,30 @@ function generateInviteCode(): string {
 
 type AgentInput = { profile: string; name?: string; description?: string; invited?: boolean | number }
 
+type ChannelInput = {
+    id?: string
+    kind?: string
+    name?: string
+    members?: Array<string | { actorId?: string; canRead?: boolean; canWrite?: boolean; canInvite?: boolean; canModerate?: boolean }>
+    metadata?: Record<string, unknown>
+    actorId?: string
+}
+
+const CHANNEL_KINDS = new Set(['public', 'private', 'team', 'agent', 'task', 'approval', 'system', 'audit', 'external'])
+
+async function resolveRequestActor(ctx: any, roomId: string): Promise<string | null> {
+    if (!chatServer) return null
+    const user = ctx.state.user
+    if (!user?.id) return null
+    return chatServer.getStorage().resolveHumanActorId(roomId, `auth:${user.id}`, user.username, user.id)
+}
+
+function normalizeChannelMembers(members: ChannelInput['members']) {
+    return (members || [])
+        .map(member => typeof member === 'string' ? { actorId: member, canRead: true, canWrite: true } : member)
+        .filter((member): member is { actorId: string; canRead?: boolean; canWrite?: boolean; canInvite?: boolean; canModerate?: boolean } => Boolean(member?.actorId))
+}
+
 function sanitizeAgentConnectReason(reason?: string): string {
     return (reason || 'agent runtime connection failed')
         .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer [REDACTED]')
@@ -44,6 +68,21 @@ function agentConnectFailureBody(profile: string, err: any) {
         profile,
         reason: sanitizeAgentConnectReason(err?.message),
     }
+}
+
+function normalizeIdentityName(value?: string | null): string {
+    return String(value || '').trim().toLowerCase()
+}
+
+function hasDuplicateIdentityName(values: string[]): boolean {
+    const seen = new Set<string>()
+    for (const value of values) {
+        const normalized = normalizeIdentityName(value)
+        if (!normalized) continue
+        if (seen.has(normalized)) return true
+        seen.add(normalized)
+    }
+    return false
 }
 
 async function connectAndPersistRoomAgent(server: GroupChatServer, roomId: string, input: AgentInput, agentId = generateId()) {
@@ -93,10 +132,21 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms', async (ctx) => {
         ctx.body = { error: '`all` is reserved for @all mentions' }
         return
     }
+    if (hasDuplicateIdentityName((agents || []).map(a => a.profile))) {
+        ctx.status = 409
+        ctx.body = { error: 'Agent already in room' }
+        return
+    }
+    if (hasDuplicateIdentityName((agents || []).map(a => a.name || a.profile))) {
+        ctx.status = 409
+        ctx.body = { error: 'Agent display name already in room' }
+        return
+    }
 
     const roomId = generateId()
     const storage = chatServer.getStorage()
     storage.saveRoom(roomId, name, inviteCode, compression)
+    storage.ensureDefaultPublicChannel?.(roomId)
 
     const addedAgents = []
     const agentResults = []
@@ -144,6 +194,7 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/clone', async (ctx) =
         maxHistoryTokens: sourceRoom.maxHistoryTokens,
         tailMessageCount: sourceRoom.tailMessageCount,
     })
+    storage.ensureDefaultPublicChannel?.(roomId)
 
     const addedAgents = []
     const agentResults = []
@@ -184,12 +235,76 @@ groupChatRoutes.get('/api/hermes/group-chat/rooms/:roomId', async (ctx) => {
 
     const offset = ctx.query.offset ? Math.max(0, parseInt(ctx.query.offset as string, 10) || 0) : 0
     const limit = ctx.query.limit ? Math.max(1, parseInt(ctx.query.limit as string, 10) || 150) : 150
-    const messages = chatServer.getStorage().getRecentMessagesForUI(ctx.params.roomId, limit, offset)
-    const total = chatServer.getStorage().getMessageCount(ctx.params.roomId)
-    const agents = chatServer.getStorage().getRoomAgents(ctx.params.roomId)
-    const members = chatServer.getStorage().getRoomMembers(ctx.params.roomId)
-    const actors = chatServer.getStorage().getActors(ctx.params.roomId)
-    ctx.body = { room, messages, agents, members, actors, total, offset, limit, hasMore: offset + messages.length < total }
+    const storage = chatServer.getStorage()
+    const actorId = await resolveRequestActor(ctx, ctx.params.roomId)
+    const messages = storage.getVisibleMessagesForUI(ctx.params.roomId, actorId, limit, offset)
+    const total = storage.getVisibleMessageCount(ctx.params.roomId, actorId)
+    const agents = storage.getRoomAgents(ctx.params.roomId)
+    const members = storage.getRoomMembers(ctx.params.roomId)
+    const actors = storage.getActors(ctx.params.roomId)
+    const channels = storage.getChannels(ctx.params.roomId, actorId)
+    ctx.body = { room, messages, agents, members, actors, channels, actorId, total, offset, limit, hasMore: offset + messages.length < total }
+})
+
+// List actor-readable channels in a room
+groupChatRoutes.get('/api/hermes/group-chat/rooms/:roomId/channels', async (ctx) => {
+    if (!chatServer) {
+        ctx.status = 503
+        ctx.body = { error: 'Group chat not initialized' }
+        return
+    }
+    const room = chatServer.getStorage().getRoom(ctx.params.roomId)
+    if (!room) {
+        ctx.status = 404
+        ctx.body = { error: 'Room not found' }
+        return
+    }
+    const actorId = await resolveRequestActor(ctx, ctx.params.roomId)
+    ctx.body = { channels: chatServer.getStorage().getChannels(ctx.params.roomId, actorId), actorId }
+})
+
+// Create a minimal channel in a room
+groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/channels', async (ctx) => {
+    if (!chatServer) {
+        ctx.status = 503
+        ctx.body = { error: 'Group chat not initialized' }
+        return
+    }
+    const room = chatServer.getStorage().getRoom(ctx.params.roomId)
+    if (!room) {
+        ctx.status = 404
+        ctx.body = { error: 'Room not found' }
+        return
+    }
+    const input = ctx.request.body as ChannelInput
+    const kind = String(input.kind || '').trim()
+    const name = String(input.name || '').trim()
+    if (!CHANNEL_KINDS.has(kind) || kind === 'public' || !name) {
+        ctx.status = 400
+        ctx.body = { error: 'valid non-public kind and name are required' }
+        return
+    }
+    const actorId = await resolveRequestActor(ctx, ctx.params.roomId)
+    if (!actorId) {
+        ctx.status = 403
+        ctx.body = { error: 'authenticated actor is required to create a channel' }
+        return
+    }
+    if (!chatServer.getStorage().canCreateChannel(actorId, kind)) {
+        ctx.status = 403
+        ctx.body = { error: 'actor cannot create this channel kind' }
+        return
+    }
+    const channel = chatServer.getStorage().createChannel({
+        roomId: ctx.params.roomId,
+        id: typeof input.id === 'string' ? input.id.trim() || undefined : undefined,
+        kind: kind as any,
+        name,
+        createdBy: actorId,
+        members: normalizeChannelMembers(input.members),
+        metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+    })
+    ctx.body = { channel, channels: chatServer.getStorage().getChannels(ctx.params.roomId, actorId), actorId }
 })
 
 // List rooms
@@ -259,24 +374,37 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/agents', async (ctx) 
         ctx.body = { error: 'profile is required' }
         return
     }
-    if (isReservedMentionName(name || profile)) {
+    const agentName = name || profile
+    if (isReservedMentionName(agentName)) {
         ctx.status = 400
         ctx.body = { error: '`all` is reserved for @all mentions' }
         return
     }
 
     // Prevent duplicate agent in same room
-    const existing = chatServer.getStorage().getRoomAgents(ctx.params.roomId)
+    const storage = chatServer.getStorage()
+    const existing = storage.getRoomAgents(ctx.params.roomId)
     if (existing.find(a => a.profile === profile)) {
         ctx.status = 409
         ctx.body = { error: 'Agent already in room' }
+        return
+    }
+    const normalizedAgentName = normalizeIdentityName(agentName)
+    if (normalizedAgentName && existing.some(a => normalizeIdentityName(a.name) === normalizedAgentName)) {
+        ctx.status = 409
+        ctx.body = { error: 'Agent display name already in room' }
+        return
+    }
+    if (normalizedAgentName && storage.getRoomMembers(ctx.params.roomId).some(m => normalizeIdentityName(m.name) === normalizedAgentName)) {
+        ctx.status = 409
+        ctx.body = { error: 'Member identity already in room' }
         return
     }
 
     try {
         const agent = await connectAndPersistRoomAgent(chatServer, ctx.params.roomId, {
             profile,
-            name: name || profile,
+            name: agentName,
             description: description || '',
             invited,
         })
@@ -408,8 +536,9 @@ groupChatRoutes.post('/api/hermes/group-chat/rooms/:roomId/compress', async (ctx
     }
 
     try {
-        const result = await engine.forceCompress(roomId)
-        ctx.body = { success: true, summary: result }
+        const actorId = await resolveRequestActor(ctx, roomId)
+        await engine.forceCompress(roomId, undefined, actorId)
+        ctx.body = { success: true }
     } catch (err: any) {
         ctx.status = 500
         ctx.body = { error: err.message }

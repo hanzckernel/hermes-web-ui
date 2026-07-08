@@ -76,9 +76,11 @@ export class ContextEngine {
 
     private async _buildContextImpl(input: BuildContextInput): Promise<CompressedContext> {
         const config = { ...this.config, ...input.compression }
-        const messages = this.messageFetcher.getMessagesForContext(input.roomId, {
-            throughMessageId: input.currentMessage.id,
-        })
+        const cutoff = { throughMessageId: input.currentMessage.id }
+        const actorScoped = Boolean(input.actorId && this.messageFetcher.getVisibleMessagesForContext)
+        const messages = actorScoped
+            ? this.messageFetcher.getVisibleMessagesForContext!(input.roomId, input.actorId!, cutoff)
+            : this.messageFetcher.getMessagesForContext(input.roomId, cutoff)
         const total = messages.length
 
         logger.debug({
@@ -105,7 +107,7 @@ export class ContextEngine {
             summaryTokenEstimate: 0,
         }
 
-        const snapshot = this.messageFetcher.getContextSnapshot(input.roomId)
+        const snapshot = actorScoped ? null : this.messageFetcher.getContextSnapshot(input.roomId)
         logger.debug({
             roomId: input.roomId,
             agentName: input.agentName,
@@ -367,7 +369,9 @@ export class ContextEngine {
             const tail = messages.length > tailMessageCount ? messages.slice(-tailMessageCount) : []
             const lastCompressedMsg = toCompress[toCompress.length - 1]
 
-            this.messageFetcher.saveContextSnapshot(input.roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            if (!actorScoped) {
+                this.messageFetcher.saveContextSnapshot(input.roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            }
 
             meta.summaryTokenEstimate = this.countTokens(result.summary)
             const history = this.buildHistory(result.summary, tail, input.agentId, input.agentSocketId, input.agentName)
@@ -416,8 +420,11 @@ export class ContextEngine {
      * Force compress all messages in a room (full compression).
      * Used when user manually triggers compression.
      */
-    async forceCompress(roomId: string, profile?: string): Promise<string> {
-        const allMessages = this.messageFetcher.getMessagesForContext(roomId)
+    async forceCompress(roomId: string, profile?: string, actorId?: string | null): Promise<string> {
+        const visibleFetcher = this.messageFetcher.getVisibleMessagesForContext
+        const allMessages = visibleFetcher
+            ? visibleFetcher.call(this.messageFetcher, roomId, actorId ?? null)
+            : this.messageFetcher.getMessagesForContext(roomId)
         if (allMessages.length === 0) return ''
 
         const config = { ...this.config }
@@ -432,7 +439,9 @@ export class ContextEngine {
             const toCompress = allMessages.length > tailMessageCount ? allMessages.slice(0, -tailMessageCount) : allMessages
             const lastCompressedMsg = toCompress[toCompress.length - 1]
 
-            this.messageFetcher.saveContextSnapshot(roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            if (!actorId) {
+                this.messageFetcher.saveContextSnapshot(roomId, result.summary, lastCompressedMsg.id, lastCompressedMsg.timestamp)
+            }
             logger.debug(`[ContextEngine] forceCompress DONE in ${elapsed}ms`)
             if (result.sessionId) this.sessionCleaner?.(result.sessionId)
             return result.summary

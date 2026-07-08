@@ -41,10 +41,15 @@ describe('group chat streaming baseline', () => {
     expect(await streamStart).toMatchObject({
       id: 'stream-1',
       roomId: 'room-1',
-      senderName: 'Worker',
+      senderName: 'Alice',
       role: 'assistant',
       finish_reason: 'streaming',
     })
+
+    const hijackDelta = once<any>(bob, 'message_stream_delta', 100)
+    bob.emit('message_stream_start', { roomId: 'room-1', id: 'stream-1', senderName: 'Bob' })
+    bob.emit('message_stream_delta', { roomId: 'room-1', id: 'stream-1', delta: 'hijack' })
+    await expect(hijackDelta).rejects.toThrow('timeout waiting for message_stream_delta')
 
     const contentDelta = once<any>(bob, 'message_stream_delta')
     alice.emit('message_stream_delta', { roomId: 'room-1', id: 'stream-1', delta: 'hello' })
@@ -57,6 +62,44 @@ describe('group chat streaming baseline', () => {
     const streamEnd = once<any>(bob, 'message_stream_end')
     alice.emit('message_stream_end', { roomId: 'room-1', id: 'stream-1' })
     expect(await streamEnd).toEqual({ roomId: 'room-1', id: 'stream-1' })
+  })
+
+  it('does not let a stream owner replay deltas into another room', async () => {
+    const { alice, bob } = await joinPair()
+    groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
+    await emitAck(alice, 'join', { roomId: 'room-2' })
+    await emitAck(bob, 'join', { roomId: 'room-2' })
+    await emitAck(alice, 'join', { roomId: 'room-1' })
+    await emitAck(bob, 'join', { roomId: 'room-1' })
+
+    const streamStart = once<any>(bob, 'message_stream_start')
+    alice.emit('message_stream_start', { roomId: 'room-1', id: 'stream-cross-room' })
+    expect(await streamStart).toMatchObject({ roomId: 'room-1', id: 'stream-cross-room' })
+
+    const leakedDelta = once<any>(bob, 'message_stream_delta', 100)
+    alice.emit('message_stream_delta', { roomId: 'room-2', id: 'stream-cross-room', delta: 'leak' })
+    await expect(leakedDelta).rejects.toThrow('timeout waiting for message_stream_delta')
+  })
+
+  it('binds stream ownership by room and stream id', async () => {
+    const { alice, bob } = await joinPair()
+    groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
+    await emitAck(alice, 'join', { roomId: 'room-2' })
+    await emitAck(bob, 'join', { roomId: 'room-2' })
+    await emitAck(alice, 'join', { roomId: 'room-1' })
+    await emitAck(bob, 'join', { roomId: 'room-1' })
+
+    const roomOneStart = once<any>(bob, 'message_stream_start')
+    alice.emit('message_stream_start', { roomId: 'room-1', id: 'shared-stream' })
+    expect(await roomOneStart).toMatchObject({ roomId: 'room-1', id: 'shared-stream' })
+
+    const roomTwoStart = once<any>(bob, 'message_stream_start')
+    alice.emit('message_stream_start', { roomId: 'room-2', id: 'shared-stream' })
+    expect(await roomTwoStart).toMatchObject({ roomId: 'room-2', id: 'shared-stream' })
+
+    const roomTwoDelta = once<any>(bob, 'message_stream_delta')
+    alice.emit('message_stream_delta', { roomId: 'room-2', id: 'shared-stream', delta: 'two' })
+    expect(await roomTwoDelta).toEqual({ roomId: 'room-2', id: 'shared-stream', delta: 'two' })
   })
 
   it('ignores a representative invalid stream id', async () => {

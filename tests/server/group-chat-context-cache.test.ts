@@ -229,6 +229,47 @@ describe('group chat context cursors', () => {
 })
 
 
+
+describe('group chat force compression visibility', () => {
+  it('uses public-visible messages for shared manual compression', async () => {
+    const publicMessage = makeMessage({ id: 'public', content: 'public', timestamp: 1 })
+    const privateMessage = makeMessage({ id: 'private', content: 'private', timestamp: 2 })
+    const fetcher: MessageFetcher = {
+      getMessagesForContext: vi.fn(() => [publicMessage, privateMessage]),
+      getVisibleMessagesForContext: vi.fn(() => [publicMessage]),
+      getContextSnapshot: vi.fn(() => null),
+      saveContextSnapshot: vi.fn(),
+      deleteContextSnapshot: vi.fn(),
+    }
+    const { engine, summarize } = makeEngine(fetcher)
+
+    await engine.forceCompress('room-1')
+
+    expect(fetcher.getVisibleMessagesForContext).toHaveBeenCalledWith('room-1', null)
+    expect(fetcher.getMessagesForContext).not.toHaveBeenCalled()
+    expect(summarize.mock.calls[0][3].map((message: StoredMessage) => message.id)).toEqual(['public'])
+    expect(fetcher.saveContextSnapshot).toHaveBeenCalledWith('room-1', 'Updated summary', 'public', 1)
+  })
+
+  it('does not save actor-scoped force-compression summaries as shared snapshots', async () => {
+    const privateMessage = makeMessage({ id: 'private', content: 'private', timestamp: 2 })
+    const fetcher: MessageFetcher = {
+      getMessagesForContext: vi.fn(() => []),
+      getVisibleMessagesForContext: vi.fn(() => [privateMessage]),
+      getContextSnapshot: vi.fn(() => null),
+      saveContextSnapshot: vi.fn(),
+      deleteContextSnapshot: vi.fn(),
+    }
+    const { engine, summarize } = makeEngine(fetcher)
+
+    await engine.forceCompress('room-1', undefined, 'gc:room-1:human:alice')
+
+    expect(fetcher.getVisibleMessagesForContext).toHaveBeenCalledWith('room-1', 'gc:room-1:human:alice')
+    expect(summarize.mock.calls[0][3].map((message: StoredMessage) => message.id)).toEqual(['private'])
+    expect(fetcher.saveContextSnapshot).not.toHaveBeenCalled()
+  })
+})
+
 describe('group chat fallback trimming', () => {
   it('drops oldest verbatim turns first when full compression falls back to trimming', async () => {
     const messages = Array.from({ length: 6 }, (_value, index) => makeMessage({

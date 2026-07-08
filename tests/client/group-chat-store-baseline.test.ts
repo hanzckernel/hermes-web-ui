@@ -89,6 +89,9 @@ const agent: RoomAgent = {
   invited: 0,
 } as RoomAgent
 
+const publicChannel = { id: 'public', roomId: 'room-1', kind: 'public', name: 'Public', defaultVisibility: 'public' }
+const taskChannel = { id: 'task-1', roomId: 'room-1', kind: 'task', name: 'Task', defaultVisibility: 'private' }
+
 function userMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: 'msg-1',
@@ -192,16 +195,47 @@ describe('group chat store baseline lifecycle', () => {
     expect(store.contextStatuses.get('Agent')).toEqual({ agentName: 'Agent', status: 'replying' })
   })
 
-  it('sends text-only messages through the room socket', async () => {
+  it('sends text-only messages through the selected channel', async () => {
     const store = await loadStore()
+    groupChatApiMock.getRoomDetail.mockResolvedValue({
+      room,
+      messages: [
+        userMessage({ id: 'msg-public', channelId: 'public' }),
+        userMessage({ id: 'msg-task', channelId: 'task-1', visibility: 'private' }),
+      ],
+      agents: [],
+      members: [],
+      channels: [publicChannel, taskChannel],
+      actorId: 'actor-1',
+      total: 2,
+      hasMore: false,
+    })
+    groupChatApiMock.socket.emit.mockImplementation((event: string, data?: any, ack?: Function) => {
+      if (event === 'join' && ack) ack({ members: [], agents: [], channels: [publicChannel, taskChannel], actorId: 'actor-1', typingUsers: [], contextStatuses: [] })
+      if (event === 'message' && ack) ack({ id: data?.id })
+      return groupChatApiMock.socket
+    })
+
     await store.connect()
     await store.joinRoom('room-1')
+    expect(store.channels.map(channel => channel.id)).toEqual(['public', 'task-1'])
+    expect(store.currentActorId).toBe('actor-1')
+    expect(store.visibleMessages.map(message => message.id)).toEqual(['msg-public'])
 
-    await store.sendMessage('hello room')
+    store.selectChannel('task-1')
+    expect(store.visibleMessages.map(message => message.id)).toEqual(['msg-task'])
+    store.emitTyping()
+    expect(groupChatApiMock.socket.emit).toHaveBeenCalledWith('typing', expect.objectContaining({
+      roomId: 'room-1',
+      channelId: 'task-1',
+      visibility: 'private',
+    }))
+    await store.sendMessage('hello task')
 
     expect(groupChatApiMock.socket.emit).toHaveBeenCalledWith('message', expect.objectContaining({
       roomId: 'room-1',
-      content: 'hello room',
+      content: 'hello task',
+      channelId: 'task-1',
     }), expect.any(Function))
     expect(store.error).toBeNull()
   })

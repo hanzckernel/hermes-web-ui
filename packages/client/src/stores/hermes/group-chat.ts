@@ -16,6 +16,7 @@ import {
     type ChatMessage,
     type MemberInfo,
     type GroupActor,
+    type GroupChannel,
     createRoom,
     listRooms,
     getRoomDetail,
@@ -78,6 +79,7 @@ function uid(): string {
 }
 
 const STREAM_FINAL_CONTENT_RECOVERY_DELAY_MS = 300
+const PUBLIC_CHANNEL_ID = 'public'
 export const GROUP_CHAT_MESSAGE_PAGE_SIZE = 150
 export const GROUP_CHAT_MAX_DISPLAY_MESSAGES = 600
 
@@ -91,6 +93,21 @@ function hasText(value?: string | null): boolean {
 
 function authenticatedGroupUserId(authUserId: number): string {
     return `auth:${authUserId}`
+}
+
+function normalizeMessageChannelId(channelId?: string | null): string {
+    const normalized = (channelId || PUBLIC_CHANNEL_ID).trim()
+    return normalized || PUBLIC_CHANNEL_ID
+}
+
+function defaultPublicChannel(roomId: string | null): GroupChannel {
+    return {
+        id: PUBLIC_CHANNEL_ID,
+        roomId: roomId || '',
+        kind: 'public',
+        name: 'Public',
+        defaultVisibility: 'public',
+    }
 }
 
 function getStoredGroupUserName(): string {
@@ -138,6 +155,9 @@ export const useGroupChatStore = defineStore('groupChat', () => {
     const members = ref<MemberInfo[]>([])
     const agents = ref<RoomAgent[]>([])
     const actors = ref<GroupActor[]>([])
+    const channels = ref<GroupChannel[]>([])
+    const currentActorId = ref<string | null>(null)
+    const activeChannelId = ref(PUBLIC_CHANNEL_ID)
     const roomName = ref('')
     const isJoining = ref(false)
     const error = ref<string | null>(null)
@@ -165,6 +185,23 @@ const currentUserAvatar = ref('')
         loadedMessageCount.value = res.messages.length
         totalMessages.value = res.total ?? res.messages.length
         hasMoreBefore.value = res.hasMore ?? loadedMessageCount.value < totalMessages.value
+    }
+
+    function applyChannels(nextChannels?: GroupChannel[], actorId?: string | null) {
+        currentActorId.value = actorId || currentActorId.value
+        const normalized = (nextChannels?.length ? nextChannels : [defaultPublicChannel(currentRoomId.value)])
+            .map(channel => ({ ...channel, id: normalizeMessageChannelId(channel.id), name: channel.name || channel.id }))
+        channels.value = normalized.some(channel => channel.id === PUBLIC_CHANNEL_ID)
+            ? normalized
+            : [defaultPublicChannel(currentRoomId.value), ...normalized]
+        if (!channels.value.some(channel => channel.id === activeChannelId.value)) {
+            activeChannelId.value = channels.value[0]?.id || PUBLIC_CHANNEL_ID
+        }
+    }
+
+    function selectChannel(channelId: string) {
+        const normalized = normalizeMessageChannelId(channelId)
+        if (channels.value.some(channel => channel.id === normalized)) activeChannelId.value = normalized
     }
 
     function setAutoPlaySpeech(enabled: boolean) {
@@ -223,6 +260,8 @@ const currentUserAvatar = ref('')
         members.value = res.members || []
         if (res.agents) agents.value = res.agents
         if (Array.isArray(res.actors)) actors.value = res.actors
+        if (Array.isArray(res.channels)) applyChannels(res.channels, res.actorId)
+        else applyChannels(undefined, res.actorId)
         if (res.roomName) roomName.value = res.roomName
         const currentMember = members.value.find(member => member.userId === userId.value)
         if (currentMember?.name) userName.value = currentMember.name
@@ -290,6 +329,8 @@ const currentUserAvatar = ref('')
 
     // ─── Computed ───────────────────────────────────────────
     const sortedMessages = computed(() => mapGroupMessages([...messages.value].sort((a, b) => (a.firstSeenAt ?? a.timestamp) - (b.firstSeenAt ?? b.timestamp))))
+    const visibleMessages = computed(() => sortedMessages.value.filter(message => normalizeMessageChannelId(message.channelId) === activeChannelId.value))
+    const activeChannel = computed(() => channels.value.find(channel => channel.id === activeChannelId.value) || channels.value[0] || defaultPublicChannel(currentRoomId.value))
 
     const memberNames = computed(() => {
         return members.value.map(m => m.name)
@@ -582,6 +623,7 @@ const currentUserAvatar = ref('')
             agents.value = res.agents
             members.value = res.members || []
             actors.value = res.actors || []
+            applyChannels(res.channels, res.actorId)
         } catch (err: any) {
             error.value = err.message
             throw err
@@ -589,9 +631,9 @@ const currentUserAvatar = ref('')
             isJoining.value = false
         }
 
-        // Join via socket for real-time updates. Reconnect uses the same path
-        // so the browser socket is a room member before the next send.
-        await joinRealtimeRoom(roomId)
+        // Join via socket for real-time updates and actor-visible history.
+        // In no-auth/local flows REST cannot resolve the room actor until the socket joins.
+        await joinRealtimeRoom(roomId, { syncMessages: true })
     }
 
     async function loadOlderMessages(): Promise<boolean> {
@@ -602,7 +644,7 @@ const currentUserAvatar = ref('')
         isLoadingOlderMessages.value = true
         try {
             const limit = Math.min(GROUP_CHAT_MESSAGE_PAGE_SIZE, GROUP_CHAT_MAX_DISPLAY_MESSAGES - offset)
-            const res = await getRoomDetail(roomId, { offset, limit })
+            const res = await getRoomDetail(roomId, { offset, limit, actorId: currentActorId.value || undefined })
             const existingIds = new Set(messages.value.map(message => message.id))
             const olderMessages = res.messages.filter(message => !existingIds.has(message.id))
             messages.value = [...olderMessages, ...messages.value]
@@ -638,6 +680,8 @@ const currentUserAvatar = ref('')
                 content: JSON.stringify(finalContent),
                 timestamp: Date.now(),
                 role: 'user',
+                channelId: activeChannelId.value,
+                visibility: activeChannel.value.defaultVisibility || 'public',
                 attachments: attachments.map(att => ({ ...att, url: urlMap.get(att.name) || att.url, file: undefined })),
             })
             loadedMessageCount.value += 1
@@ -645,7 +689,13 @@ const currentUserAvatar = ref('')
         }
 
         return new Promise<void>((resolve, reject) => {
-            socket!.emit('message', { roomId: currentRoomId.value, id: messageId, content: finalContent }, (res: { id?: string; error?: string }) => {
+            socket!.emit('message', {
+                roomId: currentRoomId.value,
+                id: messageId,
+                content: finalContent,
+                channelId: activeChannelId.value,
+                visibility: activeChannel.value.defaultVisibility || 'public',
+            }, (res: { id?: string; error?: string }) => {
                 if (res.error) {
                     messages.value = messages.value.filter(m => m.id !== messageId)
                     reject(new Error(res.error))
@@ -703,6 +753,9 @@ const currentUserAvatar = ref('')
                 members.value = []
                 agents.value = []
                 actors.value = []
+                channels.value = []
+                currentActorId.value = null
+                activeChannelId.value = PUBLIC_CHANNEL_ID
                 roomName.value = ''
             }
         } catch (err: any) {
@@ -776,7 +829,11 @@ const currentUserAvatar = ref('')
     function emitTyping() {
         const socket = getSocket()
         if (!socket || !currentRoomId.value) return
-        socket.emit('typing', { roomId: currentRoomId.value })
+        socket.emit('typing', {
+            roomId: currentRoomId.value,
+            channelId: activeChannelId.value,
+            visibility: activeChannel.value.defaultVisibility || 'public',
+        })
         if (_typingTimer) clearTimeout(_typingTimer)
         _typingTimer = setTimeout(() => emitStopTyping(), 4000)
     }
@@ -784,7 +841,11 @@ const currentUserAvatar = ref('')
     function emitStopTyping() {
         const socket = getSocket()
         if (!socket || !currentRoomId.value) return
-        socket.emit('stop_typing', { roomId: currentRoomId.value })
+        socket.emit('stop_typing', {
+            roomId: currentRoomId.value,
+            channelId: activeChannelId.value,
+            visibility: activeChannel.value.defaultVisibility || 'public',
+        })
         if (_typingTimer) { clearTimeout(_typingTimer); _typingTimer = null }
     }
 
@@ -826,6 +887,9 @@ const currentUserAvatar = ref('')
         members,
         agents,
         actors,
+        channels,
+        currentActorId,
+        activeChannelId,
         roomName,
         isJoining,
         error,
@@ -844,6 +908,8 @@ const currentUserAvatar = ref('')
         currentUserAvatar,
         // Computed
         sortedMessages,
+        visibleMessages,
+        activeChannel,
         memberNames,
         typingNames,
         typingText,
@@ -853,6 +919,7 @@ const currentUserAvatar = ref('')
         setUserInfo,
         setAutoPlaySpeech,
         joinRoom,
+        selectChannel,
         loadOlderMessages,
         sendMessage,
         loadRooms,
