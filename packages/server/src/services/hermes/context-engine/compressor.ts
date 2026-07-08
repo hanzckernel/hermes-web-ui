@@ -13,6 +13,48 @@ import { buildAgentInstructions, buildSummarizationSystemPrompt } from './prompt
 import { logger } from '../../../services/logger'
 import { buildProjectedGroupChatHistory, projectGroupChatMessage } from '../group-chat/context-projection'
 import { sliceGroupMessagesForSnapshotTail } from '../group-chat/group-message-ordering'
+import { normalizeChannelId, normalizeScope, normalizeVisibility } from '../group-chat/visibility/types'
+
+function audienceFingerprint(value: unknown): string {
+    if (value == null || value === '') return '[]'
+    let parsed = value
+    if (typeof value === 'string') {
+        try {
+            parsed = JSON.parse(value)
+        } catch {
+            return value.trim()
+        }
+    }
+    const actors = Array.isArray(parsed)
+        ? parsed
+        : parsed && typeof parsed === 'object'
+            ? (parsed as Record<string, unknown>).actorIds || (parsed as Record<string, unknown>).audienceActorIds || (parsed as Record<string, unknown>).actors
+            : null
+    if (!Array.isArray(actors)) return String(value).trim()
+    const normalized = actors
+        .filter((actor): actor is string => typeof actor === 'string' && actor.trim().length > 0)
+        .map(actor => actor.trim())
+        .sort()
+    return JSON.stringify([...new Set(normalized)])
+}
+
+function isPublicContextMessage(message: StoredMessage): boolean {
+    return normalizeChannelId(message.channelId) === 'public'
+        && normalizeVisibility(message.visibility) === 'public'
+        && audienceFingerprint(message.audienceJson) === '[]'
+}
+
+function hasSameContextVisibilityEnvelope(message: StoredMessage, currentMessage: StoredMessage): boolean {
+    return normalizeChannelId(message.channelId) === normalizeChannelId(currentMessage.channelId)
+        && normalizeVisibility(message.visibility) === normalizeVisibility(currentMessage.visibility)
+        && normalizeScope(message.scope) === normalizeScope(currentMessage.scope)
+        && String(message.threadId ?? '') === String(currentMessage.threadId ?? '')
+        && audienceFingerprint(message.audienceJson) === audienceFingerprint(currentMessage.audienceJson)
+}
+
+export function filterMessagesForContextVisibility<T extends StoredMessage>(messages: T[], currentMessage: StoredMessage): T[] {
+    return messages.filter(message => isPublicContextMessage(message) || hasSameContextVisibilityEnvelope(message, currentMessage))
+}
 
 export class ContextEngine {
     private config: CompressionConfig
@@ -78,9 +120,12 @@ export class ContextEngine {
         const config = { ...this.config, ...input.compression }
         const cutoff = { throughMessageId: input.currentMessage.id }
         const actorScoped = Boolean(input.actorId && this.messageFetcher.getVisibleMessagesForContext)
-        const messages = actorScoped
+        const fetchedMessages = actorScoped
             ? this.messageFetcher.getVisibleMessagesForContext!(input.roomId, input.actorId!, cutoff)
             : this.messageFetcher.getMessagesForContext(input.roomId, cutoff)
+        const messages = actorScoped
+            ? filterMessagesForContextVisibility(fetchedMessages, input.currentMessage)
+            : fetchedMessages
         const total = messages.length
 
         logger.debug({

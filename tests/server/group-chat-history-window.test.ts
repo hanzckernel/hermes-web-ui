@@ -39,7 +39,7 @@ vi.mock('../../packages/server/src/services/auth', () => ({
 import { countTokens, SUMMARY_PREFIX } from '../../packages/server/src/lib/context-compressor'
 import { initAllHermesTables } from '../../packages/server/src/db/hermes/schemas'
 import { GroupChatServer } from '../../packages/server/src/services/hermes/group-chat'
-import { AgentClients, mentionMessageToStoredContextMessage } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
+import { AgentClients, groupBridgeSessionId, mentionMessageToStoredContextMessage } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
 import { sortGroupMessagesCanonical } from '../../packages/server/src/services/hermes/group-chat/group-message-ordering'
 
 function makeDb(): DatabaseSync {
@@ -189,6 +189,55 @@ describe('group chat history windows', () => {
     expect(storage.getContextSnapshot('room-1')?.lastMessageId).toBe('msg-1')
     expect(latest?.totalTokens).toBe(expectedTotalTokens)
     expect(storage.getRoom('room-1')?.totalTokens).toBe(expectedTotalTokens)
+  })
+
+  it('separates bridge sessions by active visibility envelope', () => {
+    const publicSession = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {})
+    const privateSession = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:human:alice']),
+      scope: 'conversation',
+    })
+    const samePrivateDifferentAudienceOrder = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:worker', 'gc:room-1:human:alice']),
+      scope: 'conversation',
+    })
+    const normalizedPrivate = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:human:alice', 'gc:room-1:agent:worker']),
+      scope: 'conversation',
+    })
+    const objectAudiencePrivate = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: { actorIds: ['gc:room-1:agent:worker', 'gc:room-1:human:alice'] },
+      scope: 'conversation',
+    })
+    const legacyObjectAudiencePrivate = groupBridgeSessionId('room-1', 'default', 'Worker', 'seed', {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: { audienceActorIds: ['gc:room-1:human:alice'] },
+      scope: 'conversation',
+    })
+    const longNamePublicSession = groupBridgeSessionId('room-1', 'profile'.repeat(30), 'Worker'.repeat(30), 'seed'.repeat(30), {})
+    const longNamePrivateSession = groupBridgeSessionId('room-1', 'profile'.repeat(30), 'Worker'.repeat(30), 'seed'.repeat(30), {
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: { actorIds: ['gc:room-1:human:alice'] },
+      scope: 'conversation',
+    })
+
+    expect(publicSession).not.toBe(privateSession)
+    expect(samePrivateDifferentAudienceOrder).toBe(normalizedPrivate)
+    expect(objectAudiencePrivate).toBe(normalizedPrivate)
+    expect(legacyObjectAudiencePrivate).toBe(privateSession)
+    expect(longNamePublicSession).not.toBe(longNamePrivateSession)
+    expect(longNamePublicSession).toHaveLength(120)
+    expect(longNamePrivateSession).toHaveLength(120)
   })
 
   it('uses the full context transcript for the final AgentClient room estimate', async () => {

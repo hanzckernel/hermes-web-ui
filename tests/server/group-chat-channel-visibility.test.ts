@@ -126,6 +126,128 @@ describe('group chat channel visibility runtime', () => {
     }
   })
 
+  it('does not coerce non-string public audiences to room-public realtime activity', async () => {
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    const { port } = await listen(httpServer)
+    const storage = server.getStorage() as any
+    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
+    storage.addRoomAgent('room-1', 'agent-1', 'default', 'Worker', '', 1)
+    const agentActor = 'gc:room-1:agent:agent-1'
+    const aliceSocket = await connect(port, 'alice', 'Alice')
+    const bobSocket = await connect(port, 'bob', 'Bob')
+    const agentSocket = await connect(port, 'agent-1', 'Worker', {
+      source: 'agent',
+      agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET,
+    })
+
+    try {
+      await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(bobSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(agentSocket, 'join', { roomId: 'room-1' })
+
+      await expect(emitAck(aliceSocket, 'message', {
+        roomId: 'room-1',
+        content: 'not room public',
+        channelId: 'public',
+        visibility: 'public',
+        audienceJson: ['gc:room-1:human:alice'],
+      })).resolves.toEqual({ error: 'Cannot write to channel' })
+
+      const publicTotalTokens = storage.getRoom('room-1').totalTokens
+      const bobStatus = once<any>(bobSocket, 'context_status', 100)
+      agentSocket.emit('context_status', {
+        roomId: 'room-1',
+        agentName: 'Worker',
+        status: 'replying',
+        totalTokens: 999,
+        channelId: 'public',
+        visibility: 'public',
+        audienceJson: [agentActor],
+      })
+      await expect(bobStatus).rejects.toThrow('timeout waiting for context_status')
+      expect(storage.getRoom('room-1').totalTokens).toBe(publicTotalTokens)
+
+      const bobStream = once<any>(bobSocket, 'message_stream_start', 100)
+      agentSocket.emit('message_stream_start', {
+        roomId: 'room-1',
+        id: 'audience-array-stream',
+        channelId: 'public',
+        visibility: 'public',
+        audienceJson: [agentActor],
+      })
+      await expect(bobStream).rejects.toThrow('timeout waiting for message_stream_start')
+    } finally {
+      aliceSocket.disconnect()
+      bobSocket.disconnect()
+      agentSocket.disconnect()
+      server.getIO().close()
+      httpServer.close()
+    }
+  })
+
+  it('keeps socket actor identity scoped per joined room', async () => {
+    vi.mocked(isAuthEnabled).mockResolvedValue(true)
+    vi.mocked(authenticateUserToken).mockImplementation(async (token: string) => {
+      if (token === 'alice-token') return { id: 1, username: 'Alice', role: 'user', profiles: [] } as any
+      if (token === 'bob-token') return { id: 2, username: 'Bob', role: 'user', profiles: [] } as any
+      return null as any
+    })
+    const httpServer = createServer()
+    const server = new GroupChatServer(httpServer)
+    const { port } = await listen(httpServer)
+    const storage = server.getStorage() as any
+    storage.saveRoom('room-1', 'Room 1', 'ROOM1')
+    storage.saveRoom('room-2', 'Room 2', 'ROOM2')
+    storage.addRoomAgent('room-1', 'agent-1', 'default', 'Agent', '', 1)
+    storage.addRoomAgent('room-2', 'agent-1', 'default', 'Agent', '', 1)
+    const aliceSocket = await connect(port, 'alice', 'Alice', { token: 'alice-token' })
+    const bobSocket = await connect(port, 'bob', 'Bob', { token: 'bob-token' })
+    const agentSocket = await connect(port, 'agent-1', 'Agent', {
+      source: 'agent',
+      agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET,
+    })
+
+    try {
+      const aliceJoin = await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(bobSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(agentSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(agentSocket, 'join', { roomId: 'room-2' })
+      const alice = aliceJoin.actorId
+      storage.createChannel({
+        roomId: 'room-1',
+        id: 'private-1',
+        kind: 'private',
+        name: 'Alice private',
+        createdBy: alice,
+        members: [
+          { actorId: alice, canRead: true, canWrite: true },
+          { actorId: 'gc:room-1:agent:agent-1', canRead: true, canWrite: true },
+        ],
+      })
+
+      const aliceStatus = once<any>(aliceSocket, 'context_status')
+      const bobStatus = once<any>(bobSocket, 'context_status', 100)
+      agentSocket.emit('context_status', {
+        roomId: 'room-1',
+        agentName: 'Agent',
+        status: 'replying',
+        channelId: 'private-1',
+        visibility: 'private',
+        audienceJson: JSON.stringify([alice]),
+      })
+
+      expect(await aliceStatus).toMatchObject({ roomId: 'room-1', status: 'replying', channelId: 'private-1' })
+      await expect(bobStatus).rejects.toThrow('timeout waiting for context_status')
+    } finally {
+      aliceSocket.disconnect()
+      bobSocket.disconnect()
+      agentSocket.disconnect()
+      server.getIO().close()
+      httpServer.close()
+    }
+  })
+
   it('uses the same actor visibility for REST room detail and channel APIs', async () => {
     const app = new Koa()
     app.use(bodyParser())
@@ -288,12 +410,14 @@ describe('group chat channel visibility runtime', () => {
     const aliceSocket = await connect(port, 'alice', 'Alice', { token: 'alice-token' })
     const bobSocket = await connect(port, 'bob', 'Bob', { token: 'bob-token' })
     let agentSocket: ClientSocket | undefined
+    let agent2Socket: ClientSocket | undefined
 
     try {
       const aliceJoin = await emitAck<any>(aliceSocket, 'join', { roomId: 'room-1' })
       await emitAck<any>(bobSocket, 'join', { roomId: 'room-1' })
       const alice = aliceJoin.actorId
       storage.addRoomAgent('room-1', 'agent-1', 'default', 'Agent', '', 1)
+      storage.addRoomAgent('room-1', 'agent-2', 'default', 'Other Agent', '', 1)
       const agent = `gc:room-1:agent:agent-1`
       storage.createChannel({
         roomId: 'room-1',
@@ -307,7 +431,16 @@ describe('group chat channel visibility runtime', () => {
         ],
       })
       agentSocket = await connect(port, 'agent-1', 'Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
+      agent2Socket = await connect(port, 'agent-2', 'Other Agent', { source: 'agent', agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET })
       await emitAck<any>(agentSocket, 'join', { roomId: 'room-1' })
+      await emitAck<any>(agent2Socket, 'join', { roomId: 'room-1' })
+
+      const spoofedStatus = once<any>(aliceSocket, 'context_status')
+      agent2Socket.emit('context_status', { roomId: 'room-1', agentName: 'Agent', status: 'replying' })
+      expect(await spoofedStatus).toMatchObject({ agentName: 'Other Agent', status: 'replying' })
+      const spoofedReady = once<any>(aliceSocket, 'context_status')
+      agent2Socket.emit('context_status', { roomId: 'room-1', agentName: 'Agent', status: 'ready' })
+      expect(await spoofedReady).toMatchObject({ agentName: 'Other Agent', status: 'ready' })
 
       const publicForBob = once<any>(bobSocket, 'message')
       await emitAck(aliceSocket, 'message', { roomId: 'room-1', id: 'public-live', content: 'public live' })
@@ -399,12 +532,17 @@ describe('group chat channel visibility runtime', () => {
       expect(storage.getRoom('room-1').totalTokens).toBe(publicTotalTokens)
 
       const aliceReady = once<any>(aliceSocket, 'context_status')
+      const bobPublicReady = once<any>(bobSocket, 'context_status', 100)
       agentSocket.emit('context_status', {
         roomId: 'room-1',
         agentName: 'Agent',
         status: 'ready',
+        channelId: 'public',
+        visibility: 'public',
+        audienceJson: '[]',
       })
       expect(await aliceReady).toMatchObject({ status: 'ready', channelId: 'private-1' })
+      await expect(bobPublicReady).rejects.toThrow('timeout waiting for context_status')
       await new Promise(resolve => setTimeout(resolve, 80))
       expect(bobSawPrivateStatus).toBe(false)
 
@@ -448,6 +586,7 @@ describe('group chat channel visibility runtime', () => {
     } finally {
       aliceSocket.disconnect()
       agentSocket?.disconnect()
+      agent2Socket?.disconnect()
       bobSocket.disconnect()
       server.getIO().close()
       httpServer.close()

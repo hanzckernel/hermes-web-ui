@@ -98,11 +98,17 @@ async function connectAndPersistRoomAgent(server: GroupChatServer, roomId: strin
         invited,
     })
 
+    let persisted: any = null
     try {
+        persisted = server.getStorage().addRoomAgent(roomId, agentId, profile, name, description, invited)
         await server.agentClients.addAgentToRoom(roomId, client)
-        return server.getStorage().addRoomAgent(roomId, agentId, profile, name, description, invited)
+        return persisted
     } catch (err) {
         server.agentClients.removeAgentFromRoom(roomId, client.agentId)
+        if (persisted) {
+            server.getStorage().removeRoomMembersForAgent(roomId, persisted)
+            server.getStorage().removeRoomAgent(roomId, persisted.agentId)
+        }
         throw err
     }
 }

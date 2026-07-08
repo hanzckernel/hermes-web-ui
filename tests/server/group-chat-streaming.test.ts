@@ -5,6 +5,7 @@ import {
   emitAck,
   once,
 } from './group-chat-test-helpers'
+import { GROUP_CHAT_AGENT_SOCKET_SECRET } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
 import type { GroupChatServer } from '../../packages/server/src/services/hermes/group-chat'
 
 describe('group chat streaming baseline', () => {
@@ -18,13 +19,14 @@ describe('group chat streaming baseline', () => {
     groupServer = harness.groupServer
     port = harness.port
     groupServer.getStorage().saveRoom('room-1', 'Room 1', 'ROOM1')
+    groupServer.getStorage().addRoomAgent('room-1', 'agent-1', 'default', 'Worker', '', 1)
   })
 
   afterEach(() => {
     harness?.cleanup()
   })
 
-  async function joinPair() {
+  async function joinHumanPair() {
     const alice = await connectGroupChatClient(port, 'user-a', 'Alice')
     const bob = await connectGroupChatClient(port, 'user-b', 'Bob')
     harness.sockets.push(alice, bob)
@@ -33,15 +35,27 @@ describe('group chat streaming baseline', () => {
     return { alice, bob }
   }
 
-  it('relays stream start, content delta, reasoning delta, and stream end to room members', async () => {
-    const { alice, bob } = await joinPair()
+  async function joinStreamParticipants() {
+    const agent = await connectGroupChatClient(port, 'agent-1', 'Worker', {
+      source: 'agent',
+      agentSocketSecret: GROUP_CHAT_AGENT_SOCKET_SECRET,
+    })
+    const bob = await connectGroupChatClient(port, 'user-b', 'Bob')
+    harness.sockets.push(agent, bob)
+    await emitAck(agent, 'join', { roomId: 'room-1' })
+    await emitAck(bob, 'join', { roomId: 'room-1' })
+    return { agent, bob }
+  }
+
+  it('relays agent stream start, content delta, reasoning delta, and stream end to room members', async () => {
+    const { agent, bob } = await joinStreamParticipants()
 
     const streamStart = once<any>(bob, 'message_stream_start')
-    alice.emit('message_stream_start', { roomId: 'room-1', id: 'stream-1', senderName: 'Worker', timestamp: 10 })
+    agent.emit('message_stream_start', { roomId: 'room-1', id: 'stream-1', senderName: 'Spoofed', timestamp: 10 })
     expect(await streamStart).toMatchObject({
       id: 'stream-1',
       roomId: 'room-1',
-      senderName: 'Alice',
+      senderName: 'Worker',
       role: 'assistant',
       finish_reason: 'streaming',
     })
@@ -52,61 +66,72 @@ describe('group chat streaming baseline', () => {
     await expect(hijackDelta).rejects.toThrow('timeout waiting for message_stream_delta')
 
     const contentDelta = once<any>(bob, 'message_stream_delta')
-    alice.emit('message_stream_delta', { roomId: 'room-1', id: 'stream-1', delta: 'hello' })
+    agent.emit('message_stream_delta', { roomId: 'room-1', id: 'stream-1', delta: 'hello' })
     expect(await contentDelta).toEqual({ roomId: 'room-1', id: 'stream-1', delta: 'hello' })
 
     const reasoningDelta = once<any>(bob, 'message_reasoning_delta')
-    alice.emit('message_reasoning_delta', { roomId: 'room-1', id: 'stream-1', delta: 'thinking' })
+    agent.emit('message_reasoning_delta', { roomId: 'room-1', id: 'stream-1', delta: 'thinking' })
     expect(await reasoningDelta).toEqual({ roomId: 'room-1', id: 'stream-1', delta: 'thinking' })
 
     const streamEnd = once<any>(bob, 'message_stream_end')
-    alice.emit('message_stream_end', { roomId: 'room-1', id: 'stream-1' })
+    agent.emit('message_stream_end', { roomId: 'room-1', id: 'stream-1' })
     expect(await streamEnd).toEqual({ roomId: 'room-1', id: 'stream-1' })
   })
 
+  it('does not accept stream starts from human sockets', async () => {
+    const { alice, bob } = await joinHumanPair()
+    const unexpected = once<any>(bob, 'message_stream_start', 100)
+
+    alice.emit('message_stream_start', { roomId: 'room-1', id: 'human-stream', senderName: 'Worker' })
+
+    await expect(unexpected).rejects.toThrow('timeout waiting for message_stream_start')
+  })
+
   it('does not let a stream owner replay deltas into another room', async () => {
-    const { alice, bob } = await joinPair()
+    const { agent, bob } = await joinStreamParticipants()
     groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
-    await emitAck(alice, 'join', { roomId: 'room-2' })
+    groupServer.getStorage().addRoomAgent('room-2', 'agent-1', 'default', 'Worker', '', 1)
+    await emitAck(agent, 'join', { roomId: 'room-2' })
     await emitAck(bob, 'join', { roomId: 'room-2' })
-    await emitAck(alice, 'join', { roomId: 'room-1' })
+    await emitAck(agent, 'join', { roomId: 'room-1' })
     await emitAck(bob, 'join', { roomId: 'room-1' })
 
     const streamStart = once<any>(bob, 'message_stream_start')
-    alice.emit('message_stream_start', { roomId: 'room-1', id: 'stream-cross-room' })
+    agent.emit('message_stream_start', { roomId: 'room-1', id: 'stream-cross-room' })
     expect(await streamStart).toMatchObject({ roomId: 'room-1', id: 'stream-cross-room' })
 
     const leakedDelta = once<any>(bob, 'message_stream_delta', 100)
-    alice.emit('message_stream_delta', { roomId: 'room-2', id: 'stream-cross-room', delta: 'leak' })
+    agent.emit('message_stream_delta', { roomId: 'room-2', id: 'stream-cross-room', delta: 'leak' })
     await expect(leakedDelta).rejects.toThrow('timeout waiting for message_stream_delta')
   })
 
   it('binds stream ownership by room and stream id', async () => {
-    const { alice, bob } = await joinPair()
+    const { agent, bob } = await joinStreamParticipants()
     groupServer.getStorage().saveRoom('room-2', 'Room 2', 'ROOM2')
-    await emitAck(alice, 'join', { roomId: 'room-2' })
+    groupServer.getStorage().addRoomAgent('room-2', 'agent-1', 'default', 'Worker', '', 1)
+    await emitAck(agent, 'join', { roomId: 'room-2' })
     await emitAck(bob, 'join', { roomId: 'room-2' })
-    await emitAck(alice, 'join', { roomId: 'room-1' })
+    await emitAck(agent, 'join', { roomId: 'room-1' })
     await emitAck(bob, 'join', { roomId: 'room-1' })
 
     const roomOneStart = once<any>(bob, 'message_stream_start')
-    alice.emit('message_stream_start', { roomId: 'room-1', id: 'shared-stream' })
+    agent.emit('message_stream_start', { roomId: 'room-1', id: 'shared-stream' })
     expect(await roomOneStart).toMatchObject({ roomId: 'room-1', id: 'shared-stream' })
 
     const roomTwoStart = once<any>(bob, 'message_stream_start')
-    alice.emit('message_stream_start', { roomId: 'room-2', id: 'shared-stream' })
+    agent.emit('message_stream_start', { roomId: 'room-2', id: 'shared-stream' })
     expect(await roomTwoStart).toMatchObject({ roomId: 'room-2', id: 'shared-stream' })
 
     const roomTwoDelta = once<any>(bob, 'message_stream_delta')
-    alice.emit('message_stream_delta', { roomId: 'room-2', id: 'shared-stream', delta: 'two' })
+    agent.emit('message_stream_delta', { roomId: 'room-2', id: 'shared-stream', delta: 'two' })
     expect(await roomTwoDelta).toEqual({ roomId: 'room-2', id: 'shared-stream', delta: 'two' })
   })
 
   it('ignores a representative invalid stream id', async () => {
-    const { alice, bob } = await joinPair()
+    const { agent, bob } = await joinStreamParticipants()
     const unexpected = once<any>(bob, 'message_stream_start', 100)
 
-    alice.emit('message_stream_start', { roomId: 'room-1', id: 'bad id with spaces' })
+    agent.emit('message_stream_start', { roomId: 'room-1', id: 'bad id with spaces' })
 
     await expect(unexpected).rejects.toThrow('timeout waiting for message_stream_start')
   })

@@ -162,6 +162,16 @@ function normalizeMessageRole(role: unknown): string {
     return ['user', 'assistant', 'tool', 'command'].includes(value) ? value : 'user'
 }
 
+function normalizeAudienceJsonInput(value: unknown): string {
+    if (value == null || value === '') return '[]'
+    if (typeof value === 'string') return value
+    try {
+        return JSON.stringify(value)
+    } catch {
+        return 'null'
+    }
+}
+
 function normalizeMentionDepth(depth: unknown): number {
     const value = Number(depth)
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
@@ -186,7 +196,7 @@ class ChatStorage {
             channelId: normalizeChannelId(row.channelId),
             threadId: row.threadId ?? null,
             visibility: normalizeVisibility(row.visibility),
-            audienceJson: typeof row.audienceJson === 'string' ? row.audienceJson : '[]',
+            audienceJson: normalizeAudienceJsonInput(row.audienceJson),
             scope: normalizeScope(row.scope),
             originEventId: row.originEventId ?? null,
             metadataJson: typeof row.metadataJson === 'string' ? row.metadataJson : '{}',
@@ -471,7 +481,7 @@ class ChatStorage {
         const toolCallsJson = msg.tool_calls ? JSON.stringify(msg.tool_calls) : null
         const channelId = normalizeChannelId(msg.channelId)
         const visibility = normalizeVisibility(msg.visibility)
-        const audienceJson = typeof msg.audienceJson === 'string' ? msg.audienceJson : '[]'
+        const audienceJson = normalizeAudienceJsonInput(msg.audienceJson)
         const scope = normalizeScope(msg.scope)
         const metadataJson = typeof msg.metadataJson === 'string' ? msg.metadataJson : '{}'
         this.db()?.prepare(
@@ -924,9 +934,9 @@ export class GroupChatServer {
     private socketRequestedSourceMap = new Map<string, 'human' | 'agent'>()
     /** Map: socket.id → numeric users.id from the web UI auth (for avatar resolution) */
     private socketAuthUserIdMap = new Map<string, number>()
-    /** Map: socket.id → room-scoped actor id resolved on join */
+    /** Map: `${socket.id}:${roomId}` → room-scoped actor id resolved on join */
     private socketActorMap = new Map<string, string>()
-    /** Map: socket.id → server-verified actor id allowed to read/write private channels */
+    /** Map: `${socket.id}:${roomId}` → server-verified actor id allowed to read/write private channels */
     private socketVisibilityActorMap = new Map<string, string>()
     /** Map: room/message stream key → visibility metadata inherited by stream deltas/end */
     private streamVisibilityMap = new Map<string, ChatMessage>()
@@ -1201,9 +1211,11 @@ export class GroupChatServer {
             actorId = this.storage.resolveHumanActorId(roomId, userId, userName, authUserId)
         }
         this.storage.ensureDefaultPublicChannel(roomId)
-        this.socketActorMap.set(socket.id, actorId)
+        const actorKey = this.socketRoomKey(socket.id, roomId)
+        this.socketActorMap.set(actorKey, actorId)
         const visibilityActorId = source === 'agent' || typeof authUserId === 'number' ? actorId : null
-        if (visibilityActorId) this.socketVisibilityActorMap.set(socket.id, visibilityActorId)
+        if (visibilityActorId) this.socketVisibilityActorMap.set(actorKey, visibilityActorId)
+        else this.socketVisibilityActorMap.delete(actorKey)
 
         // Add to in-memory online participants (keyed by userId)
         room.addOrUpdateMember(socketId, userId, userName, description, source, userAvatar)
@@ -1246,8 +1258,8 @@ export class GroupChatServer {
         logger.debug(`[GroupChat] ${userName} (user=${userId}) joined room: ${roomId}`)
     }
 
-    private isPublicOnlyWrite(channelId: string, visibility: string, audienceJson: string): boolean {
-        const audience = audienceJson.trim()
+    private isPublicOnlyWrite(channelId: string, visibility: string, audienceJson: unknown): boolean {
+        const audience = normalizeAudienceJsonInput(audienceJson).trim()
         return channelId === 'public' && visibility === 'public' && (!audience || audience === '[]')
     }
 
@@ -1264,11 +1276,11 @@ export class GroupChatServer {
         const member = room.getOnlineMemberBySocketId(socketId)
         const userId = member?.userId || socketId
         const userName = member?.name || `User-${socketId.slice(0, 6)}`
-        const actorId = this.socketActorMap.get(socket.id)
-        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        const actorId = this.getSocketActor(socket, roomId)
+        const visibilityActorId = this.getSocketVisibilityActor(socket, roomId)
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
-        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
         if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) {
             ack?.({ error: 'Cannot write to channel' })
             return
@@ -1354,11 +1366,12 @@ export class GroupChatServer {
         if (!id) return
 
         const member = room.getOnlineMemberBySocketId(socket.id)
-        const actorId = this.socketActorMap.get(socket.id)
-        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        if (member?.source !== 'agent') return
+        const actorId = this.getSocketActor(socket, roomId)
+        const visibilityActorId = this.getSocketVisibilityActor(socket, roomId)
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
-        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
         if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return
         const canWrite = channelId === 'public'
             ? Boolean(actorId)
@@ -1501,16 +1514,19 @@ export class GroupChatServer {
 
     private handleContextStatus(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; status?: string; totalTokens?: number }): void {
         const roomId = data.roomId || 'general'
-        const agentName = data.agentName || ''
+        const room = this.rooms.get(roomId)
+        const member = room?.getOnlineMemberBySocketId(socket.id)
+        const requestedAgentName = typeof data.agentName === 'string' ? data.agentName : ''
+        const agentName = member?.source === 'agent' ? member.name : requestedAgentName
         const status = data.status || ''
 
         if (!agentName) return
+        const statusData = { ...data, agentName }
         let roomStatuses = this.contextStatusState.get(roomId)
         const existingStatus = roomStatuses?.get(agentName)
-        const hasIncomingVisibility = this.hasVisibilityEventFields(data)
-        const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage && !hasIncomingVisibility
+        const visibilityMessage = status === 'ready' && existingStatus?.visibilityMessage
             ? existingStatus.visibilityMessage
-            : this.contextStatusVisibilityMessage(socket, roomId, data)
+            : this.contextStatusVisibilityMessage(socket, roomId, statusData)
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
 
         if (!roomStatuses) {
@@ -1537,7 +1553,7 @@ export class GroupChatServer {
             const publicUpdate = this.isPublicOnlyWrite(
                 normalizeChannelId(visibilityMessage.channelId),
                 normalizeVisibility(visibilityMessage.visibility),
-                typeof visibilityMessage.audienceJson === 'string' ? visibilityMessage.audienceJson : '[]',
+                visibilityMessage.audienceJson,
             )
             if (publicUpdate) this.storage.updateRoomTotalTokens(roomId, totalTokens)
             this.emitVisibleEvent(roomId, visibilityMessage, 'room_updated', { roomId, totalTokens })
@@ -1583,7 +1599,7 @@ export class GroupChatServer {
     private handleApprovalRequested(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; agentName?: string; approval_id?: string; command?: string; description?: string; choices?: string[]; allow_permanent?: boolean }): void {
         const roomId = data.roomId
         if (!roomId || !data.approval_id) return
-        const actorId = this.socketActorMap.get(socket.id)
+        const actorId = this.getSocketActor(socket, roomId)
         if (!this.storage.canActor(actorId, 'approval.request')) return
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, data)) return
         const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
@@ -1615,7 +1631,7 @@ export class GroupChatServer {
         if (!roomId || !data.approval_id) return
         const key = this.approvalVisibilityKey(roomId, data.approval_id)
         const visibilityMessage = this.approvalVisibilityMap.get(key)
-        const actorId = this.socketActorMap.get(socket.id)
+        const actorId = this.getSocketActor(socket, roomId)
         if (!visibilityMessage || visibilityMessage.senderId !== actorId || !this.storage.canActor(actorId, 'approval.request') || !this.canSocketWriteVisibilityEvent(socket, roomId, visibilityMessage)) return
         this.emitVisibleEvent(roomId, visibilityMessage, 'approval.resolved', {
             event: 'approval.resolved',
@@ -1647,9 +1663,9 @@ export class GroupChatServer {
             ack?.({ error: 'Approval not found' })
             return
         }
-        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
-        const actorId = visibilityActorId || this.socketActorMap.get(socket.id)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(normalizeChannelId(visibilityMessage.channelId), normalizeVisibility(visibilityMessage.visibility), typeof visibilityMessage.audienceJson === 'string' ? visibilityMessage.audienceJson : '[]')) {
+        const visibilityActorId = this.getSocketVisibilityActor(socket, roomId)
+        const actorId = visibilityActorId || this.getSocketActor(socket, roomId)
+        if (!visibilityActorId && !this.isPublicOnlyWrite(normalizeChannelId(visibilityMessage.channelId), normalizeVisibility(visibilityMessage.visibility), visibilityMessage.audienceJson)) {
             ack?.({ error: 'Approval not visible' })
             return
         }
@@ -1697,8 +1713,12 @@ export class GroupChatServer {
         this.socketUserMap.delete(socketId)
         this.socketRequestedSourceMap.delete(socketId)
         this.socketAuthUserIdMap.delete(socketId)
-        this.socketActorMap.delete(socketId)
-        this.socketVisibilityActorMap.delete(socketId)
+        for (const key of Array.from(this.socketActorMap.keys())) {
+            if (key.startsWith(`${socketId}:`)) this.socketActorMap.delete(key)
+        }
+        for (const key of Array.from(this.socketVisibilityActorMap.keys())) {
+            if (key.startsWith(`${socketId}:`)) this.socketVisibilityActorMap.delete(key)
+        }
         for (const [streamKey, ownerSocketId] of Array.from(this.streamOwnerMap.entries())) {
             if (ownerSocketId === socketId) {
                 this.streamOwnerMap.delete(streamKey)
@@ -1722,6 +1742,18 @@ export class GroupChatServer {
         return `${roomId}:${messageId}`
     }
 
+    private socketRoomKey(socketId: string, roomId: string): string {
+        return `${socketId}:${roomId}`
+    }
+
+    private getSocketActor(socket: Socket, roomId: string): string | undefined {
+        return this.socketActorMap.get(this.socketRoomKey(socket.id, roomId))
+    }
+
+    private getSocketVisibilityActor(socket: Socket, roomId: string): string | undefined {
+        return this.socketVisibilityActorMap.get(this.socketRoomKey(socket.id, roomId))
+    }
+
     private hasVisibilityEventFields(data: Partial<ChatMessage>): boolean {
         return ['channelId', 'visibility', 'audienceJson', 'scope', 'threadId', 'originEventId', 'metadataJson']
             .some(key => (data as Record<string, unknown>)[key] !== undefined && (data as Record<string, unknown>)[key] !== null)
@@ -1729,16 +1761,16 @@ export class GroupChatServer {
 
     private canSocketReadVisibilityMessage(socket: Socket, message?: ChatMessage): boolean {
         if (!message || this.storage.canReadMessage(null, message)) return true
-        const actorId = this.socketVisibilityActorMap.get(socket.id)
+        const actorId = this.getSocketVisibilityActor(socket, message.roomId)
         return Boolean(actorId && this.storage.canReadMessage(actorId, message))
     }
 
     private canSocketWriteTypingEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {
-        const actorId = this.socketActorMap.get(socket.id)
-        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        const actorId = this.getSocketActor(socket, roomId)
+        const visibilityActorId = this.getSocketVisibilityActor(socket, roomId)
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
-        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
         if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
         return channelId === 'public'
             ? Boolean(actorId)
@@ -1749,11 +1781,11 @@ export class GroupChatServer {
         const room = this.rooms.get(roomId)
         const member = room?.getOnlineMemberBySocketId(socket.id)
         if (member?.source !== 'agent') return false
-        const actorId = this.socketActorMap.get(socket.id)
-        const visibilityActorId = this.socketVisibilityActorMap.get(socket.id)
+        const actorId = this.getSocketActor(socket, roomId)
+        const visibilityActorId = this.getSocketVisibilityActor(socket, roomId)
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
-        const audienceJson = typeof data.audienceJson === 'string' ? data.audienceJson : '[]'
+        const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
         if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
         return channelId === 'public'
             ? Boolean(actorId)
@@ -1766,7 +1798,7 @@ export class GroupChatServer {
     }
 
     private approvalVisibilityMessage(socket: Socket, roomId: string, approvalId: string, data: Partial<ChatMessage> & { command?: string; description?: string; agentName?: string }): ChatMessage {
-        const senderId = this.socketActorMap.get(socket.id) || socket.id
+        const senderId = this.getSocketActor(socket, roomId) || socket.id
         const room = this.rooms.get(roomId)
         const member = room?.getOnlineMemberBySocketId(socket.id)
         return {
@@ -1803,7 +1835,7 @@ export class GroupChatServer {
         }
         for (const socket of this.nsp.sockets.values()) {
             if (!socket.rooms.has(roomId)) continue
-            const actorId = this.socketVisibilityActorMap.get(socket.id)
+            const actorId = this.getSocketVisibilityActor(socket, roomId)
             if (this.storage.canReadMessage(actorId, visibilityMessage)) socket.emit(event, payload)
         }
     }

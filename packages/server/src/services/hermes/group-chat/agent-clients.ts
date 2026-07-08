@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client'
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { getToken } from '../../../services/auth'
 import { logger } from '../../../services/logger'
 import { updateUsage } from '../../../db/hermes/usage-store'
@@ -8,6 +8,7 @@ import { AgentBridgeClient, type AgentBridgeContextEstimate, type AgentBridgeMes
 import { convertContentBlocksForAgent, isContentBlockArray } from '../run-chat/content-blocks'
 import { resolveBridgeRunModelConfig } from '../run-chat/model-config'
 import type { ContentBlock } from '../run-chat/types'
+import { filterMessagesForContextVisibility } from '../context-engine/compressor'
 import type { StoredMessage } from '../context-engine/types'
 import { buildProjectedGroupChatHistory, projectGroupChatMessage } from './context-projection'
 import { sliceGroupMessagesForSnapshotTail } from './group-message-ordering'
@@ -300,7 +301,7 @@ class AgentClient {
 
     async interrupt(roomId: string, extra: Record<string, unknown> = {}): Promise<void> {
         const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
-        const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
+        const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed, extra)
         await new AgentBridgeClient().interrupt(sessionId, 'Interrupted by group chat user', this.profile)
         this.stopTyping(roomId, extra)
         this.emitContextStatus(roomId, 'ready', extra)
@@ -470,8 +471,9 @@ class AgentClient {
             let instructions: string | undefined
             const bridge = new AgentBridgeClient()
             const sessionSeed = String(this.storage?.getRoom?.(roomId)?.sessionSeed || '0')
-            const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed)
+            const sessionId = groupBridgeSessionId(roomId, this.profile, this.name, sessionSeed, visibilityExtra)
             const modelContext = await resolveGroupAgentModelContext(this.profile)
+            const currentContextMessage = mentionMessageToStoredContextMessage(roomId, msg)
 
             if (this.contextEngine && this.storage) {
                 try {
@@ -501,7 +503,7 @@ class AgentClient {
                         members,
                         upstream: '',
                         apiKey: null,
-                        currentMessage: mentionMessageToStoredContextMessage(roomId, msg),
+                        currentMessage: currentContextMessage,
                         compression,
                         profile: this.profile,
                         onProgress: (event: { status: 'compressing'; messageCount: number; tokenCount: number }) => {
@@ -661,7 +663,7 @@ class AgentClient {
     ): Promise<void> {
         if (!this.storage?.getMessagesForContext) return
         try {
-            const history = this.buildRoomEstimateHistory(roomId)
+            const history = this.buildRoomEstimateHistory(roomId, visibilityExtra)
             const cachedTokens = await this.estimateGroupContextTokens(
                 roomId,
                 sessionId,
@@ -682,19 +684,44 @@ class AgentClient {
         }
     }
 
-    private buildRoomEstimateHistory(roomId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+    private buildRoomEstimateHistory(roomId: string, visibilityExtra: Record<string, unknown> = {}): Array<{ role: 'user' | 'assistant'; content: string }> {
+        const visibilityMessage = this.visibilityExtraToStoredContextMessage(roomId, visibilityExtra)
         const actorId = agentActorId(roomId, this.agentId)
         if (this.storage?.getVisibleMessagesForContext) {
             const messages: StoredMessage[] = this.storage.getVisibleMessagesForContext(roomId, actorId) || []
-            return messages.map((message: any) => this.mapRoomMessageForEstimate(message))
+            return filterMessagesForContextVisibility(messages, visibilityMessage)
+                .map((message: any) => this.mapRoomMessageForEstimate(message))
         }
-        const messages: StoredMessage[] = this.storage?.getMessagesForContext?.(roomId) || []
+        const messages: StoredMessage[] = filterMessagesForContextVisibility(
+            this.storage?.getMessagesForContext?.(roomId) || [],
+            visibilityMessage,
+        )
         const snapshot = this.storage?.getContextSnapshot?.(roomId)
         if (snapshot?.summary) {
             const tail = sliceGroupMessagesForSnapshotTail(messages, snapshot.lastMessageId).messages
             return buildProjectedGroupChatHistory(snapshot.summary, tail, { agentId: this.agentId, socketId: this.socket?.id, name: this.name })
         }
         return messages.map((message: any) => this.mapRoomMessageForEstimate(message))
+    }
+
+    private visibilityExtraToStoredContextMessage(roomId: string, visibilityExtra: Record<string, unknown>): StoredMessage {
+        const stringField = (key: string): string | null => typeof visibilityExtra[key] === 'string' ? visibilityExtra[key] as string : null
+        return {
+            id: '',
+            roomId,
+            senderId: agentActorId(roomId, this.agentId),
+            senderName: this.name,
+            content: '',
+            timestamp: Date.now(),
+            role: 'assistant',
+            channelId: stringField('channelId'),
+            threadId: stringField('threadId'),
+            visibility: stringField('visibility'),
+            audienceJson: stringField('audienceJson'),
+            scope: stringField('scope'),
+            originEventId: stringField('originEventId'),
+            metadataJson: stringField('metadataJson'),
+        }
     }
 
     private mapRoomMessageForEstimate(message: any): { role: 'user' | 'assistant'; content: string } {
@@ -895,9 +922,49 @@ class AgentClient {
     }
 }
 
-function groupBridgeSessionId(roomId: string, profile: string, name: string, sessionSeed: string): string {
-    const raw = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}`
-    return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120)
+export function groupBridgeSessionId(
+    roomId: string,
+    profile: string,
+    name: string,
+    sessionSeed: string,
+    visibilityExtra: Record<string, unknown> = {},
+): string {
+    const visibilityKey = groupBridgeVisibilitySessionKey(visibilityExtra)
+    const suffix = `_${visibilityKey}`
+    const rawPrefix = `gc_${roomId}_${profile}_${name}_${sessionSeed || '0'}`.replace(/[^a-zA-Z0-9_-]/g, '_')
+    return `${rawPrefix.slice(0, Math.max(0, 120 - suffix.length))}${suffix}`
+}
+
+function groupBridgeVisibilitySessionKey(visibilityExtra: Record<string, unknown>): string {
+    const canonical = JSON.stringify({
+        channelId: typeof visibilityExtra.channelId === 'string' ? visibilityExtra.channelId : 'public',
+        threadId: typeof visibilityExtra.threadId === 'string' ? visibilityExtra.threadId : null,
+        visibility: typeof visibilityExtra.visibility === 'string' ? visibilityExtra.visibility : 'public',
+        scope: typeof visibilityExtra.scope === 'string' ? visibilityExtra.scope : 'room',
+        audience: canonicalAudience(visibilityExtra.audienceJson),
+    })
+    return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+}
+
+function canonicalAudience(value: unknown): string[] {
+    if (value == null || value === '') return []
+    let parsed: unknown = value
+    if (typeof value === 'string') {
+        try {
+            parsed = JSON.parse(value)
+        } catch {
+            return [value.trim()].filter(Boolean)
+        }
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const record = parsed as Record<string, unknown>
+        parsed = record.actorIds || record.audienceActorIds || record.actors
+    }
+    if (!Array.isArray(parsed)) return []
+    return [...new Set(parsed
+        .filter((actor): actor is string => typeof actor === 'string' && actor.trim().length > 0)
+        .map(actor => actor.trim())
+        .sort())]
 }
 
 function groupMessageId(roomId: string, profile: string, name: string): string {
@@ -1221,8 +1288,18 @@ export class AgentClients {
 function isPublicVisibilityExtra(extra: Record<string, unknown>): boolean {
     const channelId = String(extra.channelId || 'public')
     const visibility = String(extra.visibility || 'public')
-    const audienceJson = typeof extra.audienceJson === 'string' ? extra.audienceJson.trim() : '[]'
+    const audienceJson = normalizeAudienceJsonExtra(extra.audienceJson).trim()
     return channelId === 'public' && visibility === 'public' && (!audienceJson || audienceJson === '[]')
+}
+
+function normalizeAudienceJsonExtra(value: unknown): string {
+    if (value == null || value === '') return '[]'
+    if (typeof value === 'string') return value
+    try {
+        return JSON.stringify(value)
+    } catch {
+        return 'null'
+    }
 }
 
 function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {

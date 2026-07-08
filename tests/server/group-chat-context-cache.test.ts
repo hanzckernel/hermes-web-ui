@@ -5,7 +5,7 @@ import {
   groupBridgeReasoningDeltaFromEvent,
   groupContextTokensWithFixedOverhead,
 } from '../../packages/server/src/services/hermes/group-chat/agent-clients'
-import { ContextEngine } from '../../packages/server/src/services/hermes/context-engine/compressor'
+import { ContextEngine, filterMessagesForContextVisibility } from '../../packages/server/src/services/hermes/context-engine/compressor'
 import type {
   GatewayCaller,
   MessageFetcher,
@@ -229,6 +229,98 @@ describe('group chat context cursors', () => {
 })
 
 
+
+
+describe('group chat actor-scoped reply context visibility', () => {
+  it('keeps private messages out of public agent reply context', async () => {
+    const publicMessage = makeMessage({ id: 'public', content: 'public context', timestamp: 1 })
+    const privateMessage = makeMessage({
+      id: 'private',
+      content: 'private context must not reach public prompt',
+      timestamp: 2,
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'conversation',
+    })
+    const currentMessage = makeMessage({ id: 'current', content: '@Worker public question', timestamp: 3 })
+    const fetcher: MessageFetcher = {
+      getMessagesForContext: vi.fn(() => []),
+      getVisibleMessagesForContext: vi.fn(() => [publicMessage, privateMessage, currentMessage]),
+      getContextSnapshot: vi.fn(() => null),
+      saveContextSnapshot: vi.fn(),
+      deleteContextSnapshot: vi.fn(),
+    }
+    const { engine } = makeEngine(fetcher)
+
+    const result = await engine.buildContext({
+      roomId: 'room-1',
+      agentId: 'agent-1',
+      agentName: 'Worker',
+      agentDescription: '',
+      agentSocketId: 'agent-socket',
+      actorId: 'gc:room-1:agent:agent-1',
+      roomName: 'general',
+      memberNames: ['Alice'],
+      members: [{ userId: 'user-1', name: 'Alice', description: '' }],
+      upstream: '',
+      apiKey: null,
+      currentMessage,
+    })
+
+    expect(fetcher.getVisibleMessagesForContext).toHaveBeenCalledWith('room-1', 'gc:room-1:agent:agent-1', { throughMessageId: 'current' })
+    const contextText = result.conversationHistory.map(message => message.content).join('\n')
+    expect(contextText).toContain('public context')
+    expect(contextText).toContain('public question')
+    expect(contextText).not.toContain('private context must not reach public prompt')
+  })
+
+  it('keeps only public and matching private envelopes for scoped token estimates', () => {
+    const publicMessage = makeMessage({ id: 'public', content: 'public', timestamp: 1 })
+    const samePrivate = makeMessage({
+      id: 'same-private',
+      content: 'same private',
+      timestamp: 2,
+      channelId: 'private-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'conversation',
+    })
+    const otherThreadPrivate = makeMessage({
+      id: 'other-thread-private',
+      content: 'other thread private',
+      timestamp: 3,
+      channelId: 'private-1',
+      threadId: 'thread-2',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'conversation',
+    })
+    const otherPrivate = makeMessage({
+      id: 'other-private',
+      content: 'other private',
+      timestamp: 4,
+      channelId: 'private-2',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'conversation',
+    })
+    const currentPrivate = makeMessage({
+      id: 'current-private',
+      content: '@Worker private question',
+      timestamp: 5,
+      channelId: 'private-1',
+      threadId: 'thread-1',
+      visibility: 'private',
+      audienceJson: JSON.stringify(['gc:room-1:agent:agent-1']),
+      scope: 'conversation',
+    })
+
+    samePrivate.threadId = 'thread-1'
+    expect(filterMessagesForContextVisibility([publicMessage, samePrivate, otherThreadPrivate, otherPrivate], currentPrivate).map(message => message.id))
+      .toEqual(['public', 'same-private'])
+  })
+})
 
 describe('group chat force compression visibility', () => {
   it('uses public-visible messages for shared manual compression', async () => {

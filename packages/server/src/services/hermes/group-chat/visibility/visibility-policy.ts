@@ -19,6 +19,16 @@ interface NormalizedVisibleMessage extends VisibleGroupMessage {
     metadataJson: string
 }
 
+function normalizeAudienceJsonInput(value: unknown): string {
+    if (value == null || value === '') return '[]'
+    if (typeof value === 'string') return value
+    try {
+        return JSON.stringify(value)
+    } catch {
+        return 'null'
+    }
+}
+
 export class VisibilityPolicy {
     constructor(private readonly channels = new ChannelStore()) {}
 
@@ -65,7 +75,7 @@ export class VisibilityPolicy {
             channelId: normalizeChannelId(message.channelId),
             visibility: normalizeVisibility(message.visibility),
             scope: normalizeScope(message.scope),
-            audienceJson: typeof message.audienceJson === 'string' ? message.audienceJson : '[]',
+            audienceJson: normalizeAudienceJsonInput(message.audienceJson),
             metadataJson: typeof message.metadataJson === 'string' ? message.metadataJson : '{}',
         }
     }
