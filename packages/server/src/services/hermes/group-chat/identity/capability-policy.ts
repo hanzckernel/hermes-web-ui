@@ -4,32 +4,30 @@ import type { GroupActor } from './types'
 export type GroupCapability =
     | 'message.read'
     | 'message.write'
-    | 'channel.join'
-    | 'channel.create.private'
-    | 'channel.create.task'
-    | 'channel.moderate.own'
-    | 'agent.invoke'
-    | 'agent.handoff'
-    | 'tool.read'
-    | 'tool.write'
-    | 'tool.execute'
     | 'approval.request'
     | 'approval.respond'
-    | 'artifact.create'
-    | 'artifact.publish'
-    | 'platform.post'
-    | 'platform.edit'
+    | 'private_fact.create'
+    | 'private_fact.revoke'
 
 const HUMAN_DEFAULTS = new Set<GroupCapability>([
     'message.read',
     'message.write',
     'approval.respond',
+    'private_fact.create',
+    'private_fact.revoke',
 ])
 
 const AGENT_DEFAULTS = new Set<GroupCapability>([
     'message.read',
     'message.write',
     'approval.request',
+    'private_fact.create',
+    'private_fact.revoke',
+])
+
+const SUPPORTED_CAPABILITIES = new Set<string>([
+    ...HUMAN_DEFAULTS,
+    ...AGENT_DEFAULTS,
 ])
 
 export class CapabilityPolicy {
@@ -37,6 +35,7 @@ export class CapabilityPolicy {
 
     can(actor: GroupActor, capability: GroupCapability | string): boolean {
         if (actor.status !== 'active') return false
+        if (!SUPPORTED_CAPABILITIES.has(capability)) return false
         const explicit = this.explicitCapability(actor.id, capability)
         if (explicit != null) return explicit
         if (actor.kind === 'human') return HUMAN_DEFAULTS.has(capability as GroupCapability)
@@ -76,20 +75,9 @@ export class CapabilityPolicy {
 
     private explicitCapability(actorId: string, capability: string): boolean | null {
         const row = this.db()?.prepare(
-            'SELECT enabled, scopeJson FROM gc_actor_capabilities WHERE actorId = ? AND capability = ?'
-        ).get(actorId, capability) as { enabled: number; scopeJson?: string } | undefined
+            'SELECT enabled FROM gc_actor_capabilities WHERE actorId = ? AND capability = ?'
+        ).get(actorId, capability) as { enabled: number } | undefined
         if (!row) return null
-        this.parseScope(row.scopeJson)
         return Number(row.enabled) === 1
-    }
-
-    private parseScope(value: unknown): Record<string, unknown> {
-        if (typeof value !== 'string' || !value) return {}
-        try {
-            const parsed = JSON.parse(value)
-            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-        } catch {
-            return {}
-        }
     }
 }

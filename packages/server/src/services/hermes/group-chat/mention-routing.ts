@@ -53,6 +53,41 @@ function findMentionRanges(content: string, mentionName: string): MentionRange[]
     return ranges
 }
 
+function findAnyMentionRanges(content: string): MentionRange[] {
+    if (!content) return []
+    const ranges: MentionRange[] = []
+    const mentionPattern = /@[\p{L}\p{N}_][\p{L}\p{N}_.]*/gu
+    let match: RegExpExecArray | null
+    while ((match = mentionPattern.exec(content))) {
+        const start = match.index
+        const end = start + match[0].length
+        if (isBeforeBoundary(content[start - 1]) && isAfterBoundary(content[end])) {
+            ranges.push({ start, end })
+        }
+    }
+    return ranges
+}
+
+function stripMentionRanges(content: string, ranges: MentionRange[], trimTrailing = true): string {
+    const rangesByKey = new Map<string, MentionRange>()
+    for (const range of ranges) rangesByKey.set(`${range.start}:${range.end}`, range)
+
+    let result = content
+    for (const range of [...rangesByKey.values()].sort((a, b) => b.start - a.start)) {
+        result = `${result.slice(0, range.start)}${result.slice(range.end)}`
+    }
+
+    let cleaned = result
+        .replace(/^[\s,，:：;；.!?。！？]+/, '')
+        .replace(/[ \t]{2,}/g, ' ')
+    if (trimTrailing) {
+        cleaned = cleaned
+            .replace(/[\s,，:：;；]+$/g, '')
+            .trim()
+    }
+    return cleaned
+}
+
 export function isAgentMentioned(content: string, agentName: string): boolean {
     return findMentionRanges(content, agentName).length > 0
 }
@@ -80,24 +115,12 @@ export function resolveMentionTargets<T extends MentionableAgent>(
 }
 
 export function stripMentionRoutingTokens(content: string, ownAgentName: string): string {
-    const rangesByKey = new Map<string, MentionRange>()
-    for (const range of [
+    return stripMentionRanges(content, [
         ...findMentionRanges(content, ALL_AGENTS_MENTION),
         ...findMentionRanges(content, ownAgentName),
-    ]) {
-        rangesByKey.set(`${range.start}:${range.end}`, range)
-    }
+    ])
+}
 
-    const ranges = [...rangesByKey.values()].sort((a, b) => b.start - a.start)
-
-    let result = content
-    for (const range of ranges) {
-        result = `${result.slice(0, range.start)}${result.slice(range.end)}`
-    }
-
-    return result
-        .replace(/^[\s,，:：;；.!?。！？]+/, '')
-        .replace(/[\s,，:：;；]+$/g, '')
-        .replace(/[ \t]{2,}/g, ' ')
-        .trim()
+export function stripAllMentionRoutingTokens(content: string): string {
+    return stripMentionRanges(content, findAnyMentionRanges(content), false)
 }

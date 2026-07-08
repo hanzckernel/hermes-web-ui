@@ -312,4 +312,5 @@ describe('group chat store baseline lifecycle', () => {
 
     expect(store.rooms[0].totalTokens).toBe(42)
   })
+
 })

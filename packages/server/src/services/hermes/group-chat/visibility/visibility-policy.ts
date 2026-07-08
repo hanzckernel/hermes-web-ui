@@ -1,6 +1,7 @@
 import { systemActorId } from '../identity/actor-ids'
 import { ChannelStore } from './channel-store'
-import { normalizeChannelId, normalizeScope, normalizeVisibility, type VisibleGroupMessage } from './types'
+import { normalizeAudienceJsonInput } from './audience'
+import { normalizeChannelId, normalizeScope, normalizeVisibility, type GroupMessageScope, type GroupMessageVisibility, type VisibleGroupMessage } from './types'
 
 interface ParsedAudience {
     actorIds: string[]
@@ -13,21 +14,12 @@ interface NormalizedVisibleMessage extends VisibleGroupMessage {
     senderId: string
     timestamp: number
     channelId: string
-    visibility: string
-    scope: string
+    visibility: GroupMessageVisibility
+    scope: GroupMessageScope
     audienceJson: string
     metadataJson: string
 }
 
-function normalizeAudienceJsonInput(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    if (typeof value === 'string') return value
-    try {
-        return JSON.stringify(value)
-    } catch {
-        return 'null'
-    }
-}
 
 export class VisibilityPolicy {
     constructor(private readonly channels = new ChannelStore()) {}
@@ -49,8 +41,7 @@ export class VisibilityPolicy {
             return actorId.includes(':agent:') && (normalized.channelId === 'public' || Boolean(membership?.canRead))
         }
         if (membership?.canRead) return true
-        if (visibility === 'system-only' || visibility === 'audit-only') return false
-        if (visibility === 'external') return false
+        if (visibility === 'system-only') return false
 
         return false
     }

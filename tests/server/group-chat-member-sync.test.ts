@@ -234,7 +234,6 @@ describe('Group Chat member/agent identity sync', () => {
       success: true,
       agents: [],
       members: [{ id: 'member-1', userId: 'human-1', name: 'Han', description: '', joinedAt: 1 }],
-      actors: [],
     })
   })
 
@@ -366,6 +365,7 @@ describe('Group Chat member/agent identity sync', () => {
     server.agentClients = { processMentions: vi.fn(async () => undefined) }
     server.storage = {
       canReadMessage: vi.fn(() => true),
+      canActor: vi.fn(() => true),
       canWriteChannel: vi.fn(() => true),
       saveMessageAndRefreshRoom: vi.fn((msg: any) => ({ message: msg, totalTokens: 123 })),
     }

@@ -58,6 +58,7 @@ export interface CompressedContext {
         hadSnapshot: boolean
         compressed: boolean
         summaryTokenEstimate: number
+        contextKey?: string
         contextTokenEstimate?: number
         messageTokenEstimate?: number
     }
@@ -66,11 +67,23 @@ export interface CompressedContext {
 // ─── Context Snapshot (persisted in SQLite) ────────────────
 
 export interface ContextSnapshot {
+    contextKey?: string
     roomId: string
     summary: string
     lastMessageId: string
     lastMessageTimestamp: number
     updatedAt: number
+}
+
+export interface ContextPrivateFact {
+    id: string
+    factType: string
+    content: string
+}
+
+export interface ContextActorProjection {
+    privateFacts: ContextPrivateFact[]
+    allowedActions: string[]
 }
 
 // ─── Summary Cache ──────────────────────────────────────────
@@ -90,6 +103,10 @@ export interface MessageFetcher {
     getContextSnapshot(roomId: string): ContextSnapshot | null
     saveContextSnapshot(roomId: string, summary: string, lastMessageId: string, lastMessageTimestamp: number): void
     deleteContextSnapshot(roomId: string): void
+    getScopedContextSnapshot?(contextKey: string): ContextSnapshot | null
+    saveScopedContextSnapshot?(contextKey: string, roomId: string, actorId: string, currentMessage: StoredMessage, summary: string, lastMessageId: string, lastMessageTimestamp: number): void
+    deleteScopedContextSnapshots?(roomId: string): void
+    getActorContextProjection?(roomId: string, actorId: string): ContextActorProjection
 }
 
 export interface GatewayCaller {

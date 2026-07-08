@@ -15,7 +15,6 @@ import {
     type RoomAgent,
     type ChatMessage,
     type MemberInfo,
-    type GroupActor,
     type GroupChannel,
     createRoom,
     listRooms,
@@ -154,7 +153,6 @@ export const useGroupChatStore = defineStore('groupChat', () => {
     const messages = ref<ChatMessage[]>([])
     const members = ref<MemberInfo[]>([])
     const agents = ref<RoomAgent[]>([])
-    const actors = ref<GroupActor[]>([])
     const channels = ref<GroupChannel[]>([])
     const currentActorId = ref<string | null>(null)
     const activeChannelId = ref(PUBLIC_CHANNEL_ID)
@@ -259,7 +257,6 @@ const currentUserAvatar = ref('')
     function applyRealtimeJoinState(res: any, options: { syncMessages?: boolean } = {}) {
         members.value = res.members || []
         if (res.agents) agents.value = res.agents
-        if (Array.isArray(res.actors)) actors.value = res.actors
         if (Array.isArray(res.channels)) applyChannels(res.channels, res.actorId)
         else applyChannels(undefined, res.actorId)
         if (res.roomName) roomName.value = res.roomName
@@ -570,6 +567,8 @@ const currentUserAvatar = ref('')
             pendingApprovals.value = new Map(pendingApprovals.value)
         })
 
+
+
         socket.on('room_updated', (data: { roomId: string; totalTokens: number }) => {
             const room = rooms.value.find(r => r.id === data.roomId)
             if (room) room.totalTokens = data.totalTokens
@@ -596,7 +595,6 @@ const currentUserAvatar = ref('')
         resetMessagePaging()
         members.value = []
         agents.value = []
-        actors.value = []
         roomName.value = ''
         typingUsers.value.clear()
         contextStatuses.value.clear()
@@ -622,7 +620,6 @@ const currentUserAvatar = ref('')
             applyMessagePaging(res)
             agents.value = res.agents
             members.value = res.members || []
-            actors.value = res.actors || []
             applyChannels(res.channels, res.actorId)
         } catch (err: any) {
             error.value = err.message
@@ -644,7 +641,7 @@ const currentUserAvatar = ref('')
         isLoadingOlderMessages.value = true
         try {
             const limit = Math.min(GROUP_CHAT_MESSAGE_PAGE_SIZE, GROUP_CHAT_MAX_DISPLAY_MESSAGES - offset)
-            const res = await getRoomDetail(roomId, { offset, limit, actorId: currentActorId.value || undefined })
+            const res = await getRoomDetail(roomId, { offset, limit })
             const existingIds = new Set(messages.value.map(message => message.id))
             const olderMessages = res.messages.filter(message => !existingIds.has(message.id))
             messages.value = [...olderMessages, ...messages.value]
@@ -752,7 +749,6 @@ const currentUserAvatar = ref('')
                 resetMessagePaging()
                 members.value = []
                 agents.value = []
-                actors.value = []
                 channels.value = []
                 currentActorId.value = null
                 activeChannelId.value = PUBLIC_CHANNEL_ID
@@ -816,7 +812,6 @@ const currentUserAvatar = ref('')
             const res = await removeAgent(roomId, agentId)
             agents.value = res.agents ?? agents.value.filter(a => a.id !== agentId && a.agentId !== agentId)
             if (res.members) members.value = res.members
-            if (res.actors) actors.value = res.actors
         } catch (err: any) {
             error.value = err.message
             throw err
@@ -886,7 +881,6 @@ const currentUserAvatar = ref('')
         messages,
         members,
         agents,
-        actors,
         channels,
         currentActorId,
         activeChannelId,

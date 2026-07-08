@@ -6,14 +6,11 @@ export interface GroupPrivateFact {
     actorId: string
     factType: string
     content: string
-    visibility: 'private' | 'shared'
     createdBy: string
     createdAt: number
-    expiresAt?: number | null
-    metadata: Record<string, unknown>
 }
 
-type FactRow = Omit<GroupPrivateFact, 'metadata'> & { metadataJson: string }
+type FactRow = GroupPrivateFact
 
 export class PrivateFactsStore {
     private db() { return getDb() }
@@ -25,8 +22,6 @@ export class PrivateFactsStore {
         factType: string
         content: string
         createdBy: string
-        expiresAt?: number | null
-        metadata?: Record<string, unknown>
     }): GroupPrivateFact {
         const fact: GroupPrivateFact = {
             id: input.id || this.generateId(),
@@ -34,52 +29,45 @@ export class PrivateFactsStore {
             actorId: input.actorId,
             factType: input.factType,
             content: input.content,
-            visibility: 'private',
             createdBy: input.createdBy,
             createdAt: Date.now(),
-            expiresAt: input.expiresAt ?? null,
-            metadata: input.metadata || {},
         }
         this.db()?.prepare(
             `INSERT INTO gc_actor_private_facts
-                (id, roomId, actorId, factType, content, visibility, createdBy, createdAt, expiresAt, metadataJson)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                (id, roomId, actorId, factType, content, createdBy, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
         ).run(
             fact.id,
             fact.roomId,
             fact.actorId,
             fact.factType,
             fact.content,
-            fact.visibility,
             fact.createdBy,
             fact.createdAt,
-            fact.expiresAt ?? null,
-            JSON.stringify(fact.metadata),
         )
         return fact
     }
 
     listPrivateFacts(roomId: string, actorId: string): GroupPrivateFact[] {
         const rows = (this.db()?.prepare(
-            `SELECT id, roomId, actorId, factType, content, visibility, createdBy, createdAt, expiresAt, metadataJson
+            `SELECT id, roomId, actorId, factType, content, createdBy, createdAt
              FROM gc_actor_private_facts
              WHERE roomId = ?
                AND actorId = ?
-               AND (expiresAt IS NULL OR expiresAt > ?)
              ORDER BY createdAt, id`
-        ).all(roomId, actorId, Date.now()) || []) as FactRow[]
+        ).all(roomId, actorId) || []) as unknown as FactRow[]
         return rows.map(row => this.mapFact(row))
     }
 
+    revokePrivateFact(roomId: string, actorId: string, factId: string): boolean {
+        const result = this.db()?.prepare(
+            'DELETE FROM gc_actor_private_facts WHERE roomId = ? AND actorId = ? AND id = ?'
+        ).run(roomId, actorId, factId)
+        return Boolean(result?.changes)
+    }
+
     private mapFact(row: FactRow): GroupPrivateFact {
-        let metadata: Record<string, unknown> = {}
-        try {
-            const parsed = JSON.parse(row.metadataJson || '{}')
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed
-        } catch {
-            metadata = {}
-        }
-        return { ...row, metadata }
+        return { ...row }
     }
 
     private generateId(): string {

@@ -14,11 +14,15 @@ import { config } from '../../../config'
 import { createSocketIoCorsOrigin, shouldRejectUpgradeOrigin } from '../../../security'
 import { paginateRecentGroupMessagesCanonical, sliceGroupMessagesCanonical, sliceGroupMessagesForSnapshotTail, type GroupMessageCursorCutoff } from './group-message-ordering'
 import { ActorStore } from './identity/actor-store'
+import { PrivateFactsStore } from './identity/private-facts'
 import { agentActorId, humanActorId, systemActorId } from './identity/actor-ids'
 import { ChannelStore } from './visibility/channel-store'
 import { VisibilityPolicy } from './visibility/visibility-policy'
+import { extractGroupTransferCards, hasGroupTransferBlocks, stripGroupTransferBlocksFromStoredContent, stripGroupTransferBlocksFromText, type GroupTransferCard, type GroupTransferCardType } from './transfer-protocol'
 import { normalizeChannelId, normalizeScope, normalizeVisibility } from './visibility/types'
-import type { GroupChannel, GroupChannelKind, GroupMessageVisibility, VisibleGroupMessage } from './visibility/types'
+import { audienceFingerprint, normalizeAudienceJsonInput } from './visibility/audience'
+import type { ContentBlock } from '../run-chat/types'
+import type { GroupChannel, GroupChannelKind, GroupMessageScope, GroupMessageVisibility, VisibleGroupMessage } from './visibility/types'
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -39,15 +43,57 @@ interface ChatMessage extends VisibleGroupMessage {
     reasoning_content?: string | null
     channelId?: string | null
     threadId?: string | null
-    visibility?: GroupMessageVisibility | string | null
+    visibility?: GroupMessageVisibility | null
     audienceJson?: string | null
-    scope?: string | null
+    scope?: GroupMessageScope | null
     originEventId?: string | null
     metadataJson?: string | null
     mentionDepth?: number
 }
 
+type AppliedGroupTransferCard = GroupTransferCard & {
+    targetActorId?: string
+    status: 'accepted' | 'denied'
+    reason?: string
+}
+
 const GROUP_MESSAGE_SELECT = 'id, roomId, senderId, senderName, content, timestamp, role, tool_call_id, tool_calls, tool_name, finish_reason, reasoning, reasoning_details, reasoning_content, channelId, threadId, visibility, audienceJson, scope, originEventId, metadataJson'
+const TRANSFER_FENCE_OPENERS = ['```group-chat-transfer', '```gc-transfer']
+const TRANSFER_FENCE_CLOSER_RE = /(?:^|\r?\n)```[^\S\r\n]*(?=\r?\n|$)/
+type TransferStreamStripState = { buffer: string; insideTransferBlock: boolean }
+
+function transferFencePrefixTailLength(text: string): number {
+    const lower = text.toLowerCase()
+    let keep = 0
+    for (const opener of TRANSFER_FENCE_OPENERS) {
+        const max = Math.min(opener.length, lower.length)
+        for (let length = max; length > keep; length--) {
+            if (opener.startsWith(lower.slice(-length))) {
+                keep = length
+                break
+            }
+        }
+        const openerIndex = lower.lastIndexOf(opener)
+        if (openerIndex !== -1) {
+            const trailing = text.slice(openerIndex + opener.length)
+            if (/^[^\S\r\n]*\r?$/.test(trailing)) {
+                keep = Math.max(keep, text.length - openerIndex)
+            }
+        }
+    }
+    return keep
+}
+
+function transferFenceCloserRange(text: string): { start: number; end: number } | null {
+    const match = TRANSFER_FENCE_CLOSER_RE.exec(text)
+    if (!match) return null
+    const matched = match[0] || ''
+    const newlinePrefixLength = matched.startsWith('\r\n') ? 2 : matched.startsWith('\n') ? 1 : 0
+    return {
+        start: match.index + newlinePrefixLength,
+        end: match.index + matched.length,
+    }
+}
 
 function contentToStorageString(content: unknown): string {
     if (typeof content === 'string') return content
@@ -79,6 +125,16 @@ function contentToText(content: unknown): string {
         }).filter(Boolean).join('\n')
     }
     return content == null ? '' : String(content)
+}
+
+function mentionInputFromSafeContent(originalContent: unknown, safeContent: string): string | ContentBlock[] | undefined {
+    if (!Array.isArray(originalContent)) return undefined
+    try {
+        const parsed = JSON.parse(safeContent)
+        return Array.isArray(parsed) ? parsed as ContentBlock[] : safeContent
+    } catch {
+        return safeContent
+    }
 }
 
 interface RoomAgent {
@@ -162,15 +218,6 @@ function normalizeMessageRole(role: unknown): string {
     return ['user', 'assistant', 'tool', 'command'].includes(value) ? value : 'user'
 }
 
-function normalizeAudienceJsonInput(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    if (typeof value === 'string') return value
-    try {
-        return JSON.stringify(value)
-    } catch {
-        return 'null'
-    }
-}
 
 function normalizeMentionDepth(depth: unknown): number {
     const value = Number(depth)
@@ -187,6 +234,7 @@ class ChatStorage {
     private db() { return getDb() }
     private readonly actorStore = new ActorStore()
     private readonly channelStore = new ChannelStore()
+    private readonly privateFactsStore = new PrivateFactsStore()
     private readonly visibilityPolicy = new VisibilityPolicy(this.channelStore)
 
     private mapStoredMessageRow(row: any): ChatMessage {
@@ -218,6 +266,7 @@ class ChatStorage {
 
     canReadMessage(actorId: string | null | undefined, message: ChatMessage): boolean {
         if (!actorId) return this.isPublicMessage(message)
+        if (actorId !== systemActorId(message.roomId) && !this.canActor(actorId, 'message.read')) return false
         return this.visibilityPolicy.canReadMessage(actorId, message)
     }
 
@@ -234,6 +283,8 @@ class ChatStorage {
         try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_gc_room_members_unique ON gc_room_members(roomId, userId)') } catch { /* ignore */ }
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_pending_session_deletes_profile ON gc_pending_session_deletes(profile_name, status, next_attempt_at, created_at)') } catch { /* ignore */ }
         try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_session_profiles_profile ON gc_session_profiles(profile_name, created_at)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_scoped_context_snapshots_room ON gc_scoped_context_snapshots(roomId)') } catch { /* ignore */ }
+        try { db.exec('CREATE INDEX IF NOT EXISTS idx_gc_scoped_context_snapshots_actor ON gc_scoped_context_snapshots(roomId, actorId)') } catch { /* ignore */ }
         _tablesEnsured = true
     }
 
@@ -354,6 +405,20 @@ class ChatStorage {
              WHERE a.profile IN (${placeholders})
              ORDER BY r.id`
         ).all(...uniqueProfiles) || []) as any[]
+    }
+
+    canAuthenticatedUserAccessRoom(roomId: string, input: { authUserId?: number | null; userId?: string | null; profiles?: string[] | null }): boolean {
+        const authUserId = typeof input.authUserId === 'number' && input.authUserId > 0 ? input.authUserId : null
+        if (authUserId && this.getMemberByAuthUserId(roomId, authUserId)) return true
+        const userId = String(input.userId || '').trim()
+        if (userId && this.getMemberByUserId(roomId, userId)) return true
+        const profiles = [...new Set((input.profiles || []).map(profile => profile.trim()).filter(Boolean))]
+        if (!profiles.length) return false
+        const placeholders = profiles.map(() => '?').join(', ')
+        const row = this.db()?.prepare(
+            `SELECT 1 FROM gc_room_agents WHERE roomId = ? AND profile IN (${placeholders}) LIMIT 1`
+        ).get(roomId, ...profiles)
+        return Boolean(row)
     }
 
     saveRoom(id: string, name: string, inviteCode?: string, config?: { triggerTokens?: number; maxHistoryTokens?: number; tailMessageCount?: number }): void {
@@ -553,6 +618,7 @@ class ChatStorage {
         if (!db) return
         db.prepare('DELETE FROM gc_messages WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_context_snapshots WHERE roomId = ?').run(roomId)
+        db.prepare('DELETE FROM gc_scoped_context_snapshots WHERE roomId = ?').run(roomId)
         db.prepare('UPDATE gc_rooms SET totalTokens = 0, sessionSeed = ? WHERE id = ?').run(`${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, roomId)
     }
 
@@ -621,8 +687,74 @@ class ChatStorage {
         ).run(roomId, summary, lastMessageId, lastMessageTimestamp, Date.now())
     }
 
+    getScopedContextSnapshot(contextKey: string): { contextKey: string; roomId: string; summary: string; lastMessageId: string; lastMessageTimestamp: number; updatedAt: number } | null {
+        return (this.db()?.prepare(
+            'SELECT contextKey, roomId, summary, lastMessageId, lastMessageTimestamp, updatedAt FROM gc_scoped_context_snapshots WHERE contextKey = ?'
+        ).get(contextKey) as any) ?? null
+    }
+
+    saveScopedContextSnapshot(contextKey: string, roomId: string, actorId: string, currentMessage: ChatMessage, summary: string, lastMessageId: string, lastMessageTimestamp: number): void {
+        const now = Date.now()
+        this.db()?.prepare(
+            `INSERT INTO gc_scoped_context_snapshots (
+                contextKey, roomId, actorId, channelId, threadId, visibility, audienceFingerprint, scope,
+                summary, lastMessageId, lastMessageTimestamp, updatedAt
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(contextKey) DO UPDATE SET
+                actorId = excluded.actorId,
+                channelId = excluded.channelId,
+                threadId = excluded.threadId,
+                visibility = excluded.visibility,
+                audienceFingerprint = excluded.audienceFingerprint,
+                scope = excluded.scope,
+                summary = excluded.summary,
+                lastMessageId = excluded.lastMessageId,
+                lastMessageTimestamp = excluded.lastMessageTimestamp,
+                updatedAt = excluded.updatedAt`
+        ).run(
+            contextKey,
+            roomId,
+            actorId,
+            normalizeChannelId(currentMessage.channelId),
+            currentMessage.threadId ?? null,
+            normalizeVisibility(currentMessage.visibility),
+            audienceFingerprint(currentMessage.audienceJson),
+            normalizeScope(currentMessage.scope),
+            summary,
+            lastMessageId,
+            lastMessageTimestamp,
+            now,
+        )
+    }
+
     deleteContextSnapshot(roomId: string): void {
         this.db()?.prepare('DELETE FROM gc_context_snapshots WHERE roomId = ?').run(roomId)
+    }
+
+    deleteScopedContextSnapshots(roomId: string): void {
+        this.db()?.prepare('DELETE FROM gc_scoped_context_snapshots WHERE roomId = ?').run(roomId)
+    }
+
+    getActorContextProjection(roomId: string, actorId: string): { privateFacts: Array<{ id: string; factType: string; content: string }>; allowedActions: string[] } {
+        const actor = this.actorStore.getActor(actorId)
+        return {
+            privateFacts: this.privateFactsStore.listPrivateFacts(roomId, actorId).map(fact => ({ id: fact.id, factType: fact.factType, content: fact.content })),
+            allowedActions: actor?.capabilities || [],
+        }
+    }
+
+    createPrivateFact(roomId: string, actorId: string, input: { factType: string; content: string; createdBy: string }) {
+        return this.privateFactsStore.createPrivateFact({
+            roomId,
+            actorId,
+            factType: input.factType,
+            content: input.content,
+            createdBy: input.createdBy,
+        })
+    }
+
+    revokePrivateFact(roomId: string, actorId: string, factId: string): boolean {
+        return this.privateFactsStore.revokePrivateFact(roomId, actorId, factId)
     }
 
     deleteRoom(roomId: string): void {
@@ -634,6 +766,7 @@ class ChatStorage {
         db.prepare('DELETE FROM gc_room_agents WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_room_members WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_context_snapshots WHERE roomId = ?').run(roomId)
+        db.prepare('DELETE FROM gc_scoped_context_snapshots WHERE roomId = ?').run(roomId)
         db.prepare('DELETE FROM gc_rooms WHERE id = ?').run(roomId)
     }
 
@@ -737,7 +870,12 @@ class ChatStorage {
 
     getActors(roomId: string) {
         this.ensureActorsForRoom(roomId)
-        return this.actorStore.listActors(roomId).map(({ authUserId: _authUserId, externalUserId: _externalUserId, ...actor }) => actor)
+        return this.actorStore.listActors(roomId).map(({ authUserId: _authUserId, ...actor }) => actor)
+    }
+
+    getActorsForReader(roomId: string, actorId?: string | null) {
+        if (!actorId || !this.canReadRoomAsActor(roomId, actorId)) return []
+        return this.getActors(roomId)
     }
 
     private actorExists(actorId: string): boolean {
@@ -787,6 +925,19 @@ class ChatStorage {
         }
     }
 
+    resolveExistingHumanActorId(roomId: string, userId: string, displayName?: string, authUserId?: number | null): string | null {
+        const existing = this.getMemberByUserId(roomId, userId) ||
+            (typeof authUserId === 'number' && authUserId > 0 ? this.getMemberByAuthUserId(roomId, authUserId) : null)
+        if (!existing) return null
+        return this.actorStore.ensureHumanActor({
+            roomId,
+            userId: existing.userId || userId,
+            displayName: displayName || existing.name || userId,
+            description: existing.description || '',
+            authUserId: authUserId ?? existing.authUserId ?? null,
+        }).id
+    }
+
     resolveHumanActorId(roomId: string, userId: string, displayName?: string, authUserId?: number | null): string {
         const existing = this.getMemberByUserId(roomId, userId) ||
             (typeof authUserId === 'number' && authUserId > 0 ? this.getMemberByAuthUserId(roomId, authUserId) : null)
@@ -806,7 +957,7 @@ class ChatStorage {
     getChannels(roomId: string, actorId?: string | null): GroupChannel[] {
         this.ensureDefaultPublicChannel(roomId)
         const channels = this.channelStore.listChannels(roomId)
-        if (!actorId) return channels.filter(channel => channel.id === 'public')
+        if (!actorId || !this.canReadRoomAsActor(roomId, actorId)) return channels.filter(channel => channel.id === 'public')
         return channels.filter(channel => channel.id === 'public' || channel.createdBy === actorId || this.channelStore.getChannelMember(roomId, channel.id, actorId)?.canRead)
     }
 
@@ -816,12 +967,11 @@ class ChatStorage {
         kind: GroupChannelKind
         name: string
         createdBy: string
-        members?: Array<{ actorId: string; canRead?: boolean; canWrite?: boolean; canInvite?: boolean; canModerate?: boolean }>
-        metadata?: Record<string, unknown>
+        members?: Array<{ actorId: string; canRead?: boolean; canWrite?: boolean }>
     }): GroupChannel {
         const members = [...(input.members || [])]
         if (!members.some(member => member.actorId === input.createdBy)) {
-            members.push({ actorId: input.createdBy, canRead: true, canWrite: true, canInvite: true, canModerate: true })
+            members.push({ actorId: input.createdBy, canRead: true, canWrite: true })
         }
         return this.channelStore.createChannel({ ...input, members })
     }
@@ -837,6 +987,12 @@ class ChatStorage {
     canActor(actorId: string | null | undefined, capability: string): boolean {
         const actor = actorId ? this.actorStore.getActor(actorId) : null
         return Boolean(actor?.capabilities?.includes(capability))
+    }
+
+    canReadRoomAsActor(roomId: string, actorId: string | null | undefined): boolean {
+        if (!actorId) return false
+        if (actorId === systemActorId(roomId)) return true
+        return this.canActor(actorId, 'message.read')
     }
 
     getMemberByUserId(roomId: string, userId: string): Member | null {
@@ -942,6 +1098,10 @@ export class GroupChatServer {
     private streamVisibilityMap = new Map<string, ChatMessage>()
     /** Map: room/message stream key → socket.id that owns the stream */
     private streamOwnerMap = new Map<string, string>()
+    /** Map: room/message stream key → pending transfer-block sanitizer state for content deltas */
+    private streamContentTransferStripMap = new Map<string, TransferStreamStripState>()
+    /** Map: room/message stream key → pending transfer-block sanitizer state for reasoning deltas */
+    private streamReasoningTransferStripMap = new Map<string, TransferStreamStripState>()
     /** Map: room/approval id → visibility metadata for approval events/responses */
     private approvalVisibilityMap = new Map<string, ChatMessage>()
     /** Map: room/approval id → choices advertised by the approval request */
@@ -1036,8 +1196,8 @@ export class GroupChatServer {
         }
         this.contextStatusState.delete(roomId)
         this.agentClients.resetRoomContext(roomId)
-        this.nsp.to(roomId).emit('room_cleared', { roomId, totalTokens: 0 })
-        this.nsp.to(roomId).emit('room_updated', { roomId, totalTokens: 0 })
+        this.emitRoomMetadataEvent(roomId, 'room_cleared', { roomId, totalTokens: 0 })
+        this.emitRoomMetadataEvent(roomId, 'room_updated', { roomId, totalTokens: 0 })
     }
 
     // ─── Restore Agents ─────────────────────────────────────────
@@ -1149,6 +1309,24 @@ export class GroupChatServer {
             return
         }
         const socketAuthUserId = this.socketAuthUserIdMap.get(socket.id)
+        const authenticatedUser = socket.data?.authUser as AuthenticatedUser | undefined
+        const isSuperAdminSocket = source !== 'agent' && authenticatedUser?.role === 'super_admin'
+        const canCheckRoomExistence = typeof (this.storage as any).getRoom === 'function'
+        const existingRoom = canCheckRoomExistence ? this.storage.getRoom(roomId) : null
+        const canCheckAuthenticatedRoomAccess = typeof (this.storage as any).canAuthenticatedUserAccessRoom === 'function'
+        if (source !== 'agent' && !isSuperAdminSocket && typeof socketAuthUserId === 'number') {
+            const authenticatedRoomAccess = canCheckRoomExistence
+                ? Boolean(existingRoom) && (!canCheckAuthenticatedRoomAccess || this.storage.canAuthenticatedUserAccessRoom(roomId, {
+                    authUserId: socketAuthUserId,
+                    userId,
+                    profiles: authenticatedUser?.profiles || [],
+                }))
+                : true
+            if (!authenticatedRoomAccess) {
+                ack?.({ error: 'Room not found' })
+                return
+            }
+        }
         const existingMember = this.storage.getMemberByUserId(roomId, userId) ||
             (typeof socketAuthUserId === 'number' ? this.storage.getMemberByAuthUserId(roomId, socketAuthUserId) : null)
         const userInfo = this.userInfoMap.get(userId) || {
@@ -1170,9 +1348,9 @@ export class GroupChatServer {
 
         let room = this.rooms.get(roomId)
         if (!room) {
-            room = new ChatRoom(roomId)
+            room = new ChatRoom(roomId, existingRoom?.name || roomId)
             this.rooms.set(roomId, room)
-            this.storage.saveRoom(roomId, roomId)
+            if (!existingRoom) this.storage.saveRoom(roomId, roomId)
         }
 
         // Look up the user's avatar via their numeric users.id from the web UI session.
@@ -1202,8 +1380,12 @@ export class GroupChatServer {
         // gc_room_members makes member counts grow on reconnect/restore.
         let actorId: string
         if (source !== 'agent') {
-            this.storage.addRoomMember(roomId, userId, userName, description, userAvatar, authUserId)
-            actorId = this.storage.resolveHumanActorId(roomId, userId, userName, authUserId)
+            if (isSuperAdminSocket) {
+                actorId = systemActorId(roomId)
+            } else {
+                this.storage.addRoomMember(roomId, userId, userName, description, userAvatar, authUserId)
+                actorId = this.storage.resolveHumanActorId(roomId, userId, userName, authUserId)
+            }
         } else if (roomAgent) {
             this.storage.ensureAgentActor(roomAgent)
             actorId = agentActorId(roomId, roomAgent.agentId)
@@ -1225,32 +1407,45 @@ export class GroupChatServer {
             socket.join(`gc:channel:${roomId}:${channel.id}`)
         }
 
-        if (source !== 'agent') {
-            socket.to(roomId).emit('member_joined', {
-                roomId,
-                memberId: userId,
-                memberName: userName,
-                members: room.getMembersList(),
-                actors: this.storage.getActors(roomId),
-            })
+        const canReadMetadata = this.canReadRoomMetadata(roomId, visibilityActorId)
+        if (source !== 'agent' && canReadMetadata) {
+            const targetSockets = this.roomSockets(roomId)
+            if (!targetSockets) {
+                socket.to?.(roomId).emit('member_joined', {
+                    roomId,
+                    memberId: userId,
+                    memberName: userName,
+                    members: room.getMembersList(),
+                })
+            } else {
+                for (const targetSocket of targetSockets) {
+                    if (targetSocket.id === socket.id) continue
+                    const targetActorId = this.getSocketVisibilityActor(targetSocket, roomId)
+                    if (!this.canReadRoomMetadata(roomId, targetActorId)) continue
+                    targetSocket.emit('member_joined', {
+                        roomId,
+                        memberId: userId,
+                        memberName: userName,
+                        members: room.getMembersList(),
+                    })
+                }
+            }
         }
 
         // Load server-verified actor-visible history from SQLite. Unauthenticated local sockets are public-only.
         const messages = this.storage.getVisibleMessagesForUI(roomId, visibilityActorId)
-        const agents = this.storage.getRoomAgents(roomId)
-        const actors = this.storage.getActors(roomId)
+        const agents = canReadMetadata ? this.storage.getRoomAgents(roomId) : []
         const channels = this.storage.getChannels(roomId, visibilityActorId)
 
         ack?.({
             roomId,
-            roomName: room.name,
-            members: room.getMembersList(),
+            roomName: canReadMetadata ? room.name : '',
+            members: canReadMetadata ? room.getMembersList() : [],
             messages,
             agents,
-            actors,
             channels,
             actorId: visibilityActorId,
-            rooms: this.getRoomIds(),
+            rooms: canReadMetadata ? this.getRoomIds() : [roomId],
             typingUsers: this.getTypingUsers(roomId, visibilityActorId),
             contextStatuses: this.getContextStatuses(roomId, visibilityActorId),
         })
@@ -1258,9 +1453,195 @@ export class GroupChatServer {
         logger.debug(`[GroupChat] ${userName} (user=${userId}) joined room: ${roomId}`)
     }
 
-    private isPublicOnlyWrite(channelId: string, visibility: string, audienceJson: unknown): boolean {
-        const audience = normalizeAudienceJsonInput(audienceJson).trim()
+    private sanitizeMetadataValue(value: unknown): unknown {
+        if (typeof value === 'string') {
+            if (!hasGroupTransferBlocks(value)) return value
+            return stripGroupTransferBlocksFromText(value) || null
+        }
+        if (Array.isArray(value)) return value.map(item => this.sanitizeMetadataValue(item))
+        if (value && typeof value === 'object') {
+            const sanitized: Record<string, unknown> = {}
+            const source = value as Record<string, unknown>
+            for (const [key, nested] of Object.entries(source)) {
+                if (key === 'transferCards') continue
+                const keyHadTransferBlock = hasGroupTransferBlocks(key)
+                const sanitizedKey = keyHadTransferBlock ? stripGroupTransferBlocksFromText(key) || null : key
+                if (!sanitizedKey) continue
+                if (keyHadTransferBlock && Object.prototype.hasOwnProperty.call(source, sanitizedKey)) continue
+                if (Object.prototype.hasOwnProperty.call(sanitized, sanitizedKey)) continue
+                const sanitizedNested = this.sanitizeMetadataValue(nested)
+                if (sanitizedNested !== undefined) sanitized[sanitizedKey] = sanitizedNested
+            }
+            return sanitized
+        }
+        return value
+    }
+
+    private sanitizeToolCallValue(value: unknown, keyHint?: string): unknown {
+        if (typeof value === 'string') {
+            const trimmed = value.trim()
+            if (keyHint === 'arguments' && ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']')))) {
+                try {
+                    return JSON.stringify(this.sanitizeToolCallValue(JSON.parse(value)))
+                } catch {
+                    // Fall through to plain text fence stripping.
+                }
+            }
+            if (!hasGroupTransferBlocks(value)) return value
+            return stripGroupTransferBlocksFromText(value) || null
+        }
+        if (Array.isArray(value)) return value.map(item => this.sanitizeToolCallValue(item))
+        if (value && typeof value === 'object') {
+            const sanitized: Record<string, unknown> = {}
+            const source = value as Record<string, unknown>
+            for (const [key, nested] of Object.entries(source)) {
+                const keyHadTransferBlock = hasGroupTransferBlocks(key)
+                const sanitizedKey = keyHadTransferBlock ? stripGroupTransferBlocksFromText(key) || null : key
+                if (!sanitizedKey) continue
+                if (keyHadTransferBlock && Object.prototype.hasOwnProperty.call(source, sanitizedKey)) continue
+                if (Object.prototype.hasOwnProperty.call(sanitized, sanitizedKey)) continue
+                const sanitizedNested = this.sanitizeToolCallValue(nested, sanitizedKey)
+                if (sanitizedNested !== undefined) sanitized[sanitizedKey] = sanitizedNested
+            }
+            return sanitized
+        }
+        return value
+    }
+
+    private sanitizeToolCalls(value: unknown): any[] | null {
+        if (!Array.isArray(value)) return null
+        const sanitized = this.sanitizeToolCallValue(value)
+        return Array.isArray(sanitized) ? sanitized : null
+    }
+
+    private mergeMessageMetadata(metadataJson: unknown): string {
+        let metadata: Record<string, unknown> = {}
+        if (typeof metadataJson === 'string' && metadataJson.trim()) {
+            try {
+                const parsed = JSON.parse(metadataJson)
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) metadata = parsed
+            } catch {
+                metadata = {}
+            }
+        }
+        const sanitized = this.sanitizeMetadataValue(metadata)
+        return JSON.stringify(sanitized && typeof sanitized === 'object' && !Array.isArray(sanitized) ? sanitized : {})
+    }
+
+    private sanitizeTransferTextField(value: unknown): string | null {
+        if (typeof value !== 'string') return null
+        if (!hasGroupTransferBlocks(value)) return value
+        return stripGroupTransferBlocksFromText(value) || null
+    }
+
+    private stripTransferBlocksFromStream(
+        streamKey: string,
+        delta: string,
+        stateMap: Map<string, TransferStreamStripState>,
+        flush = false,
+    ): string {
+        const state = stateMap.get(streamKey) || { buffer: '', insideTransferBlock: false }
+        state.buffer += String(delta || '')
+        let output = ''
+
+        while (state.buffer) {
+            if (state.insideTransferBlock) {
+                const closeRange = transferFenceCloserRange(state.buffer)
+                if (!closeRange) {
+                    state.buffer = ''
+                    if (flush) state.insideTransferBlock = false
+                    break
+                }
+                state.buffer = state.buffer.slice(closeRange.end)
+                state.insideTransferBlock = false
+                continue
+            }
+
+            const openerMatch = state.buffer.match(/```(?:group-chat-transfer|gc-transfer)[^\S\r\n]*\r?\n/i)
+            if (!openerMatch || openerMatch.index === undefined) {
+                const keep = transferFencePrefixTailLength(state.buffer)
+                if (flush) {
+                    output += keep > 0 ? state.buffer.slice(0, -keep) : state.buffer
+                    state.buffer = ''
+                    break
+                }
+                if (keep > 0) {
+                    output += state.buffer.slice(0, -keep)
+                    state.buffer = state.buffer.slice(-keep)
+                } else {
+                    output += state.buffer
+                    state.buffer = ''
+                }
+                break
+            }
+
+            output += state.buffer.slice(0, openerMatch.index)
+            state.buffer = state.buffer.slice(openerMatch.index + openerMatch[0].length)
+            const closeRange = transferFenceCloserRange(state.buffer)
+            if (!closeRange) {
+                state.buffer = ''
+                state.insideTransferBlock = !flush
+                break
+            }
+            state.buffer = state.buffer.slice(closeRange.end)
+        }
+
+        if (state.buffer || state.insideTransferBlock) stateMap.set(streamKey, state)
+        else stateMap.delete(streamKey)
+        return output
+    }
+
+    private stripTransferBlocksFromContentStream(streamKey: string, delta: string, flush = false): string {
+        return this.stripTransferBlocksFromStream(streamKey, delta, this.streamContentTransferStripMap, flush)
+    }
+
+    private stripTransferBlocksFromReasoningStream(streamKey: string, delta: string, flush = false): string {
+        return this.stripTransferBlocksFromStream(streamKey, delta, this.streamReasoningTransferStripMap, flush)
+    }
+
+    private transferCapability(type: GroupTransferCardType): string | null {
+        if (type === 'private_fact_create') return 'private_fact.create'
+        if (type === 'private_fact_revoke') return 'private_fact.revoke'
+        return null
+    }
+
+    private applyTransferCards(roomId: string, actorId: string | null | undefined, cards: GroupTransferCard[]): AppliedGroupTransferCard[] {
+        if (!cards.length) return []
+        return cards.map(card => {
+            if (!actorId) return { ...card, status: 'denied' as const, reason: 'missing_actor' }
+            const capability = this.transferCapability(card.type)
+            if (capability && !this.storage.canActor(actorId, capability)) {
+                return { ...card, status: 'denied' as const, reason: 'capability_denied' }
+            }
+            if (card.type === 'private_fact_create') {
+                const targetActorId = actorId
+                const fact = this.storage.createPrivateFact(roomId, targetActorId, {
+                    factType: card.factType || 'note',
+                    content: card.content || '',
+                    createdBy: actorId,
+                })
+                return { ...card, targetActorId, factId: fact.id, status: 'accepted' as const }
+            }
+            if (card.type === 'private_fact_revoke') {
+                const targetActorId = actorId
+                const revoked = this.storage.revokePrivateFact(roomId, targetActorId, card.factId || '')
+                return { ...card, targetActorId, status: revoked ? 'accepted' as const : 'denied' as const, reason: revoked ? undefined : 'fact_not_found' }
+            }
+            return { ...card, status: 'denied' as const, reason: 'unsupported_type' }
+        })
+    }
+
+    private isPublicOnlyWrite(channelId: string | null | undefined, visibility: string | null | undefined, audienceJson?: string | null): boolean {
+        const audience = normalizeAudienceJsonInput(audienceJson)
         return channelId === 'public' && visibility === 'public' && (!audience || audience === '[]')
+    }
+
+    private canWriteMessageEnvelope(actorId: string | undefined, visibilityActorId: string | undefined, roomId: string, channelId: string, visibility: string, audienceJson: string): boolean {
+        if (!actorId || !this.storage.canActor(actorId, 'message.write')) return false
+        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
+        return channelId === 'public'
+            ? true
+            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
     }
 
     private handleMessage(socket: Socket, data: Partial<ChatMessage> & { roomId?: string; content: string | Array<Record<string, unknown>>; id?: string; mentionDepth?: number }, ack?: (res: any) => void): void {
@@ -1281,42 +1662,39 @@ export class GroupChatServer {
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
         const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) {
-            ack?.({ error: 'Cannot write to channel' })
-            return
-        }
-        const canWrite = channelId === 'public'
-            ? Boolean(actorId)
-            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
-        if (!canWrite) {
+        if (!this.canWriteMessageEnvelope(actorId, visibilityActorId, roomId, channelId, visibility, audienceJson)) {
             ack?.({ error: 'Cannot write to channel' })
             return
         }
 
         const isAgentSocket = member?.source === 'agent'
         const role = isAgentSocket ? normalizeMessageRole(data.role) : 'user'
+        const storedContent = contentToStorageString(data.content)
+        this.applyTransferCards(roomId, actorId, extractGroupTransferCards(storedContent))
+        const safeContent = stripGroupTransferBlocksFromStoredContent(storedContent)
+        const metadataJson = this.mergeMessageMetadata(data.metadataJson)
         const msg: ChatMessage = {
             id: this.normalizeClientMessageId(data.id) || this.generateId(),
             roomId,
             senderId: userId,
             senderName: userName,
-            content: contentToStorageString(data.content),
+            content: safeContent,
             timestamp: this.normalizeMessageTimestamp(data.timestamp, role),
             role,
-            tool_call_id: isAgentSocket ? data.tool_call_id ?? null : null,
-            tool_calls: isAgentSocket && Array.isArray(data.tool_calls) ? data.tool_calls : null,
-            tool_name: isAgentSocket ? data.tool_name ?? null : null,
-            finish_reason: isAgentSocket ? data.finish_reason ?? null : null,
-            reasoning: isAgentSocket ? data.reasoning ?? null : null,
-            reasoning_details: isAgentSocket ? data.reasoning_details ?? null : null,
-            reasoning_content: isAgentSocket ? data.reasoning_content ?? null : null,
+            tool_call_id: isAgentSocket ? this.sanitizeTransferTextField(data.tool_call_id) : null,
+            tool_calls: isAgentSocket ? this.sanitizeToolCalls(data.tool_calls) : null,
+            tool_name: isAgentSocket ? this.sanitizeTransferTextField(data.tool_name) : null,
+            finish_reason: isAgentSocket ? this.sanitizeTransferTextField(data.finish_reason) : null,
+            reasoning: isAgentSocket ? this.sanitizeTransferTextField(data.reasoning) : null,
+            reasoning_details: isAgentSocket ? this.sanitizeTransferTextField(data.reasoning_details) : null,
+            reasoning_content: isAgentSocket ? this.sanitizeTransferTextField(data.reasoning_content) : null,
             channelId,
-            threadId: data.threadId ?? null,
+            threadId: this.sanitizeTransferTextField(data.threadId) ?? null,
             visibility,
             audienceJson,
             scope: normalizeScope(data.scope),
-            originEventId: data.originEventId ?? null,
-            metadataJson: typeof data.metadataJson === 'string' ? data.metadataJson : '{}',
+            originEventId: this.sanitizeTransferTextField(data.originEventId) ?? null,
+            metadataJson,
         }
 
         const saved = this.storage.saveMessageAndRefreshRoom(msg)
@@ -1339,7 +1717,7 @@ export class GroupChatServer {
             this.agentClients.processMentions(roomId, {
                 messageId: savedMsg.id,
                 content: contentToText(savedMsg.content),
-                input: Array.isArray(data.content) ? data.content : undefined,
+                input: mentionInputFromSafeContent(data.content, safeContent),
                 senderName: savedMsg.senderName,
                 senderId: savedMsg.senderId,
                 timestamp: savedMsg.timestamp,
@@ -1372,10 +1750,7 @@ export class GroupChatServer {
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
         const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return
-        const canWrite = channelId === 'public'
-            ? Boolean(actorId)
-            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
+        const canWrite = this.canWriteMessageEnvelope(actorId, visibilityActorId, roomId, channelId, visibility, audienceJson)
         const streamKey = this.streamVisibilityKey(roomId, id)
         if (!canWrite || this.streamOwnerMap.has(streamKey)) return
         const senderId = member?.userId || this.socketUserMap.get(socket.id) || socket.id
@@ -1390,7 +1765,7 @@ export class GroupChatServer {
             role: 'assistant',
             finish_reason: 'streaming',
             channelId,
-            threadId: data.threadId ?? null,
+            threadId: this.sanitizeTransferTextField(data.threadId) ?? null,
             visibility,
             audienceJson,
             scope: normalizeScope(data.scope),
@@ -1411,10 +1786,12 @@ export class GroupChatServer {
         if (this.streamOwnerMap.get(streamKey) !== socket.id) return
         const visibility = this.streamVisibilityMap.get(streamKey)
         if (!visibility || visibility.roomId !== roomId) return
+        const sanitizedDelta = this.stripTransferBlocksFromContentStream(streamKey, String(data.delta))
+        if (!sanitizedDelta) return
         this.emitVisibleEvent(roomId, visibility, 'message_stream_delta', {
             roomId,
             id,
-            delta: String(data.delta),
+            delta: sanitizedDelta,
         })
     }
 
@@ -1428,10 +1805,12 @@ export class GroupChatServer {
         if (this.streamOwnerMap.get(streamKey) !== socket.id) return
         const visibility = this.streamVisibilityMap.get(streamKey)
         if (!visibility || visibility.roomId !== roomId) return
+        const sanitizedDelta = this.stripTransferBlocksFromReasoningStream(streamKey, String(data.delta))
+        if (!sanitizedDelta) return
         this.emitVisibleEvent(roomId, visibility, 'message_reasoning_delta', {
             roomId,
             id,
-            delta: String(data.delta),
+            delta: sanitizedDelta,
         })
     }
 
@@ -1445,9 +1824,19 @@ export class GroupChatServer {
         if (this.streamOwnerMap.get(streamKey) !== socket.id) return
         const visibility = this.streamVisibilityMap.get(streamKey)
         if (!visibility || visibility.roomId !== roomId) return
+        const trailingContent = this.stripTransferBlocksFromContentStream(streamKey, '', true)
+        if (trailingContent) {
+            this.emitVisibleEvent(roomId, visibility, 'message_stream_delta', { roomId, id, delta: trailingContent })
+        }
+        const trailingReasoning = this.stripTransferBlocksFromReasoningStream(streamKey, '', true)
+        if (trailingReasoning) {
+            this.emitVisibleEvent(roomId, visibility, 'message_reasoning_delta', { roomId, id, delta: trailingReasoning })
+        }
         this.emitVisibleEvent(roomId, visibility, 'message_stream_end', { roomId, id })
         this.streamVisibilityMap.delete(streamKey)
         this.streamOwnerMap.delete(streamKey)
+        this.streamContentTransferStripMap.delete(streamKey)
+        this.streamReasoningTransferStripMap.delete(streamKey)
     }
 
     private handleTyping(socket: Socket, data: Partial<ChatMessage> & { roomId?: string }): void {
@@ -1456,10 +1845,8 @@ export class GroupChatServer {
         if (!room || !room.hasOnlineMember(socket.id)) return
         const userId = this.socketUserMap.get(socket.id) || socket.id
         const userName = this.userInfoMap.get(userId)?.name || `User-${socket.id.slice(0, 6)}`
-        const visibilityMessage = this.hasVisibilityEventFields(data)
-            ? this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
-            : undefined
-        if (visibilityMessage && !this.canSocketWriteTypingEvent(socket, roomId, visibilityMessage)) return
+        const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
+        if (!this.canSocketWriteTypingEvent(socket, roomId, visibilityMessage)) return
 
         // Track typing state for rejoin recovery
         let roomTyping = this.typingState.get(roomId)
@@ -1495,10 +1882,8 @@ export class GroupChatServer {
         // Remove from typing state
         const roomTyping = this.typingState.get(roomId)
         const existing = roomTyping?.get(userId)
-        const visibilityMessage = this.hasVisibilityEventFields(data)
-            ? this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
-            : existing?.visibilityMessage
-        if (visibilityMessage && !this.canSocketWriteTypingEvent(socket, roomId, visibilityMessage)) return
+        const visibilityMessage = existing?.visibilityMessage || this.approvalVisibilityMessage(socket, roomId, `typing:${userId}`, data)
+        if (!this.canSocketWriteTypingEvent(socket, roomId, visibilityMessage)) return
         if (roomTyping) {
             if (existing) clearTimeout(existing.timer)
             roomTyping.delete(userId)
@@ -1518,7 +1903,7 @@ export class GroupChatServer {
         const member = room?.getOnlineMemberBySocketId(socket.id)
         const requestedAgentName = typeof data.agentName === 'string' ? data.agentName : ''
         const agentName = member?.source === 'agent' ? member.name : requestedAgentName
-        const status = data.status || ''
+        const status = this.sanitizeTransferTextField(data.status) || ''
 
         if (!agentName) return
         const statusData = { ...data, agentName }
@@ -1603,6 +1988,8 @@ export class GroupChatServer {
         if (!this.storage.canActor(actorId, 'approval.request')) return
         if (!this.canSocketWriteVisibilityEvent(socket, roomId, data)) return
         const visibilityMessage = this.approvalVisibilityMessage(socket, roomId, data.approval_id, data)
+        const command = this.sanitizeTransferTextField(data.command) || ''
+        const description = this.sanitizeTransferTextField(data.description) || ''
         const key = this.approvalVisibilityKey(roomId, data.approval_id)
         if (this.approvalVisibilityMap.has(key) || this.approvalKeyById.has(data.approval_id)) return
         const allowed = new Set(['once', 'session', 'deny', ...(data.allow_permanent ? ['always'] : [])])
@@ -1618,8 +2005,8 @@ export class GroupChatServer {
             roomId,
             agentName: visibilityMessage.senderName || '',
             approval_id: data.approval_id,
-            command: data.command || '',
-            description: data.description || '',
+            command,
+            description,
             choices,
             allow_permanent: Boolean(data.allow_permanent),
             ...this.visibilityEventFields(visibilityMessage),
@@ -1638,7 +2025,7 @@ export class GroupChatServer {
             roomId,
             agentName: visibilityMessage.senderName || '',
             approval_id: data.approval_id,
-            choice: data.choice || '',
+            choice: this.sanitizeTransferTextField(data.choice) || '',
             ...this.visibilityEventFields(visibilityMessage),
         })
         this.approvalVisibilityMap.delete(key)
@@ -1760,9 +2147,9 @@ export class GroupChatServer {
     }
 
     private canSocketReadVisibilityMessage(socket: Socket, message?: ChatMessage): boolean {
-        if (!message || this.storage.canReadMessage(null, message)) return true
+        if (!message) return true
         const actorId = this.getSocketVisibilityActor(socket, message.roomId)
-        return Boolean(actorId && this.storage.canReadMessage(actorId, message))
+        return this.storage.canReadMessage(actorId, message)
     }
 
     private canSocketWriteTypingEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {
@@ -1771,10 +2158,7 @@ export class GroupChatServer {
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
         const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
-        return channelId === 'public'
-            ? Boolean(actorId)
-            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
+        return this.canWriteMessageEnvelope(actorId, visibilityActorId, roomId, channelId, visibility, audienceJson)
     }
 
     private canSocketWriteVisibilityEvent(socket: Socket, roomId: string, data: Partial<ChatMessage>): boolean {
@@ -1786,10 +2170,7 @@ export class GroupChatServer {
         const channelId = normalizeChannelId(data.channelId)
         const visibility = normalizeVisibility(data.visibility)
         const audienceJson = normalizeAudienceJsonInput(data.audienceJson)
-        if (!visibilityActorId && !this.isPublicOnlyWrite(channelId, visibility, audienceJson)) return false
-        return channelId === 'public'
-            ? Boolean(actorId)
-            : Boolean(visibilityActorId && this.storage.canWriteChannel(visibilityActorId, roomId, channelId))
+        return this.canWriteMessageEnvelope(actorId, visibilityActorId, roomId, channelId, visibility, audienceJson)
     }
 
 
@@ -1801,21 +2182,26 @@ export class GroupChatServer {
         const senderId = this.getSocketActor(socket, roomId) || socket.id
         const room = this.rooms.get(roomId)
         const member = room?.getOnlineMemberBySocketId(socket.id)
+        const description = this.sanitizeTransferTextField(data.description)
+        const command = this.sanitizeTransferTextField(data.command)
+        const metadataJson = data.metadataJson !== undefined && data.metadataJson !== null
+            ? this.mergeMessageMetadata(data.metadataJson)
+            : null
         return {
             id: `approval:${approvalId}`,
             roomId,
             senderId,
             senderName: member?.name || data.agentName || senderId,
-            content: data.description || data.command || '',
+            content: description || command || '',
             timestamp: Date.now(),
             role: 'assistant',
             channelId: data.channelId ?? null,
-            threadId: data.threadId ?? null,
+            threadId: this.sanitizeTransferTextField(data.threadId) ?? null,
             visibility: data.visibility ?? null,
             audienceJson: data.audienceJson ?? null,
             scope: data.scope ?? null,
-            originEventId: data.originEventId ?? null,
-            metadataJson: data.metadataJson ?? null,
+            originEventId: this.sanitizeTransferTextField(data.originEventId) ?? null,
+            metadataJson,
         }
     }
 
@@ -1829,15 +2215,44 @@ export class GroupChatServer {
     }
 
     private emitVisibleEvent(roomId: string, visibilityMessage: ChatMessage | undefined, event: string, payload: unknown): void {
-        if (!visibilityMessage || this.storage.canReadMessage(null, visibilityMessage)) {
+        if (!visibilityMessage) {
             this.nsp.to(roomId).emit(event, payload)
             return
         }
-        for (const socket of this.nsp.sockets.values()) {
-            if (!socket.rooms.has(roomId)) continue
+        const sockets = this.roomSockets(roomId)
+        if (!sockets) {
+            this.nsp.to(roomId).emit(event, payload)
+            return
+        }
+        for (const socket of sockets) {
             const actorId = this.getSocketVisibilityActor(socket, roomId)
             if (this.storage.canReadMessage(actorId, visibilityMessage)) socket.emit(event, payload)
         }
+    }
+
+    private emitRoomMetadataEvent(roomId: string, event: string, payload: unknown): void {
+        const sockets = this.roomSockets(roomId)
+        if (!sockets) {
+            this.nsp.to(roomId).emit(event, payload)
+            return
+        }
+        for (const socket of sockets) {
+            const actorId = this.getSocketVisibilityActor(socket, roomId)
+            if (actorId && !this.canReadRoomMetadata(roomId, actorId)) continue
+            socket.emit(event, payload)
+        }
+    }
+
+    private roomSockets(roomId: string): Socket[] | null {
+        const sockets = (this.nsp as unknown as { sockets?: { values?: () => Iterable<Socket> } })?.sockets
+        if (typeof sockets?.values !== 'function') return null
+        return Array.from(sockets.values()).filter(socket => Boolean((socket as unknown as { rooms?: { has?: (id: string) => boolean } }).rooms?.has?.(roomId)))
+    }
+
+    private canReadRoomMetadata(roomId: string, actorId?: string | null): boolean {
+        const storage = this.storage as unknown as { canReadRoomAsActor?: (roomId: string, actorId: string) => boolean }
+        if (typeof storage.canReadRoomAsActor !== 'function') return true
+        return Boolean(actorId && storage.canReadRoomAsActor(roomId, actorId))
     }
 
     private getTypingUsers(roomId: string, actorId?: string | null): Array<{ userId: string; userName: string }> {
@@ -1863,13 +2278,27 @@ export class GroupChatServer {
                 room.removeMember(socketId)
                 socket.leave(rid)
                 if (member?.source !== 'agent') {
-                    this.nsp.to(rid).emit('member_left', {
-                        roomId: rid,
-                        memberId: member?.userId || socketId,
-                        memberName: member?.name || `User-${socketId.slice(0, 6)}`,
-                        members: room.getMembersList(),
-                        actors: this.storage.getActors(rid),
-                    })
+                    const targetSockets = this.roomSockets(rid)
+                    if (!targetSockets) {
+                        socket.to?.(rid).emit('member_left', {
+                            roomId: rid,
+                            memberId: member?.userId || socketId,
+                            memberName: member?.name || `User-${socketId.slice(0, 6)}`,
+                            members: room.getMembersList(),
+                        })
+                    } else {
+                        for (const targetSocket of targetSockets) {
+                            if (targetSocket.id === socket.id) continue
+                            const targetActorId = this.getSocketVisibilityActor(targetSocket, rid)
+                            if (!this.canReadRoomMetadata(rid, targetActorId)) continue
+                            targetSocket.emit('member_left', {
+                                roomId: rid,
+                                memberId: member?.userId || socketId,
+                                memberName: member?.name || `User-${socketId.slice(0, 6)}`,
+                                members: room.getMembersList(),
+                            })
+                        }
+                    }
                 }
             }
         })

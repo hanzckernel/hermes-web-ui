@@ -50,6 +50,18 @@ describe('group chat agent routing baseline', () => {
     }))
   })
 
+  it('does not route mentions to agents without message.write', async () => {
+    const { human } = await joinHumanAndAgent()
+    harness.db.prepare('INSERT INTO gc_actor_capabilities (actorId, capability, enabled, updatedAt) VALUES (?, ?, 0, ?)')
+      .run('gc:room-1:agent:agent-worker', 'message.write', Date.now())
+    const processAgentMention = vi.spyOn(groupServer.agentClients as any, '_processAgentMention')
+
+    await emitAck(human, 'message', { roomId: 'room-1', id: 'human-msg-write-disabled', content: '@Worker should not run' })
+    await new Promise(resolve => setTimeout(resolve, 120))
+
+    expect(processAgentMention).not.toHaveBeenCalled()
+  })
+
   it('rejects human joins that use a room agent display name', async () => {
     const human = await connectGroupChatClient(port, 'human-worker-name', 'Worker')
     harness.sockets.push(human)

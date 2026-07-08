@@ -51,12 +51,6 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => ({
-      'groupChat.actorIdentity': 'Actor identity',
-      'groupChat.actorKindHuman': 'Human',
-      'groupChat.actorKindAgent': 'Agent',
-      'groupChat.actorKindSystem': 'System',
-      'groupChat.actorBackendHermes': 'Hermes',
-      'groupChat.actorCapabilities': 'Capabilities',
       'groupChat.channels': 'Channels',
       'groupChat.channelKindPublic': 'Public',
       'groupChat.channelKindPrivate': 'Private',
@@ -86,19 +80,7 @@ vi.mock('@/components/hermes/profiles/ProfileAvatar.vue', () => ({ default: { te
 vi.mock('@/components/layout/PageSidebarNav.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('@/components/layout/SettingsCircuitBadge.vue', () => ({ default: { template: '<div />' } }))
 
-const actor = {
-  id: 'gc:room-1:agent:agent-1',
-  roomId: 'room-1',
-  kind: 'agent',
-  source: 'group-chat-agent',
-  displayName: 'Worker',
-  profile: 'default',
-  agentKind: 'hermes',
-  status: 'active',
-  capabilities: ['message.read', 'agent.handoff'],
-}
-
-describe('group chat actor summaries', () => {
+describe('group chat channel summaries', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
@@ -108,41 +90,30 @@ describe('group chat actor summaries', () => {
       messages: [],
       agents: [],
       members: [],
-      actors: [actor],
       total: 0,
       hasMore: false,
     })
   })
 
-  it('stores actors from room detail and realtime join state', async () => {
+  it('stores channel state from room detail and realtime join state', async () => {
     const store = useGroupChatStore()
     groupChatApiMock.socket.emit.mockImplementation((event: string, _data?: any, ack?: Function) => {
-      if (event === 'join' && ack) ack({ roomName: 'Room', members: [], agents: [], actors: [actor], typingUsers: [], contextStatuses: [] })
+      if (event === 'join' && ack) ack({
+        roomName: 'Room',
+        members: [],
+        agents: [],
+        channels: [{ id: 'task-1', roomId: 'room-1', kind: 'task', name: 'Task', defaultVisibility: 'private' }],
+        actorId: 'gc:room-1:human:alice',
+        typingUsers: [],
+        contextStatuses: [],
+      })
       return groupChatApiMock.socket
     })
 
     await store.joinRoom('room-1')
 
-    expect(store.actors).toEqual([actor])
-  })
-
-  it('renders read-only actor identity labels in the participant popover', () => {
-    const pinia = createTestingPinia({ stubActions: false, createSpy: vi.fn })
-    const store = useGroupChatStore()
-    store.currentRoomId = 'room-1'
-    store.roomName = 'Room'
-    store.userName = 'Alice'
-    store.agents = [{ id: 'row-agent', roomId: 'room-1', agentId: 'agent-1', profile: 'default', name: 'Worker', description: '', invited: 0 }]
-    store.actors = [actor]
-
-    const wrapper = mount(GroupChatPanel, {
-      global: { plugins: [pinia], stubs: { Transition: false } },
-    })
-
-    expect(wrapper.text()).toContain('Actor identity')
-    expect(wrapper.text()).toContain('Agent')
-    expect(wrapper.text()).toContain('Hermes')
-    expect(wrapper.text()).toContain('Capabilities')
+    expect(store.currentActorId).toBe('gc:room-1:human:alice')
+    expect(store.channels.map(channel => channel.id)).toEqual(['public', 'task-1'])
   })
 
   it('renders visible channel tabs', () => {

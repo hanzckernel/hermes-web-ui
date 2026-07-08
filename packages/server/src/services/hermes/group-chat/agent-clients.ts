@@ -18,6 +18,7 @@ import {
     stripMentionRoutingTokens,
 } from './mention-routing'
 import { agentActorId } from './identity/actor-ids'
+import { canonicalAudience, normalizeAudienceJsonInput } from './visibility/audience'
 
 export const GROUP_CHAT_AGENT_SOCKET_SECRET = randomBytes(32).toString('hex')
 
@@ -946,27 +947,6 @@ function groupBridgeVisibilitySessionKey(visibilityExtra: Record<string, unknown
     return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
 }
 
-function canonicalAudience(value: unknown): string[] {
-    if (value == null || value === '') return []
-    let parsed: unknown = value
-    if (typeof value === 'string') {
-        try {
-            parsed = JSON.parse(value)
-        } catch {
-            return [value.trim()].filter(Boolean)
-        }
-    }
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        const record = parsed as Record<string, unknown>
-        parsed = record.actorIds || record.audienceActorIds || record.actors
-    }
-    if (!Array.isArray(parsed)) return []
-    return [...new Set(parsed
-        .filter((actor): actor is string => typeof actor === 'string' && actor.trim().length > 0)
-        .map(actor => actor.trim())
-        .sort())]
-}
-
 function groupMessageId(roomId: string, profile: string, name: string): string {
     const raw = `gcmsg_${safeId(roomId)}_${safeId(profile)}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 160)
@@ -1216,11 +1196,7 @@ export class AgentClients {
     async processMentions(roomId: string, msg: MentionMessage): Promise<void> {
         const agents = this.getAgents(roomId)
         const mentioned = resolveMentionTargets(agents, msg.content, msg.senderId)
-            .filter(agent => !this._storage?.canReadMessage || this._storage.canReadMessage(agentActorId(roomId, agent.agentId), {
-                ...msg,
-                id: msg.messageId || '',
-                roomId,
-            }))
+            .filter(agent => this.canAgentProcessMention(roomId, agent, msg))
         if (mentioned.length === 0) return
 
         logger.debug(`[AgentClients] ${mentioned.map(a => a.name).join(', ')} mentioned by ${msg.senderName}`)
@@ -1232,6 +1208,17 @@ export class AgentClients {
         }
     }
 
+    private canAgentProcessMention(roomId: string, agent: AgentClient, msg: MentionMessage): boolean {
+        const actorId = agentActorId(roomId, agent.agentId)
+        if (typeof this._storage?.canActor === 'function' && !this._storage.canActor(actorId, 'message.write')) return false
+        if (typeof this._storage?.canReadMessage === 'function' && !this._storage.canReadMessage(actorId, {
+            ...msg,
+            id: msg.messageId || '',
+            roomId,
+        })) return false
+        return true
+    }
+
     /**
      * Process a single agent mention with status reporting and queue drain.
      */
@@ -1240,6 +1227,7 @@ export class AgentClients {
         agent: AgentClient,
         msg: MentionMessage,
     ): Promise<void> {
+        if (!this.canAgentProcessMention(roomId, agent, msg)) return
         const agentKey = `${roomId}:${agent.name}`
         if (this._processingRooms.has(agentKey)) {
             // Queue for this specific agent
@@ -1288,18 +1276,8 @@ export class AgentClients {
 function isPublicVisibilityExtra(extra: Record<string, unknown>): boolean {
     const channelId = String(extra.channelId || 'public')
     const visibility = String(extra.visibility || 'public')
-    const audienceJson = normalizeAudienceJsonExtra(extra.audienceJson).trim()
+    const audienceJson = normalizeAudienceJsonInput(extra.audienceJson).trim()
     return channelId === 'public' && visibility === 'public' && (!audienceJson || audienceJson === '[]')
-}
-
-function normalizeAudienceJsonExtra(value: unknown): string {
-    if (value == null || value === '') return '[]'
-    if (typeof value === 'string') return value
-    try {
-        return JSON.stringify(value)
-    } catch {
-        return 'null'
-    }
 }
 
 function mentionVisibilityExtra(msg: MentionMessage): Record<string, unknown> {

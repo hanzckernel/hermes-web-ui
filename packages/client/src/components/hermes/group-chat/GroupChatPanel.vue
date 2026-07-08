@@ -13,7 +13,7 @@ import PageSidebarNav from '@/components/layout/PageSidebarNav.vue'
 import SettingsCircuitBadge from '@/components/layout/SettingsCircuitBadge.vue'
 import { copyToClipboard } from '@/utils/clipboard'
 import type { Attachment } from '@/stores/hermes/chat'
-import type { GroupActor, RoomAgent } from '@/api/hermes/group-chat'
+import type { RoomAgent } from '@/api/hermes/group-chat'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -78,21 +78,6 @@ const userMemberAvatar = computed(() => {
     return null
 })
 
-function actorForAgent(agentId: string): GroupActor | undefined {
-    return store.actors.find(actor => actor.kind === 'agent' && actor.id.endsWith(`:agent:${agentId}`))
-}
-
-function actorKindLabel(actor: GroupActor): string {
-    if (actor.kind === 'human') return t('groupChat.actorKindHuman')
-    if (actor.kind === 'agent') return t('groupChat.actorKindAgent')
-    if (actor.kind === 'system') return t('groupChat.actorKindSystem')
-    return actor.kind
-}
-
-function actorBackendLabel(actor: GroupActor): string {
-    if (actor.agentKind === 'hermes') return t('groupChat.actorBackendHermes')
-    return actor.agentKind || actor.source
-}
 const visibleApproval = computed(() => store.activePendingApproval)
 
 function formatTokens(tokens: number): string {
@@ -532,12 +517,6 @@ async function handleApproval(choice: 'once' | 'session' | 'always' | 'deny') {
                                 <div class="agent-popover-info">
                                     <span class="agent-popover-name">{{ agent.name }}</span>
                                     <span class="agent-popover-profile">{{ agent.profile }}</span>
-                                    <span v-if="actorForAgent(agent.agentId)" class="agent-popover-profile">
-                                        {{ t('groupChat.actorIdentity') }} · {{ actorKindLabel(actorForAgent(agent.agentId)!) }} · {{ actorBackendLabel(actorForAgent(agent.agentId)!) }}
-                                    </span>
-                                    <span v-if="actorForAgent(agent.agentId)?.capabilities?.length" class="agent-popover-profile">
-                                        {{ t('groupChat.actorCapabilities') }}: {{ actorForAgent(agent.agentId)!.capabilities!.join(', ') }}
-                                    </span>
                                 </div>
                                 <button class="agent-popover-remove" @click="handleRemoveAgent(agent.id)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
