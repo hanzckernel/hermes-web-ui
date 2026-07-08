@@ -188,7 +188,8 @@ groupChatRoutes.get('/api/hermes/group-chat/rooms/:roomId', async (ctx) => {
     const total = chatServer.getStorage().getMessageCount(ctx.params.roomId)
     const agents = chatServer.getStorage().getRoomAgents(ctx.params.roomId)
     const members = chatServer.getStorage().getRoomMembers(ctx.params.roomId)
-    ctx.body = { room, messages, agents, members, total, offset, limit, hasMore: offset + messages.length < total }
+    const actors = chatServer.getStorage().getActors(ctx.params.roomId)
+    ctx.body = { room, messages, agents, members, actors, total, offset, limit, hasMore: offset + messages.length < total }
 })
 
 // List rooms
@@ -324,6 +325,7 @@ groupChatRoutes.delete('/api/hermes/group-chat/rooms/:roomId/agents/:agentId', a
         success: true,
         agents: storage.getRoomAgents(roomId),
         members: storage.getRoomMembers(roomId),
+        actors: storage.getActors(roomId),
     }
 })
 

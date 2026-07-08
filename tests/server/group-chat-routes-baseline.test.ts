@@ -25,6 +25,7 @@ describe('group chat REST route baseline', () => {
       agents: new Map<string, any[]>(),
       messages: new Map<string, any[]>(),
       members: new Map<string, any[]>(),
+      actors: new Map<string, any[]>(),
       saveRoom: vi.fn((id, name, inviteCode, config) => storage.rooms.set(id, { id, name, inviteCode, totalTokens: 0, sessionSeed: '0', ...config })),
       getRoom: vi.fn((id) => storage.rooms.get(id)),
       getAllRooms: vi.fn(() => [...storage.rooms.values()]),
@@ -33,6 +34,7 @@ describe('group chat REST route baseline', () => {
       getMessageCount: vi.fn((roomId) => (storage.messages.get(roomId) || []).length),
       getRoomAgents: vi.fn((roomId) => storage.agents.get(roomId) || []),
       getRoomMembers: vi.fn((roomId) => storage.members.get(roomId) || []),
+      getActors: vi.fn((roomId) => storage.actors.get(roomId) || []),
       getRoomByInviteCode: vi.fn((code) => [...storage.rooms.values()].find((r: any) => r.inviteCode === code)),
       addRoomAgent: vi.fn((roomId, agentId, profile, name, description, invited) => {
         const row = { id: `row-${agentId}`, roomId, agentId, profile, name, description, invited }
@@ -119,6 +121,7 @@ describe('group chat REST route baseline', () => {
     storage.messages.set('room-1', [{ id: 'msg-1' }, { id: 'msg-2' }])
     storage.agents.set('room-1', [{ id: 'row-agent', agentId: 'agent-1', profile: 'default', name: 'Agent' }])
     storage.members.set('room-1', [{ userId: 'user-1', name: 'Alice' }])
+    storage.actors.set('room-1', [{ id: 'gc:room-1:agent:agent-1', kind: 'agent', displayName: 'Agent', capabilities: ['message.read'] }])
 
     const res = await fetch(`${baseUrl}/api/hermes/group-chat/rooms/room-1?limit=1&offset=1`)
     const body = await res.json()
@@ -129,6 +132,7 @@ describe('group chat REST route baseline', () => {
       messages: [{ id: 'msg-2' }],
       agents: [{ agentId: 'agent-1' }],
       members: [{ userId: 'user-1' }],
+      actors: [{ id: 'gc:room-1:agent:agent-1', kind: 'agent', displayName: 'Agent', capabilities: ['message.read'] }],
       total: 2,
       offset: 1,
       limit: 1,

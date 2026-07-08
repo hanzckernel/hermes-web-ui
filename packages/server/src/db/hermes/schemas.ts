@@ -510,6 +510,67 @@ export const GC_SESSION_PROFILES_SCHEMA: Record<string, string> = {
   created_at: 'INTEGER NOT NULL',
 }
 
+export const GC_ACTORS_TABLE = 'gc_actors'
+
+export const GC_ACTORS_SCHEMA: Record<string, string> = {
+  id: 'TEXT PRIMARY KEY',
+  roomId: 'TEXT NOT NULL',
+  kind: 'TEXT NOT NULL',
+  source: 'TEXT NOT NULL',
+  displayName: "TEXT NOT NULL DEFAULT ''",
+  description: "TEXT NOT NULL DEFAULT ''",
+  profile: 'TEXT',
+  agentKind: 'TEXT',
+  authUserId: 'INTEGER',
+  externalPlatform: 'TEXT',
+  externalUserId: 'TEXT',
+  status: "TEXT NOT NULL DEFAULT 'active'",
+  createdAt: 'INTEGER NOT NULL',
+  updatedAt: 'INTEGER NOT NULL',
+  metadataJson: "TEXT NOT NULL DEFAULT '{}'",
+}
+
+export const GC_ACTOR_CAPABILITIES_TABLE = 'gc_actor_capabilities'
+
+export const GC_ACTOR_CAPABILITIES_SCHEMA: Record<string, string> = {
+  actorId: 'TEXT NOT NULL',
+  capability: 'TEXT NOT NULL',
+  scopeJson: "TEXT NOT NULL DEFAULT '{}'",
+  enabled: 'INTEGER NOT NULL DEFAULT 1',
+  updatedAt: 'INTEGER NOT NULL',
+}
+
+export const GC_ACTOR_PRIVATE_FACTS_TABLE = 'gc_actor_private_facts'
+
+export const GC_ACTOR_PRIVATE_FACTS_SCHEMA: Record<string, string> = {
+  id: 'TEXT PRIMARY KEY',
+  roomId: 'TEXT NOT NULL',
+  actorId: 'TEXT NOT NULL',
+  factType: 'TEXT NOT NULL',
+  content: 'TEXT NOT NULL',
+  visibility: "TEXT NOT NULL DEFAULT 'private'",
+  createdBy: 'TEXT NOT NULL',
+  createdAt: 'INTEGER NOT NULL',
+  expiresAt: 'INTEGER',
+  metadataJson: "TEXT NOT NULL DEFAULT '{}'",
+}
+
+export const GC_ACTOR_INDEXES = {
+  idx_gc_actors_room: 'CREATE INDEX IF NOT EXISTS idx_gc_actors_room ON gc_actors(roomId)',
+  idx_gc_actors_kind: 'CREATE INDEX IF NOT EXISTS idx_gc_actors_kind ON gc_actors(roomId, kind)',
+  idx_gc_actors_auth: 'CREATE INDEX IF NOT EXISTS idx_gc_actors_auth ON gc_actors(authUserId)',
+}
+
+export const GC_ACTOR_CAPABILITY_INDEXES = {
+  idx_gc_actor_capabilities_actor: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_capabilities_actor ON gc_actor_capabilities(actorId)',
+  uniq_gc_actor_capability: 'CREATE UNIQUE INDEX IF NOT EXISTS uniq_gc_actor_capability ON gc_actor_capabilities(actorId, capability)',
+}
+
+export const GC_ACTOR_PRIVATE_FACT_INDEXES = {
+  idx_gc_actor_private_facts_room_actor: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_private_facts_room_actor ON gc_actor_private_facts(roomId, actorId)',
+  idx_gc_actor_private_facts_expiry: 'CREATE INDEX IF NOT EXISTS idx_gc_actor_private_facts_expiry ON gc_actor_private_facts(expiresAt)',
+}
+
 // ============================================================================
 // Schema Sync Utilities
 // ============================================================================
@@ -857,6 +918,15 @@ export function initAllHermesTables(): void {
     syncTable(GC_CONTEXT_SNAPSHOTS_TABLE, GC_CONTEXT_SNAPSHOTS_SCHEMA)
     syncTable(GC_PENDING_SESSION_DELETES_TABLE, GC_PENDING_SESSION_DELETES_SCHEMA)
     syncTable(GC_SESSION_PROFILES_TABLE, GC_SESSION_PROFILES_SCHEMA)
+    syncTable(GC_ACTORS_TABLE, GC_ACTORS_SCHEMA, {
+      indexes: GC_ACTOR_INDEXES,
+    })
+    syncTable(GC_ACTOR_CAPABILITIES_TABLE, GC_ACTOR_CAPABILITIES_SCHEMA, {
+      indexes: GC_ACTOR_CAPABILITY_INDEXES,
+    })
+    syncTable(GC_ACTOR_PRIVATE_FACTS_TABLE, GC_ACTOR_PRIVATE_FACTS_SCHEMA, {
+      indexes: GC_ACTOR_PRIVATE_FACT_INDEXES,
+    })
 
     // Group chat - single-column primary key tables (PRIMARY KEY in column definition)
     syncTable(GC_ROOM_AGENTS_TABLE, GC_ROOM_AGENTS_SCHEMA, {
